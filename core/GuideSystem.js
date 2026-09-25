@@ -63,8 +63,9 @@ export class GuideSystem {
   _event(name) {
     if (!this.state.events.includes(name)) this.state.events.push(name);
     const s = this.current;
-    // Only counts once the step has actually been shown (an earlier tap can fire the same event).
-    if (s && this.visible && this.shownId === s.id && s.advance?.event === name) this.complete(false);
+    // Only counts once the step has actually been shown (an earlier tap can fire the same event). It still counts if
+    // the thing it pointed at has just gone (e.g. the hired candidate's card disappears as the hire happens).
+    if (s && this.shownId === s.id && s.advance?.event === name) this.complete(false);
     else this.update();
     this._changed();
   }

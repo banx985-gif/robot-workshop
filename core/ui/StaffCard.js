@@ -37,6 +37,8 @@ export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent 
   const tx = pr.x + pr.w + 28;
   const tw = r.x + r.w - pad - tx;
   let y = r.y + pad;
+  // The XP bar and stats row stay clear of the buttons column (top-right).
+  const sw = (view.buttons || []).length ? tw - 200 : tw;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillStyle = '#FFFFFF';
@@ -49,7 +51,7 @@ export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent 
   y += 44;
 
   if (view.xp) {
-    drawBar(ctx, tx, y, tw, 14, view.xp.value / view.xp.max, '#B39DDB');
+    drawBar(ctx, tx, y, sw, 14, view.xp.value / view.xp.max, '#B39DDB');
     ctx.fillStyle = '#B8C2CC';
     ctx.font = '22px system-ui, sans-serif';
     ctx.fillText(`XP ${view.xp.value} / ${view.xp.max}`, tx, y + 20);
@@ -58,7 +60,7 @@ export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent 
 
   // Stats row.
   const stats = view.stats || [];
-  const colW = tw / Math.max(1, stats.length);
+  const colW = sw / Math.max(1, stats.length);
   stats.forEach((s, i) => {
     const cx = tx + i * colW;
     ctx.fillStyle = '#7F8C99';

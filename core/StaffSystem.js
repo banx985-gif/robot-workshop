@@ -9,7 +9,7 @@
 //   tiers:     { standard: { statCap: 220, traitSlots: 1 }, ... }
 //   traits:    { quickLearner: { effects: { xpGainPct: 20 } }, ... }
 //   rules:     see DEFAULT_RULES
-//   planActivity(staff) → 'working' | 'resting' | 'idle'   optional: decides each worker's day
+//   planActivity(staff) → 'working' | 'resting' | other   optional: decides each worker's day (other: no Energy change)
 //   energyLossMultiplier(staff) → number                   optional: extra multiplier on working Energy loss
 //   restModifier(staff) → { energyMult, morale }           optional: resting bonuses (e.g. a break room)
 import { StaffModel } from './StaffModel.js';
@@ -61,6 +61,15 @@ export class StaffSystem {
 
   get(id) {
     return this.staff.find((s) => s.id === id) || null;
+  }
+
+  // Take a worker off the roster (they left). Returns the removed model or null.
+  remove(id) {
+    const s = this.get(id);
+    if (!s) return null;
+    this.staff = this.staff.filter((x) => x !== s);
+    this.bus?.emit('staff:removed', { staff: s });
+    return s;
   }
 
   serialize() {

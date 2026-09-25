@@ -1,6 +1,7 @@
 // Staff roster: one card per worker with portrait, role, level, the 5 work stats,
 // Energy/Morale, traits and what they're doing right now.
-// Tap a card → back to the workshop with that worker selected.
+// Tap a card → back to the workshop with that worker selected. Card buttons: Train (opens Training with them
+// picked) and Fire (tap twice). The header opens Hiring (a "!" when a special candidate is waiting) and Training.
 import { ScrollList } from '../../../../core/ui/ScrollList.js';
 import { drawStaffCard, staffCardButtonAt, STAFF_CARD_HEIGHT } from '../../../../core/ui/StaffCard.js';
 import { drawButton, hitRect } from '../../../../core/ui/Button.js';
@@ -27,6 +28,8 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
     ],
   });
   let focusId = null;
+  let confirmFire = null; // worker id waiting for the second tap
+  let message = null;
 
   const list = new ScrollList({
     getRect: listRect,
@@ -41,6 +44,13 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
     const y = top.y + top.h + 96;
     const bottomSpace = debug.enabled ? 140 : 24;
     return { x: sr.x + 24, y, w: sr.w - 48, h: sr.y + sr.h - bottomSpace - y };
+  }
+
+  // Header buttons, right of the "Staff n / cap" title.
+  function headerButton(k) {
+    const lr = listRect();
+    const w = 200;
+    return { x: lr.x + lr.w - (2 - k) * w - (1 - k) * 16, y: lr.y - 88, w, h: 72 };
   }
 
   function resetButtonRect() {
@@ -65,17 +75,35 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
       icons: Object.keys(STATUS_ICONS)
         .filter((k) => s.status[k])
         .map((k) => STATUS_ICONS[k]),
-      footer: `Now: ${workshop.taskLabel(s.id) || (s.assigned ? 'On the project' : 'Resting')}`,
-      buttons: debug.enabled ? [{ id: 'xp', label: '+60 XP (debug)' }] : [],
+      footer: nowText(s),
+      buttons: [
+        { id: 'train', label: campaign.training.trainingOf(s.id) ? 'Training…' : 'Train' },
+        { id: 'fire', label: confirmFire === s.id ? 'Confirm fire' : 'Fire' },
+        ...(debug.enabled ? [{ id: 'xp', label: '+60 XP (debug)' }] : []),
+      ],
     };
+  }
+
+  function nowText(s) {
+    const t = campaign.training.trainingOf(s.id);
+    if (t) return `Training: ${campaign.training.course(t.courseId).name} · day ${t.daysDone}/${t.days}`;
+    if (campaign.research.busyIds.includes(s.id)) return 'Now: researching at the Research Desk';
+    return `Now: ${workshop.taskLabel(s.id) || (s.assigned ? 'On the project' : 'Resting')}`;
+  }
+
+  function say(str, color = '#FFD166') {
+    message = { text: str, color, until: performance.now() + 3000 };
   }
 
   const screen = {
     list,
+    headerButton,
     topBar,
     viewFor,
     enter(params = {}) {
       list.setItems(campaign.staff.staff);
+      confirmFire = null;
+      message = null;
       focusId = params.focusId ?? null;
       if (focusId) {
         const i = campaign.staff.staff.findIndex((s) => s.id === focusId);
@@ -91,10 +119,33 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
         list.setItems(campaign.staff.staff);
         return;
       }
+      if (hitRect(p, headerButton(0))) return router.go('recruit', { focusSpecial: true });
+      if (hitRect(p, headerButton(1))) return router.go('training');
       const hit = list.itemAt(p);
       if (!hit) return;
-      if (staffCardButtonAt(hit.rect, viewFor(hit.item), p) === 'xp') {
+      const b = staffCardButtonAt(hit.rect, viewFor(hit.item), p);
+      if (b !== 'fire') confirmFire = null;
+      if (b === 'xp') {
         campaign.staff.addXp(hit.item, 60);
+        return;
+      }
+      if (b === 'train') {
+        router.go('training', { staffId: hit.item.id });
+        return;
+      }
+      if (b === 'fire') {
+        const block = campaign.fireBlock(hit.item.id);
+        if (block) return say(block, '#FF8A80');
+        if (confirmFire !== hit.item.id) {
+          confirmFire = hit.item.id;
+          return say(`Tap Confirm fire to let ${hit.item.name} go (no refund; they may apply again later)`);
+        }
+        const r = campaign.fire(hit.item.id);
+        confirmFire = null;
+        if (r.ok) {
+          say(`${r.staff.name} has left the workshop`);
+          campaign.save().catch(() => {});
+        }
         return;
       }
       router.go('workshop', { selectId: hit.item.id });
@@ -122,15 +173,27 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
       ctx.textBaseline = 'bottom';
       // §39.1: the cap grows with Company Rank (hiring arrives in Milestone 10).
       ctx.fillText(`Staff ${campaign.staff.staff.length} / ${campaign.employeeCap}`, lr.x + 8, lr.y - 24);
-      ctx.fillStyle = '#9AA8B5';
-      ctx.font = '28px system-ui, sans-serif';
-      ctx.textAlign = 'right';
-      ctx.fillText('Cap rises with Company Rank · tap a worker to find them', lr.x + lr.w - 8, lr.y - 28, lr.w - 360);
+      const waiting = campaign.recruitment.special && !campaign.hireBlock(campaign.recruitment.special.id);
+      drawButton(ctx, headerButton(0), 'Hire', { accent: '#7CFFB2', badge: waiting ? '!' : null, font: 'bold 34px system-ui, sans-serif' });
+      drawButton(ctx, headerButton(1), 'Training', { font: 'bold 34px system-ui, sans-serif', badge: campaign.training.active.length || null });
 
       list.render(ctx);
+      if (message && performance.now() < message.until) {
+        const r = { x: lr.x + 30, y: lr.y + lr.h - 110, w: lr.w - 60, h: 84 };
+        ctx.fillStyle = 'rgba(12,16,20,0.95)';
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.strokeStyle = message.color;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(r.x, r.y, r.w, r.h);
+        ctx.fillStyle = message.color;
+        ctx.font = 'bold 28px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(message.text, r.x + r.w / 2, r.y + r.h / 2, r.w - 30);
+      }
       if (debug.enabled) drawButton(ctx, resetButtonRect(), 'New game (debug)', { accent: '#FF5A5A' });
     },
   };
-  bus.on('campaign:ready', () => list.setItems(campaign.staff.staff));
+  for (const e of ['campaign:ready', 'staff:hired', 'staff:fired']) bus.on(e, () => list.setItems(campaign.staff.staff));
   return screen;
 }

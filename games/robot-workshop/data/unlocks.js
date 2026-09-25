@@ -3,10 +3,11 @@
 //   { type: 'research', branch, level }  that research node is done (for a part or facility a node names in its
 //                                        unlock actions, that action must have fired — see data/research.js)
 //   { type: 'researchCount', min }       that many visible research nodes done in total
+//   { type: 'feature', id }              a research feature has switched on (data/research.js FEATURES)
 //   { type: 'flag', flag }  a first-time milestone of the run (first launch, first contract…)
 //   { type: 'role', role }  the company employs someone in that role (e.g. its first Designer)
 
-export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'researchCount', 'all'];
+export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'researchCount', 'feature', 'all'];
 
 export const RESEARCH_BRANCHES = {
   mechanical: 'Mechanical Research',
@@ -45,4 +46,5 @@ export const FLAG_NAMES = {
   firstLaunch: 'First commercial launch',
   firstContractDone: 'First contract completed',
   firstRp: 'First Research Points earned',
+  ngPlus: 'New Game+',
 };

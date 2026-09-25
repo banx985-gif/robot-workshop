@@ -33,6 +33,10 @@ import { createComponentsScreen } from './screens/ComponentsScreen.js';
 import { createContractsScreen } from './screens/ContractsScreen.js';
 import { createBuildScreen } from './screens/BuildScreen.js';
 import { createResearchScreen } from './screens/ResearchScreen.js';
+import { createRecruitmentScreen } from './screens/RecruitmentScreen.js';
+import { createTrainingScreen } from './screens/TrainingScreen.js';
+import { RECRUIT_ART, PORTRAITS, PORTRAIT_FOLDER } from '../data/recruitment.js';
+import { TRAINING_ART } from '../data/training.js';
 import { RESEARCH_ART, FEATURES } from '../data/research.js';
 import { FACILITIES, BUILD_ART } from '../data/facilities.js';
 import { RANK_NOTES } from '../data/economy.js';
@@ -44,7 +48,7 @@ import { VISUAL_FAMILIES } from '../data/visuals.js';
 import { moneyBarRect, topBarRect } from './ui/TopBar.js';
 import { Campaign, SAVE_MIGRATIONS } from './app/Campaign.js';
 import { COMPONENTS } from '../data/components.js';
-import { STAFF, ROLES, STARTER_IDS } from '../data/staff.js';
+import { STAFF, ROLES } from '../data/staff.js';
 import { SAVE_VERSION } from '../data/balance.js';
 import { ROOM_ART } from '../data/workshop.js';
 import { VFX_ART, STATUS_ART, SOUNDS, FLOAT_COLORS } from '../data/feedback.js';
@@ -53,7 +57,6 @@ const W = 1080;
 const BASE_H = 1920; // 9:16; taller phones grow the height (see Renderer)
 const MAX_H = 2640; // up to 9:22 fills edge to edge; taller still gets thin bars top and bottom
 
-const starters = STAFF.filter((s) => STARTER_IDS.includes(s.id));
 const art = (folder, key) => [key, `assets/images/${folder}/${key}.png`];
 const ASSETS = {
   // Workshop room: floor, walls, the expansion boundary and the test-zone floor; facilities F01–F15; build icons.
@@ -64,9 +67,15 @@ const ASSETS = {
   // Effects and status icons.
   ...Object.fromEntries(Object.values(VFX_ART).map((k) => art('vfx', k))),
   ...Object.fromEntries(Object.values(STATUS_ART).map((k) => art('status', k))),
-  // Starter staff portraits and their role badges, keyed by art name.
-  ...Object.fromEntries(starters.map((s) => [s.art, `assets/images/staff/${s.art}.png`])),
-  ...Object.fromEntries(starters.map((s) => [ROLES[s.role].badge, `assets/images/badges/${ROLES[s.role].badge}.png`])),
+  // Staff portraits: the named staff in data, plus every portrait candidates can use (Milestone 10); role and tier badges.
+  ...Object.fromEntries(STAFF.map((s) => [s.art, `assets/images/staff/${s.art}.png`])),
+  ...Object.fromEntries(Object.values(PORTRAIT_FOLDER).flatMap((f) => Object.values(PORTRAITS).flat().map((n) => art('staff', `staff_${f}_${n}`)))),
+  ...Object.fromEntries(Object.values(ROLES).map((r) => art('badges', r.badge))),
+  ...Object.fromEntries(Object.values(RECRUIT_ART.tierBadges).map((k) => art('badges', k))),
+  // Hiring and training icons.
+  [RECRUIT_ART.icon]: `assets/images/ui/${RECRUIT_ART.icon}.png`,
+  [TRAINING_ART.icon]: `assets/images/ui/${TRAINING_ART.icon}.png`,
+  [TRAINING_ART.manual]: `assets/images/rewards/${TRAINING_ART.manual}.png`,
   // Robot project art: finished robots, part icons, menu icons.
   ...Object.fromEntries(VISUAL_FAMILIES.map((v) => art('robots', v.art))), // all 20 robot families
   ...Object.fromEntries(Object.values(COMPONENTS).map((c) => [c.art, `assets/images/components/${c.art}.png`])),
@@ -516,6 +525,8 @@ bus.on('screen:change', ({ to }) => to === 'build' && guide.current?.id === 'S21
 const helpScreen = createHelpScreen({ renderer, layout, assets, router, guide });
 const contractsScreen = createContractsScreen({ renderer, layout, assets, campaign, router, goProject, hud });
 const buildScreen = createBuildScreen({ renderer, layout, assets, campaign, router, workshop: workshopScreen, hud });
+const recruitScreen = createRecruitmentScreen({ renderer, layout, assets, bus, campaign, router });
+const trainingScreen = createTrainingScreen({ renderer, layout, assets, bus, campaign, router });
 const researchScreen = createResearchScreen({ renderer, layout, assets, bus, campaign, router, debugEnabled: debug.enabled });
 // A throwaway run with the three starters on its own bus: the debug builder builds robots in it.
 const makeSandbox = () => {
@@ -625,6 +636,17 @@ bus.on('research:milestone', ({ milestone, fired }) => {
   const f = FEATURES[fired.at(-1).id];
   major.show({ title: `${milestone.count} research topics done!`, subtitle: `${fired.map((a) => FEATURES[a.id]?.name ?? a.id).join(' + ')}: ${f?.note ?? ''}`, accent: '#4FC3F7' });
 });
+// Hiring and training (Milestone 10): a new face walks in; a finished course floats its gains over the worker.
+bus.on('staff:hired', ({ staff }) => {
+  audio.play('levelUp');
+  debug.log(`hired ${staff.name} (${staff.id})`);
+});
+bus.on('training:complete', ({ staff, course, gains }) => {
+  const txt = Object.entries(gains).map(([k, v]) => `${k.toUpperCase()} +${v}`).join(' ');
+  debug.log(`${staff.name} finished ${course.name}: ${txt || 'no gain (cap)'}`);
+  campaign.save().catch(() => {});
+  workshopScreen.celebrateTraining(staff, txt || 'At the tier cap');
+});
 bus.on('facility:sold', ({ refund }) => floatNumber(`+${refund.toLocaleString('en-US')}`, FLOAT_COLORS.credits, 'ui_icon_01_money', 0.24));
 bus.on('project:phase', ({ job, phase }) => debug.log(`${job.name}: ${phase.name} done`));
 bus.on('robot:fault', ({ job }) => debug.log(`${job.name}: fault (${job.data.faults.length} open)`));
@@ -656,6 +678,7 @@ if (debug.enabled) {
   window.__m7b = { ...window.__m7, guide, coach, guideTarget, help: helpScreen };
   window.__m8 = { ...window.__m7b, build: buildScreen, facilities: campaign.facilities, FACILITIES };
   window.__m9 = { ...window.__m8, research: researchScreen, researchSystem: campaign.research, unlocks: campaign.unlocks };
+  window.__m10 = { ...window.__m9, recruit: recruitScreen, training: trainingScreen, recruitment: campaign.recruitment, trainingSystem: campaign.training, roster: rosterScreen };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
   bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));
@@ -678,6 +701,8 @@ router
   .register('help', helpScreen)
   .register('build', buildScreen)
   .register('research', researchScreen)
+  .register('recruit', recruitScreen)
+  .register('training', trainingScreen)
   .register('debugbuilder', debugBuilderScreen);
 router.go('boot');
 loop.start();

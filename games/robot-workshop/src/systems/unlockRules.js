@@ -2,6 +2,7 @@
 import { RESEARCH_BRANCHES, FACILITY_NAMES, COUNTERS, COMPETITION_EVENTS, FLAG_NAMES } from '../../data/unlocks.js';
 import { FACILITIES } from '../../data/facilities.js';
 import { ROLES } from '../../data/staff.js';
+import { FEATURES } from '../../data/research.js';
 
 // Plain words for a rule, e.g. "Mechanical Research 3" or "Materials Lab + Mechanical Research 5".
 export function describeUnlock(rule) {
@@ -12,6 +13,8 @@ export function describeUnlock(rule) {
       return `${RESEARCH_BRANCHES[rule.branch] ?? rule.branch} ${rule.level}`;
     case 'researchCount':
       return `${rule.min} research topics done`;
+    case 'feature':
+      return FEATURES[rule.id]?.name ?? rule.id;
     case 'facility':
       return FACILITIES[rule.id]?.name ?? FACILITY_NAMES[rule.id] ?? rule.id;
     case 'rank':

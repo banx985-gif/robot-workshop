@@ -13,6 +13,10 @@ const CATEGORY_NAMES = {
   projectDaily: 'Running costs',
   interest: 'Debt interest',
   reward: 'Rewards',
+  hiring: 'Hiring',
+  training: 'Training',
+  store: 'Store',
+  research: 'Research',
   other: 'Other',
 };
 const LINE_H = 58;
@@ -99,9 +103,9 @@ export function createFinanceScreen({ renderer, layout, assets, campaign, router
       text(ctx, 'Money in and out', 24, 660, { size: 34, bold: true });
       text(ctx, 'This month', w - 300, 668, { size: 24, color: '#9AA8B5', align: 'right' });
       text(ctx, 'Last month', w - 24, 668, { size: 24, color: '#9AA8B5', align: 'right' });
-      const cats = ['sales', 'reward', 'salary', 'projectBuild', 'projectDaily', 'interest'];
+      const cats = ['sales', 'reward', 'salary', 'hiring', 'training', 'projectBuild', 'projectDaily', 'interest'];
       cats.forEach((c, i) => {
-        const y = 716 + i * 50;
+        const y = 712 + i * 42;
         text(ctx, CATEGORY_NAMES[c], 24, y, { size: 28 });
         for (const [val, x] of [[thisM[c] ?? 0, w - 300], [lastM[c] ?? 0, w - 24]]) {
           text(ctx, val ? `${val > 0 ? '+' : ''}${fmt(val)}` : '—', x, y, { size: 28, bold: true, align: 'right', color: val > 0 ? '#7CFFB2' : val < 0 ? '#FF8A80' : '#7F8C99' });

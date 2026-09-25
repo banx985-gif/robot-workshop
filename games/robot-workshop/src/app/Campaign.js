@@ -1,5 +1,6 @@
 // One Robot Workshop run: seeded RNG, calendar, staff, robot projects, history, money, products,
-// reputation, market, contracts, the workshop layout (facilities + expansions), research, and saving/loading.
+// reputation, market, contracts, the workshop layout (facilities + expansions), research, hiring, training,
+// and saving/loading.
 // Random numbers: the main stream drives staff, projects and sales; the market and the contracts each
 // have their own seeded stream, so contract offers never change how a robot build rolls.
 // Everything that must come back identical after a reload lives here.
@@ -19,6 +20,13 @@ import { FacilitySystem } from '../../../../core/FacilitySystem.js';
 import { rankAtLeast, valueForRank } from '../../../../core/CompanyRank.js';
 import { ResearchSystem } from '../../../../core/ResearchSystem.js';
 import { UnlockRunner } from '../../../../core/UnlockActions.js';
+import { RecruitmentSystem } from '../../../../core/RecruitmentSystem.js';
+import { TrainingSystem } from '../../../../core/TrainingSystem.js';
+import { StoreStub } from '../../../../core/StoreStub.js';
+import { StaffModel } from '../../../../core/StaffModel.js';
+import { CHANNELS, RECRUIT_RULES, STORE_ITEMS, TUTORIAL_HIRES } from '../../data/recruitment.js';
+import { COURSES, TRAINING_SLOTS, TRAINING_DURATION_EFFECTS, TRAINING_RULES } from '../../data/training.js';
+import { candidateMaker, namedCandidate, signingFee } from '../systems/Candidates.js';
 import { STAFF, ROLES, TIERS, STARTER_IDS, EMPLOYEE_CAP } from '../../data/staff.js';
 import { TRAITS } from '../../data/traits.js';
 import { STAT_KEYS } from '../../data/stats.js';
@@ -70,6 +78,8 @@ export const SAVE_MIGRATIONS = {
   5: (record) => ({ ...record, data: { ...record.data, workshop: null } }),
   // v6 (Milestone 8) had no research: null = start it fresh, with RP back-paid for robots already built (Campaign.loadData).
   6: (record) => ({ ...record, data: { ...record.data, research: null, unlocks: null } }),
+  // v7 (Milestone 9) had no hiring or training: null = a fresh candidate board, nobody training (Campaign.loadData).
+  7: (record) => ({ ...record, data: { ...record.data, recruitment: null, training: null } }),
 };
 
 // Things research unlock actions name ("part:CH02", "facility:F07"…): for these, the research part of their
@@ -106,7 +116,8 @@ export class Campaign {
       traits: TRAITS,
       rules: STAFF_RULES,
       // On a project → working (Energy drains); otherwise resting (§9.5).
-      planActivity: (s) => (s.assigned ? 'working' : 'resting'),
+      // On a project or research → working (Energy drains); in training → away (no change); otherwise resting (§9.5).
+      planActivity: (s) => (this.training?.trainingOf(s.id) ? 'training' : s.assigned ? 'working' : 'resting'),
       energyLossMultiplier: (s) => 1 + (this.focusFor(s)?.energyDrainPct ?? 0) / 100,
       restModifier: () => ({ energyMult: 1 + fx('restEnergyPct') / 100, morale: fx('restMorale') }), // Break Table, Charging Dock
     });
@@ -140,10 +151,7 @@ export class Campaign {
         bonusPerDay: () => fx('researchPerDay'),
         speedPct: () => fx('researchSpeedPct') + this.ngPlusRuns * NG_PLUS_RESEARCH.speedPctPerRun,
         costPct: () => this.ngPlusRuns * NG_PLUS_RESEARCH.costPctPerRun,
-        busyElsewhere: (id) => {
-          const job = this.assignments.jobOf(id);
-          return job ? `On ${job.name}` : null;
-        },
+        busyElsewhere: (id) => this.busyReason(id, 'research'),
         onComplete: (node, { staffId }) => staffId && this.staff.addXp(staffId, node.cost * RESEARCH_RULES.xpPerRp),
       },
     });
@@ -151,9 +159,51 @@ export class Campaign {
       staff: this.staff,
       getJobs: () => this.projects.jobs,
       bus,
-      busyElsewhere: (id) => (this.research.busyIds.includes(id) ? 'On research' : null),
-      otherBusyIds: () => this.research.busyIds,
+      busyElsewhere: (id) => this.busyReason(id, 'project'),
+      otherBusyIds: () => [...this.research.busyIds, ...this.training.busyIds],
     });
+    // Hiring (§16) and training (§17). Each has its own random stream, so neither changes robot or market rolls.
+    this.store = new StoreStub({ economy: null, items: STORE_ITEMS, bus });
+    this.recruitRng = new Rng(`${this.seed}|recruit`);
+    this.trainingRng = new Rng(`${this.seed}|training`);
+    this.recruitment = new RecruitmentSystem({
+      rng: this.recruitRng,
+      bus,
+      channels: CHANNELS,
+      boardSize: RECRUIT_RULES.boardSize,
+      reappearChance: RECRUIT_RULES.reappearChance,
+      freeManualPerYear: RECRUIT_RULES.freeManualPerYear,
+      hooks: {
+        makeCandidate: candidateMaker(() => this.takenLooks()),
+        // §16.2: Agency's small elite chance only after its condition.
+        tierWeights: (ch) => (ch.eliteNeeds && !this.ruleMet(ch.eliteNeeds) ? { ...ch.weights, elite: 0 } : ch.weights),
+      },
+    });
+    this.training = new TrainingSystem({
+      rng: this.trainingRng,
+      bus,
+      staff: this.staff,
+      statKeys: STAT_KEYS,
+      courses: COURSES,
+      slots: TRAINING_SLOTS,
+      rules: TRAINING_RULES,
+      hooks: {
+        statCap: (s) => this.staff.statCap(s),
+        primaryStat: (s) => ROLES[s.role]?.primaryStat,
+        slotCount: (slot) => Math.min(slot.max, slot.base + fx(slot.effect)),
+        conditionMet: (rule) => this.unlockMet(rule),
+        busyElsewhere: (id) => this.busyReason(id, 'training'),
+        canPay: (c) => {
+          if (!this.economy.currencies[c.currency]) return 'Not available yet';
+          return this.economy.balance(c.currency) >= c.cost ? null : `Not enough ${this.economy.currencies[c.currency].name}`;
+        },
+        pay: (c, s) => this.economy.add(c.currency, -c.cost, `Training: ${c.name} (${s.name})`, 'training'),
+        durationPct: (c, s) => fx(s.role === 'pilot' ? TRAINING_DURATION_EFFECTS.pilot : TRAINING_DURATION_EFFECTS.other),
+        now: () => ({ day: this.clock.totalDays, year: this.clock.year }),
+        onComplete: (s, c) => this.staff.addXp(s, c.days * TRAINING_RULES.xpPerDay),
+      },
+    });
+    for (const e of ['training:start', 'training:complete', 'training:cancel']) bus.on(e, () => this.assignments.refresh());
     for (const e of ['research:start', 'research:assign', 'research:stop', 'research:complete']) bus.on(e, () => this.assignments.refresh());
     bus.on('research:rp', ({ amount }) => amount > 0 && (this.flags.firstRp = true)); // opens the Research Desk (F11, §18.2)
     bus.on('unlock:fired', () => this.applyFeatures());
@@ -167,6 +217,7 @@ export class Campaign {
     this.projects.hooks = this.robots.hooks();
 
     this.economy = new EconomySystem({ bus, currencies: CURRENCIES, debt: DEBT_RULES, now: () => this.clock.totalDays });
+    this.store.economy = this.economy;
     this.reputation = new ReputationSystem({ bus, ranks: RANKS });
     this.marketRng = new Rng(`${this.seed}|market`);
     this.contractRng = new Rng(`${this.seed}|contracts`);
@@ -228,7 +279,10 @@ export class Campaign {
     }
     this.projects.dailyTick();
     this.research.dailyTick();
+    this.training.dailyTick();
     this.staff.dailyTick();
+    this.recruitment.dailyTick(this.clock.totalDays); // a special arrival's time running out
+    this._tutorialHires();
     this._pushStreaks();
     this.contracts.dailyTick(this.clock.totalDays); // deadlines
     this._displayReputation();
@@ -256,6 +310,7 @@ export class Campaign {
   _month() {
     this.products.monthlyTick(); // last month's sales land
     this.market.rollMonth(); // demand and trends for the new month
+    this.recruitment.monthStart(this.clock.month, RECRUIT_RULES.freeChannel); // §16.1 free refresh, odd months
     this.contracts.monthStart(this.contractContext(), this.clock.totalDays); // three new offers
     this.economy.monthEnd(); // debt interest + closure check on the month-end balance
     if (this.closed) return;
@@ -347,6 +402,8 @@ export class Campaign {
         return this.research.isDone(researchNodeId(rule.branch, rule.level));
       case 'researchCount':
         return this.research.doneCount >= rule.min;
+      case 'feature':
+        return this.feature(rule.id);
       case 'all':
         return rule.of.every((r) => this.ruleMet(r, subject));
       default:
@@ -506,6 +563,150 @@ export class Campaign {
     this.flags.debugUnlockAll = !!on;
   }
 
+  // --- people: who is busy where (a worker does one thing at a time: project, research or training) ---
+  busyReason(id, except = null) {
+    if (except !== 'project') {
+      const job = this.assignments.jobOf(id);
+      if (job) return `On ${job.name}`;
+    }
+    if (except !== 'research' && this.research.busyIds.includes(id)) return 'On research';
+    if (except !== 'training' && this.training.trainingOf(id)) return 'In training';
+    return null;
+  }
+
+  // Names and portraits in use (roster + board), so new candidates don't look like someone already here.
+  takenLooks() {
+    const people = [...this.staff.staff, ...this.recruitment.cards];
+    return { names: new Set(people.map((p) => p.name)), art: new Set(people.map((p) => p.art)) };
+  }
+
+  // --- recruitment (§16, §15.7, §39.1) ---
+  channelOpen(id) {
+    const ch = this.recruitment.channel(id);
+    return !!ch && this.unlockMet(ch.unlock);
+  }
+
+  // kind: 'free' (the yearly free tap), 'paid' (cash, through a channel), 'techChips' (store, ordinary only).
+  refreshBlock(kind, channelId = RECRUIT_RULES.freeChannel) {
+    if (kind === 'free') return this.recruitment.freeManualLeft(this.clock.year) ? null : 'Free refresh used this year';
+    if (kind === 'techChips') return this.store.block(RECRUIT_RULES.techChipItem);
+    const ch = this.recruitment.channel(channelId);
+    if (!ch) return 'Unknown channel';
+    if (!this.channelOpen(channelId)) return `Needs ${describeUnlock(ch.unlock)}`;
+    if (ch.debtBlock && this.economy.isBlocked(ch.debtBlock)) return 'Not while in debt';
+    if (this.economy.balance('credits') < ch.cost) return 'Not enough credits';
+    return null;
+  }
+
+  refreshBoard(kind, channelId = RECRUIT_RULES.freeChannel) {
+    const block = this.refreshBlock(kind, channelId);
+    if (block) return { ok: false, reason: block };
+    if (kind === 'free') {
+      this.recruitment.useFreeManual(this.clock.year);
+      this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'free');
+    } else if (kind === 'techChips') {
+      const r = this.store.purchase(RECRUIT_RULES.techChipItem, 'Tech Chip candidate refresh');
+      if (!r.ok) return r;
+      this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'techChips'); // §16.4: ordinary pool only
+    } else {
+      const ch = this.recruitment.channel(channelId);
+      this.economy.add('credits', -ch.cost, `Recruitment: ${ch.name}`, 'hiring');
+      this.recruitment.refresh(channelId, 'paid');
+    }
+    return { ok: true, reason: null };
+  }
+
+  feeFor(candidateId) {
+    const c = this.recruitment.get(candidateId);
+    return c ? signingFee(c) : 0;
+  }
+
+  // Why this candidate can't be hired now, or null. The tutorial hire is always affordable (§26).
+  hireBlock(candidateId) {
+    const c = this.recruitment.get(candidateId);
+    if (!c) return 'No longer available';
+    if (this.staff.staff.length >= this.employeeCap) return `Staff cap ${this.employeeCap} reached (Rank ${RANKS[this.reputation.highestRankIndex].id})`;
+    if (this.staff.get(c.staffId ?? c.personId)) return 'Already on the team';
+    if (!c.guaranteed && this.economy.balance('credits') < signingFee(c)) return 'Not enough credits';
+    return null;
+  }
+
+  hire(candidateId) {
+    const block = this.hireBlock(candidateId);
+    if (block) return { ok: false, reason: block };
+    const c = this.recruitment.get(candidateId);
+    const fee = signingFee(c);
+    const short = fee - Math.max(0, this.economy.balance('credits')); // covers the fee, not any debt
+    if (c.guaranteed && short > 0) this.economy.add('credits', short, `Help to hire ${c.name}`, 'reward');
+    this.recruitment.take(candidateId);
+    const s = this.staff.add(
+      new StaffModel({
+        id: c.staffId ?? c.personId,
+        name: c.name,
+        role: c.role,
+        tier: c.tier,
+        level: c.level,
+        stats: c.stats,
+        traits: c.traits,
+        salary: c.salary,
+        art: c.art,
+        energy: STAFF_RULES.startEnergy,
+        morale: STAFF_RULES.startMorale,
+      }),
+    );
+    if (fee) this.economy.add('credits', -fee, `Signing fee: ${c.name}`, 'hiring');
+    this.assignments.refresh();
+    this.bus.emit('staff:hired', { staff: s, fee });
+    return { ok: true, staff: s, fee };
+  }
+
+  fireBlock(id) {
+    if (!this.staff.get(id)) return 'Unknown worker';
+    if (this.staff.staff.length <= 1) return 'You need at least one worker';
+    return null;
+  }
+
+  // §39.1: they leave the roster (no refund, no severance) and may reappear on a later board.
+  fire(id) {
+    const block = this.fireBlock(id);
+    if (block) return { ok: false, reason: block };
+    const job = this.assignments.jobOf(id);
+    if (job) this.assignments.unassign(job, id);
+    const q = this.research.queueOfWorker(id);
+    if (q >= 0) this.research.assign(q, null);
+    this.training.cancel(id);
+    const s = this.staff.remove(id);
+    const named = STAFF.some((d) => d.id === s.id);
+    this.recruitment.release({ personId: s.id, staffId: named ? s.id : undefined, name: s.name, role: s.role, tier: s.tier, level: s.level, stats: { ...s.stats }, salary: s.salary, traits: [...s.traits], art: s.art });
+    this.assignments.refresh();
+    this.bus.emit('staff:fired', { staff: s });
+    return { ok: true, staff: s };
+  }
+
+  // §26 tutorial hires. Tessa: Month 1 (and straight away in runs started before hiring existed).
+  _tutorialHires() {
+    const t = TUTORIAL_HIRES.tessa;
+    if (this.flags.tessaOffered || this.clock.totalDays < t.day - 1) return;
+    this.flags.tessaOffered = true;
+    if (this.staff.get(t.staffId)) return;
+    this.recruitment.addSpecial({ ...namedCandidate(t.staffId), guaranteed: t.guaranteed }, { day: this.clock.totalDays, days: RECRUIT_RULES.specialDays, note: t.note });
+  }
+
+  // §15.6: Kai West arrives, cheap, when the Local Trial unlocks (competitions will call this; debug can too).
+  localTrialUnlocked() {
+    const k = TUTORIAL_HIRES.kai;
+    if (this.flags.kaiOffered) return false;
+    this.flags.kaiOffered = true;
+    if (this.staff.get(k.staffId)) return false;
+    this.recruitment.addSpecial({ ...namedCandidate(k.staffId), feeMult: k.feeMult }, { day: this.clock.totalDays, days: RECRUIT_RULES.specialDays, note: k.note });
+    return true;
+  }
+
+  // --- training (§17, §39.2) ---
+  startTraining(courseId, staffId) {
+    return this.training.start(courseId, staffId);
+  }
+
   // --- contracts ---
   contractContext() {
     return {
@@ -612,6 +813,8 @@ export class Campaign {
     this.rng.setSeed(seed);
     this.marketRng.setSeed(`${seed}|market`);
     this.contractRng.setSeed(`${seed}|contracts`);
+    this.recruitRng.setSeed(`${seed}|recruit`);
+    this.trainingRng.setSeed(`${seed}|training`);
     this.flags = {};
     this.guideState = undefined; // a brand-new run: the guide starts from step 1
     this.reputation.load({ value: 0, highestRankIndex: 0 });
@@ -630,6 +833,9 @@ export class Campaign {
     this.contracts.reset();
     this.unlocks.reset();
     this.research.reset();
+    this.training.reset();
+    this.recruitment.reset();
+    this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'start');
     this.applyFeatures();
     this.contracts.monthStart(this.contractContext(), 0);
     this.paySalaries(); // day 1 of month 1
@@ -654,6 +860,8 @@ export class Campaign {
       workshop: this.facilities.serialize(),
       research: this.research.serialize(),
       unlocks: this.unlocks.serialize(),
+      recruitment: this.recruitment.serialize(),
+      training: this.training.serialize(),
       guide: this.guideState ?? null,
       flags: { ...this.flags },
     };
@@ -666,6 +874,8 @@ export class Campaign {
     this.rng.setState(data.rngState);
     this.marketRng.setSeed(`${data.seed}|market`);
     this.contractRng.setSeed(`${data.seed}|contracts`);
+    this.recruitRng.setSeed(`${data.seed}|recruit`);
+    this.trainingRng.setSeed(`${data.seed}|training`);
     // Flags and reputation first: the clock checks them when it restores a saved speed (2×/4× locks).
     this.flags = { ...(data.flags ?? {}) };
     this.reputation.load(data.reputation);
@@ -682,6 +892,8 @@ export class Campaign {
     this.unlocks.load(data.unlocks);
     this.research.load(data.research);
     if (!data.research) for (const rec of this.history.records) this.projectRp(rec); // saves from before Milestone 9
+    if (!this.recruitment.load(data.recruitment)) this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'start'); // saves from before Milestone 10
+    this.training.load(data.training);
     this.applyFeatures();
     this.guideState = data.guide ?? null;
     this.assignments.refresh();

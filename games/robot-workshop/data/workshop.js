@@ -16,6 +16,9 @@ export const LAYOUT = {
     { col: 1, row: 6 },
     { col: 7, row: 6 },
     { col: 2, row: 8 },
+    { col: 5, row: 0 }, // Milestone 10: more people can be hired (cap 6 at Rank E, 8 at Rank D)
+    { col: 0, row: 9 },
+    { col: 7, row: 9 },
   ],
 };
 

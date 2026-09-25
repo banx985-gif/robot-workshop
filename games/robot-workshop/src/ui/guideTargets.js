@@ -60,6 +60,17 @@ export function createGuideTargets({ router, campaign }) {
     researchButton: () => (on('workshop') && !cur().card.isOpen ? cur().researchButtonRect() : null),
     researchPick: () => (on('research') ? cur().pickTargetRect('MO-R1') : null), // the guide suggests Mobility 1 (opens Delivery)
     researchStart: () => (on('research') ? cur().startButtonRect() : null),
+    // Hiring and training (Milestone 10)
+    rosterButton: () => (on('workshop') && !cur().card.isOpen ? topBtn('roster') : null),
+    hireButton: () => (on('roster') ? cur().headerButton(0) : null),
+    tessaHire: () => {
+      if (!on('recruit')) return null;
+      const c = campaign.recruitment.cards.find((x) => x.staffId === 'DES01');
+      return c ? cur().hireRectOf(c.id) : null;
+    },
+    trainingButton: () => (on('roster') ? cur().headerButton(1) : null),
+    coursePick: () => (on('training') ? cur().pickTargetRect('codeCamp') : null),
+    trainingStart: () => (on('training') ? cur().startButtonRect() : null),
   };
 
   return (name) => {

@@ -1,4 +1,4 @@
-// First-time guide steps (Milestone 7b; building and expansions added in Milestone 8; research in Milestone 9; the full tutorial, bible §26, comes in Milestone 26 and builds on this).
+// First-time guide steps (Milestone 7b; building and expansions added in Milestone 8; research in Milestone 9; hiring and training in Milestone 10; the full tutorial, bible §26, comes in Milestone 26 and builds on this).
 // Plain data for core/GuideSystem.js. Short, friendly words — no walls of text.
 // target names are resolved to screen spots by src/ui/guideTargets.js.
 // trigger: after = previous step done; event = has happened at least once; screen = only shows there.
@@ -92,6 +92,39 @@ export const GUIDE_STEPS = [
     trigger: { after: 'S7', event: 'robot:fault' },
     advance: { next: true },
     block: true,
+  },
+  // Hiring (Milestone 10, bible §26 "Day 8–12"): Tessa Vale arrives in Month 1.
+  {
+    id: 'H1',
+    title: 'Someone wants to join!',
+    text: 'Tessa Vale, a designer, would like a job. Designers speed up the Concept stage. Tap Roster.',
+    art: 'staff_designer_01',
+    target: 'rosterButton',
+    trigger: { after: 'S7', event: 'recruit:arrival', screen: ['workshop'] },
+    advance: { tap: true },
+    block: true,
+    skipIf: 'staff:hired', // already hired someone on their own
+  },
+  {
+    id: 'H2',
+    title: 'Hiring',
+    text: 'Tap Hire to see who wants to join.',
+    target: 'hireButton',
+    trigger: { after: 'H1', screen: ['roster'] },
+    advance: { tap: true },
+    block: true,
+    skipIf: 'staff:hired',
+  },
+  {
+    id: 'H3',
+    title: "Tessa's card",
+    text: 'She costs a one-off signing fee, then a monthly salary. Short of money? We cover the fee this time. Tap Hire.',
+    target: 'tessaHire',
+    trigger: { after: 'H2', screen: ['recruit'] },
+    advance: { event: 'staff:hired' },
+    block: true,
+    restartAt: 'H2',
+    skipIf: 'staff:hired',
   },
   {
     id: 'S10',
@@ -270,6 +303,48 @@ export const GUIDE_STEPS = [
     trigger: { after: 'S25', event: 'research:complete', screen: ['workshop'] },
     advance: { next: true },
     block: true,
+  },
+  // Training (Milestone 10): the first course.
+  {
+    id: 'T1',
+    title: 'Training',
+    text: 'Training makes a worker better at their job. Tap Roster.',
+    target: 'rosterButton',
+    trigger: { after: 'S13', screen: ['workshop'] },
+    advance: { tap: true },
+    block: true,
+    skipIf: 'training:start',
+  },
+  {
+    id: 'T2',
+    title: 'Training',
+    text: 'Tap Training.',
+    target: 'trainingButton',
+    trigger: { after: 'T1', screen: ['roster'] },
+    advance: { tap: true },
+    block: true,
+    skipIf: 'training:start',
+  },
+  {
+    id: 'T3',
+    title: 'Pick a course',
+    text: 'Each course costs credits and takes a few weeks. Tap Train… on one.',
+    target: 'coursePick',
+    trigger: { after: 'T2', screen: ['training'] },
+    advance: { event: 'training:picker' },
+    block: true,
+    skipIf: 'training:start',
+  },
+  {
+    id: 'T4',
+    title: 'Who trains?',
+    text: "Each worker's gain is shown — it never goes past their tier's cap. They're off the robot team until it's done. Tap Start.",
+    target: 'trainingStart',
+    trigger: { after: 'T3', screen: ['training'] },
+    advance: { event: 'training:start' },
+    block: false,
+    restartAt: 'T3',
+    skipIf: 'training:start',
   },
 ];
 

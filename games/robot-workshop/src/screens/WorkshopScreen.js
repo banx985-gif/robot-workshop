@@ -56,7 +56,8 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     hud,
     nav: [
       { id: 'project', label: 'Project', onTap: goProject, badge: () => (campaign.activeProject ? null : '!') },
-      { id: 'roster', label: 'Roster', onTap: () => router.go('roster') },
+      // "!" while a special candidate (e.g. the tutorial hire) is waiting and can be hired.
+      { id: 'roster', label: 'Roster', onTap: () => router.go('roster'), badge: () => (campaign.recruitment.special && !campaign.hireBlock(campaign.recruitment.special.id) ? '!' : null) },
     ],
   });
 
@@ -122,6 +123,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
 
   function phaseIdOf(a) {
     if (campaign.research.queueOfWorker(a.staffId) >= 0) return 'research'; // STATIONS.research: the Research Desk
+    if (campaign.training.trainingOf(a.staffId)) return 'training'; // no training station yet: they practise at the bench
     const job = campaign.assignments.jobOf(a.staffId);
     return job ? PHASES[job.phaseIndex]?.id : null;
   }
@@ -190,7 +192,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
   });
 
   let agents = []; // one per staff member, rebuilt when a campaign loads
-  bus.on('campaign:ready', () => buildAgents());
+  for (const e of ['campaign:ready', 'staff:hired', 'staff:fired']) bus.on(e, () => buildAgents());
   bus.on('facility:layout', () => onLayout());
 
   function buildAgents() {
@@ -343,6 +345,8 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     const q = campaign.research.queueOfWorker(a.staffId);
     const node = q >= 0 ? campaign.research.node(campaign.research.queues[q].nodeId) : null;
     if (node && a.task === 'working') return `Researching ${node.name}`;
+    const tr = campaign.training.trainingOf(a.staffId);
+    if (tr) return `Training: ${campaign.training.course(tr.courseId).name}`;
     if (a.task === 'working' && a.station) return `Working at the ${defOf(a.station).name}`;
     if (a.task === 'toStation' && a.station) return `Walking to the ${defOf(a.station).name}`;
     if (a.task === 'waiting' && a.station) return `Waiting for the ${defOf(a.station).name}`;
@@ -960,6 +964,15 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     vfx.text('world', `${node.name} done!`, p.x, p.y - 140, { color: FLOAT_COLORS.research, size: 34, life: 2.2 });
   });
 
+  // Training finished: the level-up sparkle and the gains over the worker's head.
+  function celebrateTraining(staff, txt) {
+    const a = screen.agentFor(staff.id);
+    if (!a) return;
+    const f = agentFeet(a, { x: 0, y: 0 });
+    vfx.sprite('world', VFX_ART.levelUp, f.x, f.y - a.height * 0.5, { size: 130, life: 1.2, hold: 0.2 });
+    vfx.text('world', txt, f.x, f.y - a.height - 14, { color: FLOAT_COLORS.info, size: 30, life: 2.2, rise: 50 });
+  }
+
   bus.on('staff:levelup', ({ staff, level }) => {
     const a = screen.agentFor(staff.id);
     if (!a) return;
@@ -1056,6 +1069,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     },
     buildButtonRect,
     researchButtonRect,
+    celebrateTraining,
     stripRect,
 
     // Build screen hooks.

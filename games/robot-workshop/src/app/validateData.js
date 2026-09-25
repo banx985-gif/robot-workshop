@@ -17,6 +17,10 @@ import { SEGMENTS, PURPOSE_SEGMENTS, MARKET_RULES } from '../../data/segments.js
 import { CONTRACT_RULES, SIGNATURE_CONTRACTS } from '../../data/contracts.js';
 import { PRODUCT_SLOT_STEPS } from '../../data/market.js';
 import { CALENDAR } from '../../data/balance.js';
+import { CHANNELS, RECRUIT_RULES, STORE_ITEMS, SIGNING_FEE, TUTORIAL_HIRES, TIER_TEMPLATES, PORTRAITS, PORTRAIT_FOLDER, RECRUIT_ART } from '../../data/recruitment.js';
+import { COURSES, TRAINING_SLOTS } from '../../data/training.js';
+import { RECRUITABLE_TIERS } from '../../data/staff.js';
+import { CURRENCIES } from '../../data/economy.js';
 import { RESEARCH_NODES, RESEARCH_BRANCH_ORDER, RESEARCH_BRANCH_INFO, RESEARCH_MILESTONES, RESEARCH_QUEUES, FEATURES, RP_SOURCES, researchNodeId } from '../../data/research.js';
 
 const SLOT_COUNTS = { chassis: 10, mobility: 8, ai: 8, tool: 8, power: 8, special: 8 }; // §11
@@ -46,6 +50,9 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
         break;
       case 'role':
         v.ref(owner, 'role', rule.role, new Set(Object.keys(ROLES)));
+        break;
+      case 'feature':
+        v.check(rule.id in FEATURES, `${owner}: unknown feature "${rule.id}"`);
         break;
       case 'researchCount':
         v.check(Number.isInteger(rule.min) && rule.min >= 1 && rule.min <= 36, `${owner}: research count ${rule.min} out of range`);
@@ -299,6 +306,59 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   v.check(RESEARCH_QUEUES.length === 2, 'research: expected two queues (the second off until Server Rack + Rank A)');
   RESEARCH_QUEUES.forEach((q) => checkUnlock(`research queue ${q.id}`, q.rule));
   for (const [t, rp] of Object.entries(RP_SOURCES.contract)) v.check(rp >= 10 && rp <= 80, `RP sources: contract ${t} gives ${rp} (bible: 10–80)`);
+
+  // --- recruitment (§16, §15.7): five channels, legal tiers only, fees by tier ---
+  const BIBLE_CHANNELS = { localAd: [300, null], workshopNetwork: [900, 'D'], agency: [2000, 'C'], headHunt: [4500, 'B'], globalSearch: [8000, 'A'] };
+  v.uniqueIds('channels', CHANNELS);
+  v.check(CHANNELS.map((c) => c.id).join() === Object.keys(BIBLE_CHANNELS).join(), 'channels: expected the five §16.2 channels in order');
+  const roleSet = new Set(Object.keys(ROLES));
+  for (const ch of CHANNELS) {
+    const o = `channel ${ch.id}`;
+    const [cost, rank] = BIBLE_CHANNELS[ch.id] ?? [];
+    v.check(ch.cost === cost, `${o}: cost ${ch.cost} differs from bible §16.2 (${cost})`);
+    checkUnlock(o, ch.unlock);
+    const ranks = (ch.unlock.type === 'all' ? ch.unlock.of : [ch.unlock]).filter((r) => r.type === 'rank').map((r) => r.rank);
+    v.check(rank ? ranks.includes(rank) : ch.unlock.type === 'start', `${o}: should unlock at ${rank ? 'Rank ' + rank : 'the start'}`);
+    v.check(ch.roles.length > 0 && ch.roles.every((r) => roleSet.has(r)), `${o}: bad roles`);
+    for (const [t, w] of Object.entries(ch.weights)) {
+      v.check(RECRUITABLE_TIERS.includes(t), `${o}: tier "${t}" can never be recruited (legendary/secret only arrive by event)`);
+      v.check(w >= 0, `${o}: negative weight`);
+    }
+    v.check(Object.values(ch.weights).reduce((a, b) => a + b, 0) === 100, `${o}: weights should add to 100`);
+    if (ch.eliteNeeds) checkUnlock(o, ch.eliteNeeds);
+  }
+  v.check(!CHANNELS[0].roles.includes('pilot') && CHANNELS[1].roles.includes('pilot'), 'channels: Local Ad has no pilots, Workshop Network does (§16.2)');
+  v.check(!CHANNELS[0].weights.elite && !CHANNELS[1].weights.elite, 'channels: Local Ad and Workshop Network never roll Elite');
+  v.ref('recruit rules', 'channel', RECRUIT_RULES.freeChannel, new Set(CHANNELS.map((c) => c.id)));
+  v.check(RECRUIT_RULES.techChipItem in STORE_ITEMS && STORE_ITEMS[RECRUIT_RULES.techChipItem].cost === 3 && STORE_ITEMS[RECRUIT_RULES.techChipItem].currency === 'techChips', 'store: Tech Chip refresh must cost 3 Tech Chips (§16.4)');
+  v.check(RECRUIT_RULES.boardSize === 3 && RECRUIT_RULES.specialDays === 56, 'recruitment: 3 cards, special arrivals stay 56 days (§16.1, §15.7)');
+  v.check(JSON.stringify(SIGNING_FEE) === JSON.stringify({ standard: 1.5, rare: 2.0, elite: 3.0, legendary: 4.0, secret: 5.0 }), 'signing fees differ from §15.7');
+  for (const t of RECRUITABLE_TIERS) {
+    const tt = TIER_TEMPLATES[t];
+    if (!v.check(!!tt && !!PORTRAITS[t], `candidate templates: no template/portraits for ${t}`)) continue;
+    v.check(tt.primary[1] <= TIERS[t].statCap, `candidate templates: ${t} main stat can exceed the ${TIERS[t].statCap} cap`);
+    for (const n of PORTRAITS[t]) v.check(!['01', '09', '10'].includes(n), `candidate portraits: ${n} is reserved (starters/tutorial, legendary, secret)`);
+    for (const f of Object.values(PORTRAIT_FOLDER)) v.art(`candidate portrait ${t}`, `assets/images/staff/staff_${f}_${PORTRAITS[t][0]}.png`);
+  }
+  for (const [k, h] of Object.entries(TUTORIAL_HIRES)) v.check(STAFF.some((s) => s.id === h.staffId), `tutorial hire ${k}: unknown staff ${h.staffId}`);
+  v.check(STAFF.find((s) => s.id === 'DES01')?.name === 'Tessa Vale' && STAFF.find((s) => s.id === 'PIL01')?.name === 'Kai West', 'tutorial hires: DES01 Tessa Vale and PIL01 Kai West');
+  for (const k of Object.values(RECRUIT_ART.tierBadges)) v.art('tier badge', `assets/images/badges/${k}.png`);
+
+  // --- training (§17, §39.2) ---
+  const BIBLE_COURSES = { engWorkshop: [900, 14], designSprint: [900, 14], codeCamp: [900, 14], fabDrill: [900, 14], simSession: [900, 14], crossTraining: [1400, 21], conference: [2200, 14], certification: [4000, 28], prestigeSeminar: [1, 28] };
+  v.uniqueIds('courses', COURSES);
+  v.check(COURSES.map((c) => c.id).join() === Object.keys(BIBLE_COURSES).join(), 'training: expected the nine §17 courses in order');
+  for (const c of COURSES) {
+    const o = `course ${c.id}`;
+    v.check(c.cost === BIBLE_COURSES[c.id]?.[0] && c.days === BIBLE_COURSES[c.id]?.[1], `${o}: cost/days differ from bible §17`);
+    v.check(c.currency in CURRENCIES || c.currency === 'prestigeTokens', `${o}: unknown currency ${c.currency}`);
+    v.check(['stat', 'primary', 'lowest', 'all'].includes(c.effect.kind) && c.effect.min > 0 && c.effect.max >= c.effect.min, `${o}: bad effect`);
+    if (c.effect.kind === 'stat') v.check(STAT_KEYS.includes(c.effect.stat), `${o}: unknown stat`);
+    if (c.requires) checkUnlock(o, c.requires);
+  }
+  v.check(COURSES.at(-1).requires?.type === 'all', 'training: Prestige Seminar must stay locked (NG+ and Rank S)');
+  v.check(TRAINING_SLOTS.find((s) => s.id === 'general')?.base === 1, 'training: one general slot to start (§39.2)');
+  v.check(TRAINING_SLOTS.every((s) => s.max >= s.base && (!s.roles || s.roles.every((r) => roleSet.has(r)))), 'training: bad slot data');
 
   // --- every image the game loads ---
   for (const [key, path] of Object.entries(manifest)) v.art(`image "${key}"`, path, { placeholder: placeholders.includes(key) });
