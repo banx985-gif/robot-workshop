@@ -61,9 +61,10 @@ export function referenceBuild({ purposeId, openParts, minCx = 0, maxCx = Infini
 
 // Predict a finished robot for this build with the whole current team working on it, with today's facilities.
 // commercial: a commercial model gets commercial-only facility bonuses (contract builds do not).
-export function predictBuild(campaign, purposeId, components, { commercial = false } = {}) {
+// teamIds: only these workers (the builder's chosen team). No combos here: see predictSynergies.
+export function predictBuild(campaign, purposeId, components, { commercial = false, teamIds = null } = {}) {
   const rb = campaign.robots;
-  const team = campaign.staff.staff;
+  const team = teamIds ? teamIds.map((id) => campaign.staff.get(id)).filter(Boolean) : campaign.staff.staff;
   const fake = { slots: team.map((s) => s.id), data: { components } };
   const base = rb.baseStats(components);
   const gains = Object.fromEntries(ROBOT_STAT_KEYS.map((k) => [k, 0]));
@@ -91,11 +92,22 @@ export function predictBuild(campaign, purposeId, components, { commercial = fal
     components,
     stats,
     quality: Math.round(quality * 10) / 10,
+    innovation: Math.round(innovation * 10) / 10,
+    qualityBonus: bonus,
     fit: Math.round(fit * rb.purposeMatch(purposeId, stats)),
     totalCx: rb.totalComplexity(components),
     tier: tier.id,
     days,
   };
+}
+
+// Which combos this build should fire, and which are one condition away (the builder's combo panel).
+// Same combo step as a finished robot, on the predicted numbers (no faults).
+export function predictSynergies(campaign, purposeId, components, teamIds) {
+  const team = teamIds.map((id) => campaign.staff.get(id)).filter(Boolean);
+  const pred = predictBuild(campaign, purposeId, components, { commercial: true, teamIds });
+  const rb = campaign.robots;
+  return rb.synergiesFor({ purposeId, components, stats: pred.stats, innovation: pred.innovation, team }, (st, inn) => rb.qualityFrom(purposeId, st, inn, pred.qualityBonus, 0));
 }
 
 // Both steps together; null if no build can meet the floor / required part.

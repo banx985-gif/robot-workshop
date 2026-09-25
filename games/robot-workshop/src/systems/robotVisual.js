@@ -1,6 +1,5 @@
 // Which of the 20 robot pictures a finished robot uses (bible §13).
-// Synergies arrive in Milestone 14, so today activeSynergies is always empty and the answer is the
-// purpose's base family — but the priority order is already here:
+// activeSynergies: the combos that fired on the robot (Milestone 14). The highest priority advanced look wins:
 //   Unknown > Lunar > Neural > Titanium > purpose-specific advanced > base purpose.
 // Always returns exactly one family from VISUAL_FAMILIES (never null).
 import { VISUAL_FAMILIES, VISUALS, FALLBACK_VISUAL } from '../../data/visuals.js';

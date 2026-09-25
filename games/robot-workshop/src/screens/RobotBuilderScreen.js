@@ -4,6 +4,8 @@
 // For a contract (params.contractId): purpose is fixed, the suggested parts are loaded, and the
 // requirements are shown with a live ✓/✗ against what this team is expected to build.
 // The calendar pauses while this screen is open (bible §4.2: decision menus pause).
+// Combos (Milestone 14): a panel under the parts shows the combos this build should fire and, for combos one
+// condition away, a hint — the exact missing thing once it has been discovered, else its vague clue.
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { PURPOSES } from '../../data/purposes.js';
@@ -12,13 +14,17 @@ import { PHASES, BUDGET_FOCUS, BUDGET_ORDER } from '../../data/phases.js';
 import { ROBOT_STATS } from '../../data/stats.js';
 import { ROLES } from '../../data/staff.js';
 import { PROJECT_RULES } from '../../data/balance.js';
-import { predictBuild } from '../systems/Capability.js';
+import { predictBuild, predictSynergies } from '../systems/Capability.js';
+import { hintFor, rewardText } from '../systems/Synergies.js';
+import { SYNERGIES_BY_ID, SYNERGY_ART } from '../../data/synergies.js';
 import { checkRecord, requirementLines } from '../systems/ContractRules.js';
-import { panel, text, contained, hit, fmt, staffRow } from '../ui/widgets.js';
+import { panel, text, contained, hit, fmt, staffRow, wrapText } from '../ui/widgets.js';
 
 const HEADER_H = 130;
 const FOOTER_H = 150;
 const CONTRACT_H = 250;
+const COMBO_ROW = 38;
+const MAX_HINTS = 3;
 
 export function createRobotBuilderScreen({ renderer, layout, assets, campaign, router, debugEnabled = false }) {
   const W = renderer.width;
@@ -55,11 +61,44 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
     const purpose = TOP();
     const parts = purpose + 340;
     const inspect = parts + 2 * TILE_H + 16 + 20;
-    const budget = inspect + 190;
+    const combo = inspect + 190;
+    const budget = combo + comboHeight() + 24;
     const team = budget + 230;
     const summary = team + 60 + Math.max(3, campaign.staff.staff.length) * (ROW_H + 14) + 20;
-    return { purpose, parts, inspect, budget, team, summary, end: summary + 320 };
+    return { purpose, parts, inspect, combo, budget, team, summary, end: summary + 320 };
   };
+  const comboRect = () => ({ x: 0, y: Y().combo, w: cw(), h: comboHeight() });
+  const archiveRect = () => ({ x: cw() - 250, y: Y().combo + 14, w: 234, h: 62 });
+
+  // --- combos: worked out again only when the build or team changes ---
+  let comboKey = null;
+  let comboLines = [];
+  function combos() {
+    const key = JSON.stringify([state.purposeId, state.components, state.teamIds]);
+    if (key === comboKey) return comboLines;
+    comboKey = key;
+    const archive = campaign.synergyArchive;
+    const res = predictSynergies(campaign, state.purposeId, state.components, state.teamIds);
+    const lines = [];
+    for (const id of res.active) {
+      const rule = SYNERGIES_BY_ID[id];
+      if (archive.known(id)) lines.push({ kind: 'fire', rows: 1, text: `✓ ${rule.name} — ${rewardText(rule, res.bonusPct)}` });
+      else lines.push({ kind: 'new', rows: 1, text: '✓ A combo you have not discovered yet should fire!' });
+    }
+    const hints = res.near.map((n) => ({ n, h: hintFor(n, archive.known(n.rule.id)) })).filter((x) => x.h);
+    for (const { n, h } of hints.slice(0, MAX_HINTS)) {
+      lines.push(h.exact ? { kind: 'exact', rows: 1, text: `→ ${h.text}` } : { kind: 'vague', rows: 2, text: `Hint: ${h.text}` });
+      if (!h.exact) campaign.noteSynergyClue(n.rule.id); // the Combo Archive keeps it as a clue
+    }
+    if (hints.length > MAX_HINTS) lines.push({ kind: 'more', rows: 1, text: `+${hints.length - MAX_HINTS} more hint${hints.length - MAX_HINTS > 1 ? 's' : ''}` });
+    if (!lines.length) lines.push({ kind: 'none', rows: 2, text: 'No combo with these parts. Some part mixes work better together — change a part and look for a hint here.' });
+    if (hints.length) campaign.bus.emit('synergy:hint', { count: hints.length }); // the guide's first-combo-hint step
+    comboLines = lines;
+    return lines;
+  }
+  function comboHeight() {
+    return 96 + combos().reduce((t, l) => t + l.rows * COMBO_ROW, 0) + 12;
+  }
   const purposeRect = () => ({ x: 0, y: Y().purpose, w: cw(), h: 250 });
   const catalogueRect = () => ({ x: cw() - 230, y: Y().parts - 76, w: 230, h: 66 });
   function tileRect(i) {
@@ -127,6 +166,8 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
     startRect,
     purposeRect,
     catalogueRect,
+    comboRect,
+    archiveRect,
     debugRect,
     estimateDaysPerPhase,
 
@@ -144,6 +185,7 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       state.teamIds = campaign.staff.staff.filter((s) => !onResearch(s.id)).map((s) => s.id).slice(0, PROJECT_RULES.teamSlots);
       state.inspect = null;
       scroll.scrollY = 0;
+      comboKey = null; // staff, research and the archive may have changed
     },
 
     exit() {
@@ -167,6 +209,10 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       const c = scroll.toContent(p);
       if (hit(c, catalogueRect())) {
         router.go('components', { back: 'builder', backParams: { keep: true } });
+        return;
+      }
+      if (hit(c, archiveRect())) {
+        router.go('combos', { back: 'builder', backParams: { keep: true } });
         return;
       }
       // Purpose: step through the open ones (fixed for a contract).
@@ -266,6 +312,8 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
         text(ctx, stats, 24, y.inspect + 112, { size: 32, bold: true, color: '#7CFFB2', maxWidth: w - 48 });
       }
 
+      drawCombos(ctx, w, y.combo);
+
       // Budget focus
       text(ctx, 'Budget focus', 4, y.budget, { size: 30, bold: true });
       BUDGET_ORDER.forEach((id, i) => drawButton(ctx, focusRect(i), BUDGET_FOCUS[id].name, { active: state.focus === id, font: 'bold 32px system-ui, sans-serif' }));
@@ -314,6 +362,22 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       drawButton(ctx, startRect(), state.contractId ? 'Start contract build' : 'Start project', { active: can, disabled: !can, accent: '#7CFFB2', font: 'bold 44px system-ui, sans-serif' });
     },
   };
+
+  // Combo panel: what this build should fire, then hints.
+  function drawCombos(ctx, w, y0) {
+    const lines = combos();
+    const active = lines.some((l) => l.kind === 'fire' || l.kind === 'new');
+    panel(ctx, comboRect(), { stroke: active ? '#FFD166' : lines.some((l) => l.kind === 'vague' || l.kind === 'exact') ? '#4FC3F7' : '#35414F' });
+    contained(ctx, assets, SYNERGY_ART.icon, { x: 16, y: y0 + 12, w: 64, h: 64 });
+    text(ctx, 'Combos', 92, y0 + 26, { size: 34, bold: true });
+    drawButton(ctx, archiveRect(), 'Combo Archive', { font: 'bold 26px system-ui, sans-serif' });
+    const color = { fire: '#FFD166', new: '#FFD166', exact: '#7CFFB2', vague: '#9FD8F5', more: '#9AA8B5', none: '#9AA8B5' };
+    let ly = y0 + 96;
+    for (const l of lines) {
+      wrapText(ctx, l.text, 24, ly, w - 48, { size: 26, lineH: COMBO_ROW, maxLines: l.rows, bold: l.kind === 'fire' || l.kind === 'new' || l.kind === 'exact', color: color[l.kind] });
+      ly += l.rows * COMBO_ROW;
+    }
+  }
 
   // Contract panel: requirements and a live estimate for the parts picked now.
   function drawContract(ctx, w) {

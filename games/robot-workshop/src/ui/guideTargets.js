@@ -82,6 +82,8 @@ export function createGuideTargets({ router, campaign }) {
     compBalanced: () => (on('compSetup') ? cur().strategyRect(1) : null),
     compEnterButton: () => (on('compSetup') ? cur().enterRect() : null),
     compResultDone: () => (on('compResult') ? cur().doneRect() : null),
+    // Combos (Milestone 14)
+    comboPanel: () => (on('builder') ? inPanel(cur(), cur().comboRect()) : null),
   };
 
   return (name) => {

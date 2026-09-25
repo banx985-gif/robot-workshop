@@ -64,4 +64,5 @@ export const FLAG_NAMES = {
   firstContractDone: 'First contract completed',
   firstRp: 'First Research Points earned',
   ngPlus: 'New Game+',
+  lunarInvite: 'The Lunar invite (Orbital Research contract)',
 };

@@ -43,6 +43,9 @@ import { createCompetitionWatchScreen } from './screens/CompetitionWatchScreen.j
 import { createCompetitionResultScreen } from './screens/CompetitionResultScreen.js';
 import { createRankingsScreen } from './screens/RankingsScreen.js';
 import { createTrophyScreen } from './screens/TrophyScreen.js';
+import { createComboArchiveScreen } from './screens/ComboArchiveScreen.js';
+import { SYNERGIES_BY_ID, SYNERGY_ART } from '../data/synergies.js';
+import { rewardText, lookOf } from './systems/Synergies.js';
 import { COMPETITIONS, COMPETITION_ART, TROPHIES } from '../data/competitions.js';
 import { RIVALS } from '../data/rivals.js';
 import { TUTORIAL_HIRES } from '../data/recruitment.js';
@@ -119,6 +122,8 @@ const ASSETS = {
   ...Object.fromEntries(TROPHIES.map((t) => art('trophies', t.art))),
   ...Object.fromEntries(RIVALS.map((r) => art('logos', r.logo))),
   ...Object.fromEntries(RIVALS.filter((r) => r.manager).map((r) => art('npc', r.manager))),
+  // Combos (Milestone 14): discovery glow, combos icon, the ??? marker (robots 11–20 are in the robot families above).
+  ...Object.fromEntries([art('vfx', SYNERGY_ART.discover), art('vfx', SYNERGY_ART.blueprint), art('ui', SYNERGY_ART.icon), art('ui', SYNERGY_ART.secret)]),
   // Deliberately missing file: proves the placeholder fallback.
   placeholderTest: 'assets/m0-missing-test.png',
 };
@@ -197,6 +202,7 @@ let campaignReady = false;
 async function startCampaign() {
   const adapter = await createStorageAdapter({ dbName: 'robot-workshop', prefix: 'robot-workshop:' });
   campaign.saveManager = new SaveManager({ adapter, key: 'campaign', version: SAVE_VERSION, migrations: SAVE_MIGRATIONS, bus });
+  campaign.accountManager = new SaveManager({ adapter, key: 'account', version: 1, bus }); // combo archive across runs
   const loaded = await campaign.loadOrNew();
   if (!loaded) await campaign.save().catch(() => {});
   debug.log(`campaign ${loaded ? 'loaded' : 'new'} (${adapter.kind})`);
@@ -560,6 +566,7 @@ const debugBuilderScreen = createDebugBuilderScreen({ renderer, layout, assets, 
 const competitionsScreen = createCompetitionListScreen({ renderer, layout, assets, campaign, router, goProject, hud, debugEnabled: debug.enabled });
 const rankingsScreen = createRankingsScreen({ renderer, layout, assets, campaign, router });
 const trophyScreen = createTrophyScreen({ renderer, layout, assets, campaign, router });
+const comboArchiveScreen = createComboArchiveScreen({ renderer, layout, assets, campaign, router });
 const compSetupScreen = createCompetitionSetupScreen({ renderer, layout, assets, bus, campaign, router });
 const compWatchScreen = createCompetitionWatchScreen({ renderer, layout, assets, campaign, router, vfx, held: () => guide.active || major.active });
 const compResultScreen = createCompetitionResultScreen({ renderer, layout, assets, campaign, router, vfx });
@@ -630,7 +637,40 @@ bus.on('project:complete', ({ record }) => {
     accent: '#7CFFB2',
     onAck: () => router.go('result', { number: record.number, resumeOnExit: wasRunning }),
   });
+  // Combos found for the first time in this run (Milestone 14): a small moment each, after "Robot finished!".
+  for (const f of record.newSynergies ?? []) showComboDiscovered(f, record);
 });
+
+// "New combo discovered!": the rare-unlock glow behind the combo's look (or the combos icon), a blueprint pop.
+function showComboDiscovered({ id, firstEver }, record) {
+  const rule = SYNERGIES_BY_ID[id];
+  if (!rule) return;
+  const look = lookOf(id);
+  debug.log(`combo discovered: ${id} ${rule.name}${firstEver ? ' (first ever)' : ''}`);
+  major.show({
+    title: 'New combo discovered!',
+    subtitle: `${rule.name} — ${rewardText(rule, 0) || 'a special build'}. See the Combo Archive.`,
+    accent: '#FFD166',
+    onShow: () => audio.play('levelUp'),
+    drawFn: (ctx, t) => {
+      const s = Math.min(1, t / 0.35);
+      const cx = W / 2;
+      const cy = H / 2 - 260;
+      ctx.save();
+      ctx.globalAlpha = s * (vfx.reducedFlashes ? 0.5 : 0.85);
+      const g = 620 + (vfx.reducedFlashes ? 0 : Math.sin(t * 3) * 30);
+      assets.drawContained(ctx, SYNERGY_ART.discover, { x: cx - g / 2, y: cy - g / 2, w: g, h: g });
+      if (t < 0.9) {
+        ctx.globalAlpha = 1 - t / 0.9;
+        assets.drawContained(ctx, SYNERGY_ART.blueprint, { x: cx - 320, y: cy - 320, w: 640, h: 640 });
+      }
+      ctx.globalAlpha = s;
+      const size = look ? 520 : 300;
+      assets.drawContained(ctx, look ? look.art : SYNERGY_ART.icon, { x: cx - size / 2, y: cy - size / 2 + (1 - s) * 50, w: size, h: size });
+      ctx.restore();
+    },
+  });
+}
 
 // Small and medium feedback: sounds, and money / reputation numbers floating off the top bar.
 bus.on('project:phase', () => audio.play('phaseDone'));
@@ -756,6 +796,7 @@ if (debug.enabled) {
   window.__m11 = { ...window.__m10, staffDetail: staffDetailScreen, staffDebug: staffDebugScreen, careers: campaign.careers, STAFF };
   window.__m12 = { ...window.__m11, competitions: competitionsScreen, compSetup: compSetupScreen, compWatch: compWatchScreen, compResult: compResultScreen, competitionSystem: campaign.competitions };
   window.__m13 = { ...window.__m12, rankings: rankingsScreen, trophiesScreen: trophyScreen, rankingSystem: campaign.rankings, trophyCase: campaign.trophies, rivalSystem: campaign.rivals };
+  window.__m14 = { ...window.__m13, combos: comboArchiveScreen, synergyArchive: campaign.synergyArchive, showComboDiscovered };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
   bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));
@@ -787,6 +828,7 @@ router
   .register('compResult', compResultScreen)
   .register('rankings', rankingsScreen)
   .register('trophies', trophyScreen)
+  .register('combos', comboArchiveScreen)
   .register('debugbuilder', debugBuilderScreen);
 if (debug.enabled) router.register('staffdebug', staffDebugScreen); // ?debug=1 only: spawn any of the 50
 router.go('boot');

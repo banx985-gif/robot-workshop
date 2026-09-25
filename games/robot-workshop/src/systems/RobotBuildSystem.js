@@ -13,18 +13,22 @@
 // Traits (Milestone 11, data/traits.js): worker traits change that worker's score; team traits count once per
 // team (core/StaffSystem groupEffect); signature traits run through src/systems/signatureHooks.js.
 // job.data.contributors lists everyone who has worked a day on the robot (career records, finish signatures).
+// Combos (Milestone 14, src/systems/Synergies.js): checked when the robot is finished; their rewards land before
+// Quality and the review (§12.2) and the advanced ones pick the robot's look (§13).
 import { PURPOSES } from '../../data/purposes.js';
 import { COMPONENTS, SLOTS } from '../../data/components.js';
 import { PHASES, PROJECT_TIERS, BUDGET_FOCUS } from '../../data/phases.js';
 import { ROBOT_STAT_KEYS } from '../../data/stats.js';
 import { PROJECT_RULES } from '../../data/balance.js';
 import { robotVisual } from './robotVisual.js';
+import { applySynergies } from './Synergies.js';
 
 const R = PROJECT_RULES;
 
 export class RobotBuildSystem {
-  constructor({ rng, staff, traits, bus = null, now = () => null, effects = () => 0 }) {
+  constructor({ rng, staff, traits, bus = null, now = () => null, effects = () => 0, synergyEnv = () => ({ hooks: {}, ngPlus: 0 }) }) {
     this.effects = effects; // (key) → total facility bonus
+    this.synergyEnv = synergyEnv; // () → { hooks: { discovered, ruleMet }, ngPlus } for the combo check
     this.rng = rng;
     this.staff = staff; // StaffSystem
     this.traits = traits;
@@ -190,6 +194,27 @@ export class RobotBuildSystem {
     return best;
   }
 
+  // --- combos (§12) -----------------------------------------------------------
+  // Master Integrator (and any later bonus): +% on every combo reward, from the signature traits on this team.
+  synergyBonus(team) {
+    const ctx = { bonusPct: 0 };
+    const signatures = this.staff.runSignatures(team, 'synergy', ctx);
+    return { pct: ctx.bonusPct, signatures };
+  }
+
+  // The combo step for a robot (finished or predicted). qualityOf(stats, innovation) → Quality.
+  synergiesFor({ purposeId, components, stats, innovation, team }, qualityOf) {
+    const env = this.synergyEnv();
+    const bonus = this.synergyBonus(team);
+    const res = applySynergies({ purposeId, components, stats, innovation, team, ngPlus: env.ngPlus ?? 0 }, env.hooks ?? {}, bonus.pct, qualityOf);
+    return { ...res, bonusPct: bonus.pct, bonusSignatures: res.active.length ? bonus.signatures : [] };
+  }
+
+  // §10.11 Quality from the finished numbers.
+  qualityFrom(purposeId, stats, innovation, qualityBonus, faults) {
+    return round1(clamp(this.weightedScore(purposeId, stats) / 6.5 + innovation * 0.2 + qualityBonus - faults * R.faultQualityPenalty, 0, 100));
+  }
+
   // --- live numbers ---------------------------------------------------------
   currentStats(job) {
     const base = this.baseStats(job.data.components);
@@ -336,15 +361,22 @@ export class RobotBuildSystem {
     // Signature traits of everyone who worked on it (Icon Maker, Ghost Logic, Unbreakable, Future Form).
     const extra = {};
     const sig = { job, stats, innovation: 0, result: extra };
-    const signatures = this.staff.runSignatures(this.crew(job), 'finish', sig);
+    const crew = this.crew(job);
+    const signatures = this.staff.runSignatures(crew, 'finish', sig);
+    // Combos: their rewards first, then Quality (§12.2).
+    const syn = this.synergiesFor(
+      { purposeId: d.purpose, components: d.components, stats, innovation: round1(d.innovation + this.partInnovation(d.components) + sig.innovation), team: crew },
+      (st, inn) => this.qualityFrom(d.purpose, st, inn, d.qualityBonus, d.faults.length),
+    );
+    Object.assign(stats, syn.stats);
     const weighted = this.weightedScore(d.purpose, stats);
-    const innovation = round1(d.innovation + this.partInnovation(d.components) + sig.innovation);
+    const innovation = syn.innovation;
     const match = this.purposeMatch(d.purpose, stats);
-    const fit = Math.min(100, Math.round(d.fit * match));
-    const quality = round1(clamp(weighted / 6.5 + innovation * 0.2 + d.qualityBonus - d.faults.length * R.faultQualityPenalty, 0, 100));
+    const fit = Math.min(100, Math.round(d.fit * match) + syn.fitBonus);
+    const quality = syn.quality;
     const variance = this.rng.range(-R.reviewVariance, R.reviewVariance);
     const review = round1(clamp(quality / 10 + variance, 1, 10));
-    const visual = robotVisual(d.purpose, []); // synergies arrive in Milestone 14
+    const visual = robotVisual(d.purpose, syn.active);
     return {
       purpose: d.purpose,
       purposeName: purpose.name,
@@ -365,7 +397,10 @@ export class RobotBuildSystem {
       faultsFound: d.faultsFound,
       faultsFixed: d.faultsFixed,
       breakthroughs: d.breakthroughs.filter((b) => b.hit).length,
-      signatures, // signature traits that changed this robot
+      synergies: syn.active, // combos that fired (ids, data/synergies.js)
+      synergyRewards: syn.rewards, // what each one gave (after Master Integrator)
+      synergyNear: syn.near.map((n) => n.rule.id), // combos one condition away (clues)
+      signatures: [...signatures, ...syn.bonusSignatures], // signature traits that changed this robot
       ...extra, // e.g. premiumDemandMult (Future Form)
     };
   }

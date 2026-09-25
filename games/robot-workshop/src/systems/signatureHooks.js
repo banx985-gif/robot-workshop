@@ -6,7 +6,7 @@
 //   finish         ctx { job, stats, innovation, result } the robot is being finished (before Quality)
 //   competition    ctx { mods }                          a pilot is being set up for an event (Milestone 12);
 //                                                        mods are core/CompetitionSystem's setup mods
-// Points with no caller yet: 'synergy' (Milestone 14).
+//   synergy        ctx { bonusPct }                     combos are being rewarded (Milestone 14)
 import { PROJECT_TIERS } from '../../data/phases.js';
 
 const ELITE_MAX_CX = PROJECT_TIERS.find((t) => t.id === 'elite').maxCx;
@@ -77,6 +77,11 @@ export const SIGNATURE_HOOKS = {
     },
   },
 
-  // Stored until their systems exist.
-  synergyBonusPct: { point: 'synergy', apply: () => false }, // Master Integrator (Milestone 14)
+  // Master Integrator: every combo reward +pct%.
+  synergyBonusPct: {
+    point: 'synergy',
+    apply(ctx, p) {
+      ctx.bonusPct += p.pct;
+    },
+  },
 };

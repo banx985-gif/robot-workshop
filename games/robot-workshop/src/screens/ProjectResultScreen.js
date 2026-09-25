@@ -1,5 +1,5 @@
 // Finished robot: its 7 stats, Quality and review, a Launch section (Value / Standard / Premium),
-// the team who built it, and the project history.
+// the team who built it, the combos that fired (Milestone 14) and the project history.
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { PURPOSES } from '../../data/purposes.js';
@@ -9,11 +9,15 @@ import { PRICE_POSITIONS, PRICE_ORDER } from '../../data/market.js';
 import { SEGMENTS } from '../../data/segments.js';
 import { panel, text, contained, statBars, hit, fmt } from '../ui/widgets.js';
 import { robotArtOf } from '../systems/robotVisual.js';
+import { SYNERGIES_BY_ID, SYNERGY_ART } from '../../data/synergies.js';
+import { VISUALS } from '../../data/visuals.js';
 
 const FOOTER_H = 150;
 const LAUNCH_Y = 530;
 const LAUNCH_H = 400;
 const SHIFT = LAUNCH_H + 20; // everything below the launch panel moves down by this
+const COMBO_Y = 1260 + SHIFT;
+const COMBO_LINE = 44;
 
 export function createProjectResultScreen({ renderer, layout, assets, campaign, router }) {
   const W = renderer.width;
@@ -38,6 +42,9 @@ export function createProjectResultScreen({ renderer, layout, assets, campaign, 
     return { x: 24 + i * (w + 16), y: LAUNCH_Y + 90, w, h: 96 };
   };
   const launchRect = () => ({ x: 24, y: LAUNCH_Y + LAUNCH_H - 120, w: cw() - 48, h: 96 });
+  // Combos panel: one line per combo that fired (at least one line).
+  const comboHeight = () => 96 + Math.max(1, record()?.result?.synergies?.length ?? 0) * COMBO_LINE + 20;
+  const archiveRect = () => ({ x: cw() - 250, y: COMBO_Y + 14, w: 234, h: 62 });
 
   const record = () => (number != null ? campaign.history.get(number) : campaign.history.latest());
 
@@ -54,6 +61,7 @@ export function createProjectResultScreen({ renderer, layout, assets, campaign, 
     scroll,
     positionRect,
     launchRect,
+    archiveRect,
     get record() {
       return record();
     },
@@ -78,8 +86,16 @@ export function createProjectResultScreen({ renderer, layout, assets, campaign, 
       }
       if (!scroll.contains(p)) return;
       const rec = record();
-      if (!rec || rec.launchedProductId || rec.deliveredContractId) return;
+      if (!rec) return;
       const c = scroll.toContent(p);
+      if (hit(c, archiveRect())) {
+        // Keep "start the game again on the way out" for when the player finally leaves the result screen.
+        const resume = resumeOnExit;
+        resumeOnExit = false;
+        router.go('combos', { back: 'result', backParams: { number: rec.number, resumeOnExit: resume } });
+        return;
+      }
+      if (rec.launchedProductId || rec.deliveredContractId) return;
       if (!campaign.products.freeSlots) {
         if (hit(c, launchRect())) router.go('products');
         return;
@@ -129,7 +145,10 @@ export function createProjectResultScreen({ renderer, layout, assets, campaign, 
       text(ctx, `Team: ${rec.team.map((t) => t.name).join(', ')}`, 24, y1 + 160, { size: 28, color: '#E8EEF2', maxWidth: w - 48 });
       text(ctx, `Saved to project history as #${rec.number}`, 24, y1 + 206, { size: 26, color: '#7CFFB2', maxWidth: w - 48 });
 
-      const y2 = 1270 + SHIFT;
+      drawCombos(ctx, rec, w);
+
+      const y2 = COMBO_Y + comboHeight() + 20;
+      scroll.contentHeight = y2 + 50 + Math.min(10, campaign.history.records.length) * 56 + 40;
       text(ctx, `Project history (${campaign.history.records.length})`, 4, y2, { size: 34, bold: true });
       [...campaign.history.records]
         .reverse()
@@ -145,6 +164,28 @@ export function createProjectResultScreen({ renderer, layout, assets, campaign, 
       drawButton(ctx, doneRect(), 'Back to the workshop', { active: true, accent: '#7CFFB2', font: 'bold 40px system-ui, sans-serif' });
     },
   };
+
+  function drawCombos(ctx, rec, w) {
+    const r = rec.result;
+    const fired = r.synergies ?? [];
+    const fresh = new Set((rec.newSynergies ?? []).map((f) => f.id));
+    panel(ctx, { x: 0, y: COMBO_Y, w, h: comboHeight() }, { stroke: fired.length ? '#FFD166' : '#35414F' });
+    contained(ctx, assets, SYNERGY_ART.icon, { x: 16, y: COMBO_Y + 12, w: 64, h: 64 });
+    text(ctx, fired.length ? `Combos (${fired.length})` : 'Combos', 92, COMBO_Y + 26, { size: 34, bold: true });
+    drawButton(ctx, archiveRect(), 'Combo Archive', { font: 'bold 26px system-ui, sans-serif' });
+    if (!fired.length) {
+      text(ctx, r.synergies ? 'No combo on this robot.' : 'Built before combos existed.', 24, COMBO_Y + 100, { size: 28, color: '#9AA8B5', maxWidth: w - 48 });
+      return;
+    }
+    fired.forEach((id, i) => {
+      const rule = SYNERGIES_BY_ID[id];
+      const got = r.synergyRewards?.[id] ?? {};
+      const bits = [got.fit ? `Fit +${got.fit}` : '', ...Object.entries(got.stats ?? {}).map(([k, v]) => `${k} +${v}`), got.inn ? `Innovation +${got.inn}` : '', got.rp ? `+${got.rp} RP` : ''].filter(Boolean);
+      const look = VISUALS[r.visual]?.synergy === id ? `look: ${VISUALS[r.visual].name}` : '';
+      const line = `${fresh.has(id) ? 'NEW! ' : ''}${rule?.name ?? id}${bits.length || look ? ' — ' : ''}${[...bits, look].filter(Boolean).join(' · ')}`;
+      text(ctx, line, 24, COMBO_Y + 96 + i * COMBO_LINE, { size: 28, bold: true, color: fresh.has(id) ? '#FFD166' : '#7CFFB2', maxWidth: w - 48 });
+    });
+  }
 
   function drawLaunch(ctx, rec, w) {
     const y = LAUNCH_Y;

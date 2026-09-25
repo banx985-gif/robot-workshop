@@ -1,4 +1,4 @@
-// First-time guide steps (Milestone 7b; building and expansions added in Milestone 8; research in Milestone 9; hiring and training in Milestone 10; the first competition in Milestone 12; rivals in Milestone 13; the full tutorial, bible §26, comes in Milestone 26 and builds on this).
+// First-time guide steps (Milestone 7b; building and expansions added in Milestone 8; research in Milestone 9; hiring and training in Milestone 10; the first competition in Milestone 12; rivals in Milestone 13; the first combo hint in Milestone 14; the full tutorial, bible §26, comes in Milestone 26 and builds on this).
 // Plain data for core/GuideSystem.js. Short, friendly words — no walls of text.
 // target names are resolved to screen spots by src/ui/guideTargets.js.
 // trigger: after = previous step done; event = has happened at least once; screen = only shows there.
@@ -449,6 +449,16 @@ export const GUIDE_STEPS = [
     text: 'Rivals get stronger every year — train your pilot and research better parts.',
     target: null,
     trigger: { event: 'competition:beaten', screen: ['compResult'] },
+    advance: { next: true },
+    block: true,
+  },
+  // Milestone 14: the first time the builder shows a combo hint (a combo one part away).
+  {
+    id: 'Y1',
+    title: 'Combos',
+    text: 'Some part mixes work better together — look for the hint. Found combos go in the Combo Archive.',
+    target: 'comboPanel',
+    trigger: { after: 'S7', event: 'synergy:hint', screen: ['builder'] },
     advance: { next: true },
     block: true,
   },

@@ -4,6 +4,8 @@ import { DataValidator } from '../../../../core/DataValidator.js';
 import { PURPOSES, PURPOSE_ORDER } from '../../data/purposes.js';
 import { COMPONENTS, SLOTS, STARTER_PARTS } from '../../data/components.js';
 import { VISUAL_FAMILIES, VISUALS } from '../../data/visuals.js';
+import { SYNERGIES, SYNERGY_ART } from '../../data/synergies.js';
+import { usesFinalStat } from '../systems/Synergies.js';
 import { PHASES, PROJECT_TIERS } from '../../data/phases.js';
 import { ROBOT_STAT_KEYS, STAT_KEYS } from '../../data/stats.js';
 import { STAFF, ROLES, TIERS, STARTER_IDS, CAREER_COUNTERS } from '../../data/staff.js';
@@ -110,6 +112,54 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
     v.check(Number.isInteger(f.priority) && f.priority >= 0 && f.priority <= 5, `visual ${f.id}: bad priority`);
     v.art(`visual ${f.id}`, ROBOT_ART(f.art));
   }
+
+  // --- synergies (§12.1) ---
+  const synIds = v.uniqueIds('synergies', SYNERGIES);
+  v.check(SYNERGIES.length === 20 && SYNERGIES.every((s, i) => s.id === `SYN${String(i + 1).padStart(2, '0')}`), 'synergies: expected SYN01–SYN20 in order');
+  const TIER_BY_ID = (i) => (i < 10 ? 'normal' : i < 16 ? 'advanced' : 'prestige');
+  const partSet = new Set(Object.keys(COMPONENTS));
+  const condStats = new Set([...ROBOT_STAT_KEYS, 'INN', 'QUALITY']);
+  SYNERGIES.forEach((s, i) => {
+    const o = `synergy ${s.id}`;
+    v.check(s.tier === TIER_BY_ID(i) && s.tier in RP_SOURCES.firstSynergy, `${o}: tier should be ${TIER_BY_ID(i)}`);
+    v.check(!!s.hidden === (s.tier === 'prestige'), `${o}: prestige combos (only) are hidden`);
+    v.check(s.hidden || (typeof s.hint === 'string' && s.hint.length > 10), `${o}: needs a vague hint`);
+    v.check(Array.isArray(s.conditions) && s.conditions.length > 0, `${o}: no conditions`);
+    for (const c of s.conditions) {
+      switch (c.kind) {
+        case 'purpose':
+          for (const p of c.any) v.ref(o, 'purpose', p, new Set(PURPOSE_ORDER));
+          break;
+        case 'part':
+          for (const p of c.any) v.ref(o, 'part', p, partSet);
+          v.check(new Set(c.any.map((p) => COMPONENTS[p]?.slot)).size === 1, `${o}: "any of" parts must share a slot`);
+          break;
+        case 'stat':
+          v.check(condStats.has(c.stat) && c.min > 0, `${o}: bad stat condition`);
+          break;
+        case 'partCount':
+          v.check(c.min > 0 && c.minCx > 0, `${o}: bad part count`);
+          break;
+        case 'discovered':
+          v.check(/^(part|synergy):/.test(c.key) && !!c.label, `${o}: bad discovery flag`);
+          break;
+        case 'rule':
+          checkUnlock(o, c.rule);
+          v.check(!!c.label, `${o}: a game rule needs a label`);
+          break;
+        default:
+          v.check(['tag', 'staff', 'ngPlus'].includes(c.kind), `${o}: unknown condition "${c.kind}"`);
+      }
+    }
+    const r = s.reward ?? {};
+    v.check(Object.keys(r).every((k) => ['stats', 'fit', 'inn', 'rp', 'repFirst'].includes(k)) && Object.keys(r.stats ?? {}).every((k) => statSet.has(k)), `${o}: unknown reward`);
+    if (usesFinalStat(s)) v.check(!r.stats && !r.fit && !r.inn, `${o}: needs the final Quality, so it can't give stats, Fit or Innovation`);
+    const look = VISUAL_FAMILIES.find((f) => f.synergy === s.id);
+    v.check(i < 10 ? !look : !!look, `${o}: ${i < 10 ? 'normal combos have no look' : 'needs its visual family'}`);
+  });
+  v.check(SYNERGIES.find((s) => s.id === 'SYN20')?.locked === true && SYNERGIES.filter((s) => s.locked).length === 1, 'synergies: only SYN20 is locked (until Milestone 17)');
+  for (const f of VISUAL_FAMILIES) if (f.synergy) v.check(synIds.has(f.synergy), `visual ${f.id}: unknown synergy ${f.synergy}`);
+  for (const k of Object.values(SYNERGY_ART)) v.check(typeof k === 'string', 'synergy art: bad key');
 
   // --- purposes (§10.2, §10.5) ---
   v.keysMatchIds('purposes', PURPOSES);

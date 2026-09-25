@@ -1,7 +1,9 @@
 // One Robot Workshop run: seeded RNG, calendar, staff, robot projects, history, money, products,
 // reputation, market, contracts, the workshop layout (facilities + expansions), research, hiring, training,
 // career records (Milestone 11), competitions (Milestone 12), the competition ladder, rivals, rankings and
-// trophies (Milestone 13) and saving/loading.
+// trophies (Milestone 13), combos and their discovery archive (Milestone 14) and saving/loading.
+// The combo archive has two halves: this run (in the campaign save) and the account (its own save record,
+// kept across new runs — accountManager).
 // Random numbers: the main stream drives staff, projects and sales; the market and the contracts each
 // have their own seeded stream, so contract offers never change how a robot build rolls.
 // Everything that must come back identical after a reload lives here.
@@ -31,6 +33,8 @@ import { RivalSystem } from '../../../../core/RivalSystem.js';
 import { Rankings } from '../../../../core/Rankings.js';
 import { TrophyCase } from '../../../../core/TrophyCase.js';
 import { competitionRuleMet } from '../../../../core/CompetitionPrereqs.js';
+import { DiscoveryArchive } from '../../../../core/DiscoveryArchive.js';
+import { SYNERGIES_BY_ID } from '../../data/synergies.js';
 import { COMPETITIONS, COMPETITIONS_BY_ID, COMPETITION_RULES, TROPHIES, RANKING_POINTS } from '../../data/competitions.js';
 import { RIVALS, RIVAL_RULES } from '../../data/rivals.js';
 import { TUNINGS, STRATEGIES } from '../../data/tuning.js';
@@ -99,6 +103,8 @@ export const SAVE_MIGRATIONS = {
   9: (record) => ({ ...record, data: { ...record.data, competitions: null } }),
   // v10 (Milestone 12) had no rankings or trophies: null = rebuilt from the results and records kept (Campaign.loadData).
   10: (record) => ({ ...record, data: { ...record.data, rankings: null, trophies: null } }),
+  // v11 (Milestone 13) had no combos: null = nothing discovered yet in this run.
+  11: (record) => ({ ...record, data: { ...record.data, synergies: null } }),
 };
 
 // Things research unlock actions name ("part:CH02", "facility:F07"…): for these, the research part of their
@@ -109,9 +115,11 @@ const QUEUE_RULES = new Set(RESEARCH_QUEUES.map((q) => q.rule));
 const ADVANCED_TIERS = PROJECT_TIERS.slice(PROJECT_TIERS.findIndex((t) => t.id === 'advanced')).map((t) => t.id);
 
 export class Campaign {
-  constructor({ bus, saveManager = null }) {
+  constructor({ bus, saveManager = null, accountManager = null }) {
     this.bus = bus;
     this.saveManager = saveManager;
+    this.accountManager = accountManager; // account-wide record (combo archive), survives new runs
+    this.synergyArchive = new DiscoveryArchive({ bus });
     this.campaignId = null;
     this.seed = CAMPAIGN_SEED;
     this.rng = new Rng(this.seed);
@@ -243,7 +251,16 @@ export class Campaign {
       this.assignments.refresh();
     });
     this.projects.assignments = this.assignments;
-    this.robots = new RobotBuildSystem({ rng: this.rng, staff: this.staff, traits: TRAITS, bus, now: () => this.clock.now(), effects: fx });
+    this.robots = new RobotBuildSystem({
+      rng: this.rng,
+      staff: this.staff,
+      traits: TRAITS,
+      bus,
+      now: () => this.clock.now(),
+      effects: fx,
+      // Combos read game rules with ruleMet (debug "unlock all" never switches one on) and earlier discoveries.
+      synergyEnv: () => ({ hooks: { discovered: (key) => this.discoveredKey(key), ruleMet: (r) => this.ruleMet(r) }, ngPlus: this.ngPlusRuns }),
+    });
     this.projects.hooks = this.robots.hooks();
 
     this.economy = new EconomySystem({ bus, currencies: CURRENCIES, debt: DEBT_RULES, now: () => this.clock.totalDays });
@@ -290,6 +307,7 @@ export class Campaign {
     bus.on('robot:joined', ({ staffId }) => this.careers.bump(staffId, 'projects'));
     bus.on('project:complete', ({ job, record }) => {
       this._careerFinish(job, record);
+      this._synergiesFinished(record);
       this.projectRp(record);
       if (job.data.contractId) this.deliverRecord(job.data.contractId, record.number);
     });
@@ -617,6 +635,46 @@ export class Campaign {
     this.research.addRp(RP_SOURCES.project.base + (r.totalCx ?? 0) * RP_SOURCES.project.perComplexity, `Robot finished: ${record.name}`, day);
     const firsts = Object.values(r.components ?? {}).filter((id) => this.research.firstTime('part', id));
     if (firsts.length) this.research.addRp(firsts.length * RP_SOURCES.firstPartUse, `First use: ${firsts.map((id) => COMPONENTS[id]?.name ?? id).join(', ')}`, day);
+  }
+
+  // --- combos (§12) ---
+  // A "prior discovery flag" a combo can need: 'part:AI06' = that part was in an earlier finished robot this run;
+  // 'synergy:SYN03' = that combo has been discovered (any run).
+  discoveredKey(key) {
+    const [kind, id] = String(key).split(':');
+    if (kind === 'part') return (this.research.firsts.part ?? []).includes(id);
+    if (kind === 'synergy') return this.synergyArchive.known(id);
+    return false;
+  }
+
+  // A finished robot's combos: the first time in this run each one is recorded (run + account) and pays its
+  // discovery RP (10 normal / 25 advanced / 100 prestige); RP rewards pay every time, "first time" Rep once a run.
+  // Combos one condition away become clues. record.newSynergies lists the ones discovered just now.
+  _synergiesFinished(record) {
+    const r = record?.result;
+    if (!r?.synergies) return;
+    const day = this.clock.totalDays;
+    record.newSynergies = [];
+    for (const id of r.synergies) {
+      const rule = SYNERGIES_BY_ID[id];
+      const reward = r.synergyRewards?.[id] ?? {};
+      const { firstInRun, firstEver } = this.synergyArchive.discover(id, { day, year: this.clock.year, robot: record.name, campaignId: this.campaignId });
+      if (firstInRun) {
+        record.newSynergies.push({ id, firstEver });
+        this.research.addRp(RP_SOURCES.firstSynergy[rule.tier] ?? RP_SOURCES.firstSynergy.normal, `Combo discovered: ${rule.name}`, day);
+        if (reward.repFirst) this.reputation.add(Math.round(reward.repFirst * this.celebrityMult()), `Combo: ${rule.name}`);
+      }
+      if (reward.rp) this.research.addRp(reward.rp, `Combo: ${rule.name} (${record.name})`, day);
+    }
+    for (const id of r.synergyNear ?? []) if (!SYNERGIES_BY_ID[id]?.hidden) this.synergyArchive.addClue(id, { day });
+    if (record.newSynergies.length) this.bus.emit('synergy:discovered', { record, found: record.newSynergies });
+  }
+
+  // The builder shows a vague hint: from now on the Combo Archive lists it as a clue.
+  noteSynergyClue(id) {
+    const rule = SYNERGIES_BY_ID[id];
+    if (!rule || rule.hidden || rule.locked) return false;
+    return this.synergyArchive.addClue(id, { day: this.clock.totalDays });
   }
 
   // Start research on queue i with a worker. Returns { ok, reason }.
@@ -1192,6 +1250,7 @@ export class Campaign {
     this.competitions.reset();
     this.rankings.reset();
     this.trophies.reset();
+    this.synergyArchive.resetRun(); // the account half stays
     this.recruitment.reset();
     this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'start');
     this.applyFeatures();
@@ -1224,6 +1283,7 @@ export class Campaign {
       competitions: this.competitions.serialize(),
       rankings: this.rankings.serialize(),
       trophies: this.trophies.serialize(),
+      synergies: this.synergyArchive.serializeRun(),
       guide: this.guideState ?? null,
       flags: { ...this.flags },
     };
@@ -1261,6 +1321,8 @@ export class Campaign {
     const hasRankings = this.rankings.load(data.rankings);
     const hasTrophies = this.trophies.load(data.trophies);
     if (!hasRankings || !hasTrophies) this._rebuildLadder(); // saves from before Milestone 13
+    this.synergyArchive.loadRun(data.synergies); // null before Milestone 14: nothing discovered yet
+    this.synergyArchive.loadAccount(null); // anything this run found is known to the account too
     this.applyFeatures();
     this.guideState = data.guide ?? null;
     this.assignments.refresh();
@@ -1270,6 +1332,7 @@ export class Campaign {
   async save() {
     if (!this.saveManager) return null;
     try {
+      if (this.accountManager) await this.accountManager.save({ synergies: this.synergyArchive.serializeAccount() });
       const rec = await this.saveManager.save(this.serialize());
       this.lastSaveError = null;
       return rec;
@@ -1282,6 +1345,12 @@ export class Campaign {
 
   // Load the save if there is one, else start a new run. Returns true if a save was loaded.
   async loadOrNew() {
+    try {
+      const account = await this.accountManager?.load();
+      this.synergyArchive.loadAccount(account?.synergies);
+    } catch (err) {
+      console.error('[Campaign] could not load the account record', err);
+    }
     let data = null;
     try {
       data = await this.saveManager?.load();

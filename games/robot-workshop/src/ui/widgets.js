@@ -69,3 +69,20 @@ export function staffRow(ctx, assets, r, s, { roleName, on = false, tag = '', ta
   bar(ctx, bx + 90, r.y + 54, 100, 16, s.morale / 100, '#FFB74D');
   text(ctx, tag, r.x + r.w - 20, r.y + r.h / 2, { size: 26, bold: true, color: on ? tagColor : '#9AA8B5', align: 'right', baseline: 'middle' });
 }
+
+// Word-wrapped text, at most maxLines lines (the last one is squeezed to fit). Returns the lines drawn.
+export function wrapText(ctx, str, x, y, w, { size = 26, lineH = size * 1.3, maxLines = 2, ...opts } = {}) {
+  ctx.font = `${opts.bold ? 'bold ' : ''}${size}px system-ui, sans-serif`;
+  const lines = [];
+  let cur = '';
+  for (const word of String(str).split(' ')) {
+    const t = cur ? `${cur} ${word}` : word;
+    if (ctx.measureText(t).width > w && cur && lines.length < maxLines - 1) {
+      lines.push(cur);
+      cur = word;
+    } else cur = t;
+  }
+  if (cur) lines.push(cur);
+  lines.forEach((l, i) => text(ctx, l, x, y + i * lineH, { size, maxWidth: w, ...opts }));
+  return lines.length;
+}
