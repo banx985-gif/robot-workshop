@@ -14,7 +14,7 @@ export const DEBT_RULES = {
   limit: -25000,
   monthlyInterestPct: 5,
   closureMonths: 3, // month-ends in a row below the limit → Workshop Closure
-  blockedWhileNegative: ['facility', 'paidResearch', 'headHunt'], // nothing in the game uses these yet
+  blockedWhileNegative: ['facility', 'paidResearch', 'headHunt'], // 'facility' (building, expansions) is used from Milestone 8
 };
 export const BLOCK_NAMES = { facility: 'build facilities', paidResearch: 'paid research', headHunt: 'Head Hunt / Global Search' };
 
@@ -48,4 +48,13 @@ export const RANKS = [
 export const REPUTATION_RULES = {
   launchPerQuality: 0.5, // launch: +Quality × 0.5 (Quality 50 → +25)
   salesPerUnit: 0.5, // each month on sale: +units × 0.5
+};
+
+// What a new Company Rank opens (the rank-up message). Only what exists in this build.
+export const RANK_NOTES = {
+  D: 'Expansion 1, the Paint Booth and the Charging Dock can now be bought. Staff cap 8.',
+  C: '4× speed is open. Staff cap 12.',
+  B: 'Staff cap 16.',
+  A: 'Staff cap 20.',
+  S: 'Staff cap 24.',
 };

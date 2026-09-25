@@ -1,25 +1,21 @@
-// The starter workshop room: grid, furniture spots, draw sizes, and how the room art fits together.
+// The workshop room: grid, standing spots, draw sizes, and how the room art fits together.
 // Plain values only (bible §42.5). The grid is the logic; the 3/4 view is only how it is drawn (§18.1).
 
 export const ROOM = {
-  cols: 8, // §18.1 starting usable grid: 8 × 10 cells
-  rows: 10,
   cellSize: 100, // grid world units per cell (walking and pathing use these)
   view: { halfW: 56, halfH: 28 }, // one cell draws as a 112 × 56 px diamond (2:1, matches the wall art)
   margin: { x: 24, top: 24, bottom: 36 }, // empty space kept round the room art in its cached layer
 };
 
-// Furniture and standing spots (cells). Footprints follow bible §18.2.
+// Where staff stand when they are not at a station (cells). If a spot is built over, the nearest free
+// reachable cell is used instead. Facilities themselves are in data/facilities.js (bible §18).
 export const LAYOUT = {
-  bench: { col: 3, row: 4, w: 2, h: 1 }, // F01 Basic Workbench 2×1
-  workSpot: { col: 4, row: 5 }, // where the worker stands at the bench
-  pedestal: { col: 6, row: 3, w: 1, h: 1 }, // F15 Prototype Pedestal 1×1: shows the latest finished robot
   homeSpots: [
     { col: 0, row: 3 },
     { col: 6, row: 1 },
     { col: 1, row: 6 },
-    { col: 6, row: 7 },
-    { col: 3, row: 8 },
+    { col: 7, row: 6 },
+    { col: 2, row: 8 },
   ],
 };
 
@@ -27,8 +23,6 @@ export const LAYOUT = {
 export const SIZES = {
   staffH: 150,
   robotH: 118, // finished robot standing on the pedestal
-  benchW: 200,
-  pedestalW: 132,
   statusIcon: 60,
   nameTag: 26, // font px
 };
@@ -62,7 +56,3 @@ export const ROOM_ART = {
   leftWall: ['wall', 'door', 'window'],
 };
 
-export const FURNITURE_ART = {
-  bench: { key: 'facility_01_basic_workbench', feet: 0.985 }, // feet: how far down the image the legs end (0–1)
-  pedestal: { key: 'facility_15_prototype_pedestal', feet: 0.985, stand: 0.47 }, // stand: where a robot's feet go
-};

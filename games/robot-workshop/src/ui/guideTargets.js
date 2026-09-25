@@ -49,6 +49,12 @@ export function createGuideTargets({ router, campaign }) {
     productsButton: () => cur()?.topBar?.productsRect?.() ?? null,
     contractsButton: () => cur()?.topBar?.contractsRect?.() ?? null,
     helpButton: () => cur()?.topBar?.helpRect?.() ?? null,
+    // Building (Milestone 8)
+    buildButton: () => (on('workshop') && !cur().card.isOpen ? cur().buildButtonRect() : null),
+    engineeringDeskCard: () => (on('build') && !cur().confirm ? cur().cardRectOf('F02') : null),
+    placeButton: () => (on('build') && cur().mode === 'place' && !cur().confirm ? cur().actionRect(2) : null),
+    expansionsTab: () => (on('build') && cur().mode === 'catalogue' && !cur().confirm ? cur().tabRect(1) : null),
+    buyExpansion1: () => (on('build') && !cur().confirm ? cur().buyRectOf('X1') : null),
   };
 
   return (name) => {

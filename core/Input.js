@@ -84,7 +84,8 @@ export class Input {
     state.y = p.y;
     this.bus.emit('input:move', p);
 
-    if (!state.dragging && !state.held) {
+    if (!state.dragging) {
+      // A hold can still turn into a drag (press, wait, then move — e.g. picking up furniture).
       const dist = Math.hypot(p.x - state.startX, p.y - state.startY);
       if (dist > this.dragThreshold) {
         state.dragging = true;

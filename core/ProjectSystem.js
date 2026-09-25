@@ -6,6 +6,8 @@
 // and stored in the history. Phase names, weights and targets all come from game data.
 // Game rules plug in through hooks (all optional):
 //   workerModifier(job, phase, staff) → number        extra multiplier on one worker's score
+//   statModifier(job, phase, staff, statKey) → number  extra multiplier on one stat's share of that score
+//   progressModifier(job, phase) → number              extra multiplier on the day's progress (e.g. a station bonus)
 //   onDay(job, phase, { score })                      after each worked day (e.g. roll faults)
 //   onCheckpoint(job, phase, fraction)                once when a phase passes a checkpoint (e.g. 0.6)
 //   onPhaseComplete(job, phase, summary)              phase finished (summary has avgScore, days, per-worker)
@@ -70,7 +72,8 @@ export class ProjectSystem {
   // --- work ---------------------------------------------------------------
   workerScore(job, phase, s) {
     let base = 0;
-    for (const [k, w] of Object.entries(phase.weights)) base += (s.stats[k] ?? 0) * w;
+    const sm = this.hooks.statModifier;
+    for (const [k, w] of Object.entries(phase.weights)) base += (s.stats[k] ?? 0) * w * (sm ? sm(job, phase, s, k) : 1);
     const mod = this.hooks.workerModifier?.(job, phase, s) ?? 1;
     return base * this.staff.workMultiplier(s) * mod;
   }
@@ -84,12 +87,13 @@ export class ProjectSystem {
   progressPerDay(job) {
     const team = this.teamOf(job);
     if (!team.length) return 0;
-    return this._progress(this.teamScore(job));
+    return this._progress(this.teamScore(job), job);
   }
 
-  _progress(score) {
+  _progress(score, job = null) {
     const r = this.rules;
-    return (r.progressBase + score / r.progressDivisor) * r.progressScale;
+    const mod = job ? (this.hooks.progressModifier?.(job, this.phaseOf(job)) ?? 1) : 1;
+    return (r.progressBase + score / r.progressDivisor) * r.progressScale * mod;
   }
 
   // One game day for every active job.
@@ -110,7 +114,7 @@ export class ProjectSystem {
       rec.sum += ws;
       rec.days++;
     }
-    job.phaseProgress += this._progress(score);
+    job.phaseProgress += this._progress(score, job);
     job.day++;
     job.phaseDay++;
     job.phaseScoreSum += score;

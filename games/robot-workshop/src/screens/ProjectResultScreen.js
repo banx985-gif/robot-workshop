@@ -157,7 +157,7 @@ export function createProjectResultScreen({ renderer, layout, assets, campaign, 
       const c = campaign.contracts.get(rec.deliveredContractId);
       text(ctx, 'Delivered to the customer!', 24, y + 22, { size: 44, bold: true, color: '#7CFFB2' });
       text(ctx, c ? c.title : 'Contract', 24, y + 100, { size: 32, bold: true, maxWidth: w - 48 });
-      text(ctx, c ? `Paid ${fmt(c.payout)} credits · +${c.reputation} Rep${c.result?.special ? ' · bonus Tech Chip' : ''}` : '', 24, y + 150, { size: 30, color: '#FFD166', maxWidth: w - 48 });
+      text(ctx, c ? `Paid ${fmt(c.result?.paid ?? c.payout)} credits · +${c.reputation} Rep${c.result?.special ? ' · bonus Tech Chip' : ''}` : '', 24, y + 150, { size: 30, color: '#FFD166', maxWidth: w - 48 });
       text(ctx, 'Contract robots do not use a product slot.', 24, y + 200, { size: 28, color: '#9AA8B5', maxWidth: w - 48 });
       return;
     }

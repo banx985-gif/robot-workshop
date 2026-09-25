@@ -11,7 +11,8 @@
 //       event – something happens in the game (e.g. a project starts)
 //     block: true|false,                            true: only the target (and the box) can be tapped
 //     restartAt: 'stepId',                           after a reload, go back to this step instead
-//     skipAlso: ['stepId', …] }                      skipping this step also skips these (they can't show without it)
+//     skipAlso: ['stepId', …],                       skipping this step also skips these (they can't show without it)
+//     skipIf: 'bus:event' }                           the player already did it on their own: the step counts as done
 //
 // The game supplies:
 //   targetRect(name) → { x, y, w, h } in screen units, or null when it is not on screen
@@ -38,6 +39,7 @@ export class GuideSystem {
     for (const s of steps) {
       if (s.trigger?.event) events.add(s.trigger.event);
       if (s.advance?.event) events.add(s.advance.event);
+      if (s.skipIf) events.add(s.skipIf);
     }
     for (const e of events) bus.on(e, () => this._event(e));
     bus.on('screen:change', () => this.update());
@@ -70,6 +72,10 @@ export class GuideSystem {
   _ready(s) {
     const st = this.state;
     if (st.done.includes(s.id)) return false;
+    if (s.skipIf && st.events.includes(s.skipIf)) {
+      st.done.push(s.id); // already done without being told
+      return false;
+    }
     const t = s.trigger ?? {};
     if (t.after && !st.done.includes(t.after)) return false;
     if (t.event && !st.events.includes(t.event)) return false;
@@ -92,6 +98,11 @@ export class GuideSystem {
   // Pick the next step if none is waiting; pause the game while one shows.
   update() {
     if (this.state.off) return;
+    const c = this.current;
+    if (c?.skipIf && this.shownId !== c.id && this.state.events.includes(c.skipIf)) {
+      this.state.done.push(c.id); // waiting to show, but the player has just done it anyway
+      this.current = null;
+    }
     if (!this.current) {
       const next = this.steps.find((s) => this._ready(s));
       if (!next) return;

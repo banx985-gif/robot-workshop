@@ -5,7 +5,8 @@ import { PURPOSE_SEGMENTS } from '../../data/segments.js';
 import { PRICE_POSITIONS, BASE_UNIT_VALUE, SALES_RULES } from '../../data/market.js';
 
 export class Sales {
-  constructor({ rng, market, reputation }) {
+  constructor({ rng, market, reputation, effects = () => 0 }) {
+    this.effects = effects; // facility effect query (e.g. a Showroom's +% units sold, later)
     this.rng = rng; // seeded variance (the campaign's main stream, as in Milestone 4)
     this.market = market;
     this.reputation = reputation;
@@ -50,7 +51,7 @@ export class Sales {
     const ageFactor = SALES_RULES.ageCurve[monthIndex] ?? 0;
     const novelty = product.novelty ?? data.novelty ?? 1; // data.novelty: products saved before Milestone 7
     const v = variance ?? this.rng.range(SALES_RULES.variance.min, SALES_RULES.variance.max);
-    const units = Math.max(0, Math.round(SALES_RULES.baseUnits * fitFactor * qualityFactor * repFactor * trendFactor * ageFactor * pos.demandMult * novelty * v));
+    const units = Math.max(0, Math.round(SALES_RULES.baseUnits * fitFactor * qualityFactor * repFactor * trendFactor * ageFactor * pos.demandMult * novelty * v * (1 + this.effects('salesUnitsPct') / 100)));
     const unitPrice = Math.round(data.baseUnitValue * pos.priceMult);
     return { units, unitPrice, revenue: units * unitPrice, demand };
   }

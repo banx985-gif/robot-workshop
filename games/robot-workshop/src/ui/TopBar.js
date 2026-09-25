@@ -103,7 +103,7 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
     x += 60;
     icon('ui_icon_03_reputation');
     const rep = campaign.reputation;
-    text(ctx, `${rep.value} · ${rep.rank.id}`, x, cy, { size: 32, bold: true, baseline: 'middle', maxWidth: m.x + m.w - x - 12 });
+    text(ctx, `${rep.value} · Rank ${rep.ranks[rep.highestRankIndex].id}`, x, cy, { size: 32, bold: true, baseline: 'middle', maxWidth: m.x + m.w - x - 12 });
   }
 
   return {

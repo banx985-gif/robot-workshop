@@ -72,4 +72,4 @@ export const PROJECT_RULES = {
 };
 
 export const CAMPAIGN_SEED = 'robot-workshop-run-1';
-export const SAVE_VERSION = 5; // v2 projects + history, v3 money, products, reputation, v4 8-segment market + contracts, v5 first-time guide
+export const SAVE_VERSION = 6; // v2 projects + history, v3 money, products, reputation, v4 8-segment market + contracts, v5 first-time guide, v6 workshop layout

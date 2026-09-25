@@ -8,6 +8,8 @@
 //                average of the seven stats, capped at 1. A robot whose strong stats are the ones its
 //                purpose cares about keeps full Fit; one strong in the wrong places loses Fit.
 //   Quality    = §10.11 exactly;  review = Quality ÷ 10 ± seeded 0.35 (§10.11)
+// Facility bonuses (Milestone 8) come from effects(key) — the shared facility effect query — never from
+// facility ids: station progress / work-stat bonuses, stat-gain %, and flat stats (data/facilities.js).
 import { PURPOSES } from '../../data/purposes.js';
 import { COMPONENTS, SLOTS } from '../../data/components.js';
 import { PHASES, PROJECT_TIERS, BUDGET_FOCUS } from '../../data/phases.js';
@@ -18,7 +20,8 @@ import { robotVisual } from './robotVisual.js';
 const R = PROJECT_RULES;
 
 export class RobotBuildSystem {
-  constructor({ rng, staff, traits, bus = null, now = () => null }) {
+  constructor({ rng, staff, traits, bus = null, now = () => null, effects = () => 0 }) {
+    this.effects = effects; // (key) → total facility bonus
     this.rng = rng;
     this.staff = staff; // StaffSystem
     this.traits = traits;
@@ -128,11 +131,30 @@ export class RobotBuildSystem {
     return BUDGET_FOCUS[job.data.budgetFocus];
   }
 
+  // --- facility bonuses -------------------------------------------------------
+  // Flat stat from facilities (e.g. Test Rig +2 REL; Paint Booth +5 APL on commercial models only).
+  facilityStat(k, commercial) {
+    return this.effects(`robotStat.${k}`) + (commercial ? this.effects(`commercialStat.${k}`) : 0);
+  }
+
+  gainMultiplier(k) {
+    return 1 + this.effects(`gainPct.${k}`) / 100;
+  }
+
+  progressMultiplier(phase) {
+    return 1 + this.effects(`progressPct.${phase.id}`) / 100;
+  }
+
+  statMultiplier(statKey) {
+    return 1 + this.effects(`stationStatPct.${statKey}`) / 100;
+  }
+
   // --- live numbers ---------------------------------------------------------
   currentStats(job) {
     const base = this.baseStats(job.data.components);
+    const commercial = !job.data.contractId;
     const out = {};
-    for (const k of ROBOT_STAT_KEYS) out[k] = base[k] + job.data.gains[k];
+    for (const k of ROBOT_STAT_KEYS) out[k] = base[k] + job.data.gains[k] + this.facilityStat(k, commercial);
     out.REL -= job.data.faults.length * R.faultReliabilityPenalty;
     for (const k of ROBOT_STAT_KEYS) out[k] = clamp(Math.round(out[k]), 0, 999);
     return out;
@@ -166,6 +188,10 @@ export class RobotBuildSystem {
     return {
       now: () => this.now(),
 
+      // Facilities: the stage's station speeds progress; the workbench boosts a work stat (§18.2).
+      progressModifier: (job, phase) => this.progressMultiplier(phase),
+      statModifier: (job, phase, s, k) => this.statMultiplier(k),
+
       // §9.7: a worker whose role matches the phase → +8% for the whole team.
       workerModifier: (job, phase) => {
         const match = job.slots.some((id) => id && this.staff.get(id)?.role === phase.roleMatch);
@@ -195,7 +221,7 @@ export class RobotBuildSystem {
         const d = job.data;
         const q = 1 + this.focusOf(job).qualityGainPct / 100;
         const avg = summary.avgScore;
-        for (const [k, share] of Object.entries(phase.gains)) d.gains[k] += Math.round(avg * share * R.gainScale * q);
+        for (const [k, share] of Object.entries(phase.gains)) d.gains[k] += Math.round(avg * share * R.gainScale * q * this.gainMultiplier(k));
         if (phase.innovationShare) d.innovation = round1(d.innovation + avg * phase.innovationShare * q);
         if (phase.setsFit) d.fit = Math.min(100, Math.round(avg * R.fitScale));
         d.qualityBonus = round1(d.qualityBonus + Math.min(R.phaseQualityBonus.maxPerPhase, avg * R.phaseQualityBonus.perScore) * q);

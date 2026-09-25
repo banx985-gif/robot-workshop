@@ -1,6 +1,8 @@
-// Reading unlock rules (data/unlocks.js). Milestone 6: only 'start' content is open in normal play;
-// research, facilities, ranks, counters, competitions and secrets start opening things from Milestone 9.
-import { RESEARCH_BRANCHES, FACILITY_NAMES, COUNTERS, COMPETITION_EVENTS } from '../../data/unlocks.js';
+// Reading unlock rules (data/unlocks.js). Parts and purposes: only 'start' content is open in normal play
+// until research arrives (Milestone 9). Facilities are checked for real by Campaign.unlockMet().
+import { RESEARCH_BRANCHES, FACILITY_NAMES, COUNTERS, COMPETITION_EVENTS, FLAG_NAMES } from '../../data/unlocks.js';
+import { FACILITIES } from '../../data/facilities.js';
+import { ROLES } from '../../data/staff.js';
 
 export function isOpenNow(rule) {
   return rule?.type === 'start';
@@ -14,7 +16,7 @@ export function describeUnlock(rule) {
     case 'research':
       return `${RESEARCH_BRANCHES[rule.branch] ?? rule.branch} ${rule.level}`;
     case 'facility':
-      return FACILITY_NAMES[rule.id] ?? rule.id;
+      return FACILITIES[rule.id]?.name ?? FACILITY_NAMES[rule.id] ?? rule.id;
     case 'rank':
       return `Company Rank ${rule.rank}`;
     case 'counter':
@@ -23,6 +25,10 @@ export function describeUnlock(rule) {
       return COMPETITION_EVENTS[rule.event] ?? rule.event;
     case 'secret':
       return 'Secret';
+    case 'flag':
+      return FLAG_NAMES[rule.flag] ?? rule.flag;
+    case 'role':
+      return `First ${ROLES[rule.role]?.name ?? rule.role} hired`;
     case 'all':
       return rule.of.map(describeUnlock).join(' + ');
     default:

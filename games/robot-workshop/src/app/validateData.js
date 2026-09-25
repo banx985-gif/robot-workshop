@@ -9,7 +9,10 @@ import { ROBOT_STAT_KEYS, STAT_KEYS } from '../../data/stats.js';
 import { STAFF, ROLES, TIERS } from '../../data/staff.js';
 import { TRAITS } from '../../data/traits.js';
 import { RANKS } from '../../data/economy.js';
-import { UNLOCK_TYPES, RESEARCH_BRANCHES, RESEARCH_MAX_LEVEL, FACILITY_NAMES, COUNTERS, COMPETITION_EVENTS } from '../../data/unlocks.js';
+import { UNLOCK_TYPES, RESEARCH_BRANCHES, RESEARCH_MAX_LEVEL, FACILITY_NAMES, COUNTERS, COMPETITION_EVENTS, FLAG_NAMES } from '../../data/unlocks.js';
+import { FACILITIES, FACILITY_ORDER, STATIONS, FALLBACK_STATIONS, EXPANSIONS, WORKSHOP_START, PROJECT_BAYS, BUILD_ART } from '../../data/facilities.js';
+import { EMPLOYEE_CAP } from '../../data/staff.js';
+import { FacilitySystem } from '../../../../core/FacilitySystem.js';
 import { SEGMENTS, PURPOSE_SEGMENTS, MARKET_RULES } from '../../data/segments.js';
 import { CONTRACT_RULES, SIGNATURE_CONTRACTS } from '../../data/contracts.js';
 import { PRODUCT_SLOT_STEPS } from '../../data/market.js';
@@ -34,7 +37,13 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
         v.check(Number.isInteger(rule.level) && rule.level >= 1 && rule.level <= RESEARCH_MAX_LEVEL, `${owner}: research level ${rule.level} out of range`);
         break;
       case 'facility':
-        v.check(rule.id in FACILITY_NAMES, `${owner}: unknown facility "${rule.id}"`);
+        v.check(rule.id in FACILITY_NAMES || rule.id in FACILITIES, `${owner}: unknown facility "${rule.id}"`);
+        break;
+      case 'flag':
+        v.check(rule.flag in FLAG_NAMES, `${owner}: unknown flag "${rule.flag}"`);
+        break;
+      case 'role':
+        v.ref(owner, 'role', rule.role, new Set(Object.keys(ROLES)));
         break;
       case 'rank':
         v.ref(owner, 'rank', rule.rank, rankSet);
@@ -179,6 +188,55 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
     v.check(s.appear.year >= 1 && s.appear.year <= CALENDAR.campaignYears && s.appear.month >= 1 && s.appear.month <= 12, `${o}: appears outside the 16-year campaign`);
     v.check(s.difficulty > 0 && s.difficulty < 1, `${o}: difficulty must be below 1 (so it is always possible)`);
   }
+
+  // --- facilities (§18.2: F01–F15 in Milestone 8), expansions (§18.1), bays (§18.3), staff caps (§39.1) ---
+  const EFFECT_KEYS = /^(progressPct\.(concept|engineering|software|assembly|testing)|stationStatPct\.(eng|des|prg|fab|tst)|gainPct\.[A-Z]{3}|robotStat\.[A-Z]{3}|commercialStat\.[A-Z]{3}|materialCostPct|contractPayoutPct|restEnergyPct|restMorale|displaySlots|projectBays|researchQueues|runningCostPerDay|salesUnitsPct)$/;
+  v.keysMatchIds('facilities', FACILITIES);
+  const facIds = v.uniqueIds('facilities', Object.values(FACILITIES));
+  v.check(FACILITY_ORDER.length === 15 && FACILITY_ORDER.every((id, i) => id === `F${String(i + 1).padStart(2, '0')}`), 'facilities: expected F01–F15 in order');
+  v.uniqueIds('facility art', Object.values(FACILITIES), (f) => f.art);
+  for (const f of Object.values(FACILITIES)) {
+    const o = `facility ${f.id}`;
+    v.check(typeof f.name === 'string' && f.name.length > 0 && typeof f.blurb === 'string', `${o}: needs a name and blurb`);
+    v.check(Number.isInteger(f.cost) && f.cost > 0, `${o}: bad cost ${f.cost}`);
+    v.check([f.w, f.h].every((n) => Number.isInteger(n) && n >= 1 && n <= 4), `${o}: bad footprint ${f.w}×${f.h}`);
+    v.check(Array.isArray(f.effects) && f.effects.length > 0, `${o}: no effects`);
+    for (const e of f.effects ?? []) {
+      v.check(EFFECT_KEYS.test(e.key), `${o}: unknown effect key "${e.key}"`);
+      if (/^(gainPct|robotStat|commercialStat)\./.test(e.key)) v.check(statSet.has(e.key.split('.')[1]), `${o}: unknown robot stat in "${e.key}"`);
+      v.check(Number.isFinite(e.value) && e.value !== 0, `${o}: effect ${e.key} needs a value`);
+      if (e.cap !== undefined) v.check(Math.sign(e.cap) === Math.sign(e.value), `${o}: cap and value of ${e.key} have different signs`);
+    }
+    checkUnlock(o, f.unlock);
+    v.art(o, `assets/images/facilities/${f.art}.png`);
+    if (f.floor) v.art(`${o} floor`, `assets/images/env/${f.floor}.png`);
+  }
+  for (const [phase, ids] of Object.entries(STATIONS)) {
+    v.ref('stations', 'phase', phase, new Set(PHASES.map((p) => p.id)));
+    for (const id of ids) v.ref(`stations (${phase})`, 'facility', id, facIds);
+  }
+  for (const id of FALLBACK_STATIONS) v.ref('fallback stations', 'facility', id, facIds);
+  v.uniqueIds('expansions', EXPANSIONS);
+  v.check(EXPANSIONS.length === 4, `expansions: expected 4, found ${EXPANSIONS.length}`);
+  for (const z of EXPANSIONS) {
+    const o = `expansion ${z.id}`;
+    v.check(z.cost > 0 && z.w > 0 && z.h > 0, `${o}: bad size or cost`);
+    checkUnlock(o, z.unlock);
+    for (const r of z.requires) v.ref(o, 'expansion', r, new Set(EXPANSIONS.map((x) => x.id)));
+    v.check(z.w % 2 === 0 && z.h % 2 === 0 && z.col % 2 === 0 && z.row % 2 === 0, `${o}: floor tiles cover 2×2 cells — keep zones on even cells`);
+  }
+  v.check(EXPANSIONS[0].buyable && EXPANSIONS[0].unlock.rank === 'D', 'expansions: Expansion 1 must be buyable at Rank D');
+  v.check(WORKSHOP_START.cols === 8 && WORKSHOP_START.rows === 10, 'workshop: starting grid must be 8 × 10 (§18.1)');
+  // The starting layout must pass the same placement rules as the player's.
+  const trial = new FacilitySystem({ defs: FACILITIES, area: WORKSHOP_START, zones: EXPANSIONS, entrance: WORKSHOP_START.entrance });
+  for (const p of WORKSHOP_START.layout) {
+    const res = trial.place(p.def, p.col, p.row, p.rot);
+    v.check(res.ok, `workshop start: ${p.def} at ${p.col},${p.row}: ${res.reason}`);
+  }
+  v.check(trial.total(PROJECT_BAYS.effect) >= 1, 'workshop start: needs a project bay');
+  for (const id of PROJECT_BAYS.second.needsAny) v.check(/^F(19|20)$/.test(id), `project bays: ${id} should be F19 or F20`);
+  for (const r of RANKS) v.check(Number.isInteger(EMPLOYEE_CAP[r.id]), `employee cap: no value for Rank ${r.id}`);
+  for (const k of Object.values(BUILD_ART)) v.check(typeof k === 'string', 'build art: bad key');
 
   // --- every image the game loads ---
   for (const [key, path] of Object.entries(manifest)) v.art(`image "${key}"`, path, { placeholder: placeholders.includes(key) });

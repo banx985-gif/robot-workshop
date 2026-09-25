@@ -11,6 +11,7 @@
 //   rules:     see DEFAULT_RULES
 //   planActivity(staff) → 'working' | 'resting' | 'idle'   optional: decides each worker's day
 //   energyLossMultiplier(staff) → number                   optional: extra multiplier on working Energy loss
+//   restModifier(staff) → { energyMult, morale }           optional: resting bonuses (e.g. a break room)
 import { StaffModel } from './StaffModel.js';
 
 export const DEFAULT_RULES = {
@@ -34,7 +35,7 @@ export const DEFAULT_RULES = {
 //   moraleFloor    Morale can't drop below this
 
 export class StaffSystem {
-  constructor({ rng, bus = null, statKeys, roles = {}, tiers = {}, traits = {}, rules = {}, planActivity = null, energyLossMultiplier = null }) {
+  constructor({ rng, bus = null, statKeys, roles = {}, tiers = {}, traits = {}, rules = {}, planActivity = null, energyLossMultiplier = null, restModifier = null }) {
     this.rng = rng;
     this.bus = bus;
     this.statKeys = statKeys;
@@ -44,6 +45,7 @@ export class StaffSystem {
     this.rules = { ...DEFAULT_RULES, ...rules };
     this.planActivity = planActivity;
     this.energyLossMultiplier = energyLossMultiplier;
+    this.restModifier = restModifier;
     this.staff = [];
   }
 
@@ -136,7 +138,9 @@ export class StaffSystem {
         const extra = this.energyLossMultiplier ? this.energyLossMultiplier(s) : 1;
         s.energy -= loss * (1 + this.traitEffect(s, 'energyLossPct') / 100) * extra;
       } else if (s.activity === 'resting') {
-        s.energy += r.restEnergyGain;
+        const mod = this.restModifier?.(s);
+        s.energy += r.restEnergyGain * (mod?.energyMult ?? 1);
+        if (mod?.morale) s.morale = round1(clamp(s.morale + mod.morale, 0, 100));
       }
       s.energy = round1(clamp(s.energy, 0, 100));
       this._applyMoraleFloor(s);

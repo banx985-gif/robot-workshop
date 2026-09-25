@@ -107,12 +107,13 @@ export function createContractsScreen({ renderer, layout, assets, campaign, rout
           const h = hint(k);
           if (h.robot && hit(c, buttonRect(i, 1))) {
             const res = campaign.deliverRecord(k.id, h.robot.number);
-            message = res.ok ? { text: `Delivered! +${fmt(k.payout)} credits`, color: '#7CFFB2' } : { text: res.failures.join(', '), color: '#FF8A80' };
+            message = res.ok ? { text: `Delivered! +${fmt(k.result?.paid ?? k.payout)} credits`, color: '#7CFFB2' } : { text: res.failures.join(', '), color: '#FF8A80' };
             campaign.save().catch(() => {});
             return;
           }
           if (hit(c, buttonRect(i, 0))) {
-            if (campaign.activeProject) message = { text: 'The workshop is busy — finish the current project first', color: '#FFD166' };
+            const can = campaign.canStartProject();
+            if (!can.ok) message = { text: can.reason, color: '#FFD166' };
             else router.go('builder', { contractId: k.id });
             return;
           }
@@ -160,7 +161,8 @@ export function createContractsScreen({ renderer, layout, assets, campaign, rout
     text(ctx, `${c.customer} · ${seg.name} · ${c.tier[0].toUpperCase() + c.tier.slice(1)} size`, x, r.y + 64, { size: 24, color: '#9AA8B5', maxWidth: mw });
     if (c.blurb) text(ctx, c.blurb, x, r.y + 96, { size: 22, color: '#C9D3DD', maxWidth: mw });
     requirementLines(c).slice(1).forEach((line, j) => text(ctx, line, x, r.y + 134 + j * 36, { size: 27, bold: j === 0, color: '#E8EEF2', maxWidth: mw }));
-    text(ctx, `Pays ${fmt(c.payout)} · +${c.reputation} Rep · fail ${c.failReputation} Rep · ${Math.round(c.specialChance * 100)}% bonus chance`, x, r.y + 210, { size: 24, color: '#FFD166', maxWidth: mw });
+    const bonus = campaign.fx('contractPayoutPct');
+    text(ctx, `Pays ${fmt(c.payout)}${bonus ? ` +${bonus}%` : ''} · +${c.reputation} Rep · fail ${c.failReputation} Rep · ${Math.round(c.specialChance * 100)}% bonus chance`, x, r.y + 210, { size: 24, color: '#FFD166', maxWidth: mw });
 
     const y2 = r.y + 250;
     if (c.status === 'offered' || c.status === 'active') {
@@ -172,14 +174,14 @@ export function createContractsScreen({ renderer, layout, assets, campaign, rout
       if (c.status === 'offered') {
         drawButton(ctx, buttonRect(i), campaign.contracts.canAccept ? 'Accept' : `Full (${campaign.contracts.maxActive})`, { active: campaign.contracts.canAccept, disabled: !campaign.contracts.canAccept, accent: '#7CFFB2', font: 'bold 34px system-ui, sans-serif' });
       } else {
-        drawButton(ctx, buttonRect(i, 0), 'Build for this', { disabled: !!campaign.activeProject, font: 'bold 30px system-ui, sans-serif' });
+        drawButton(ctx, buttonRect(i, 0), 'Build for this', { disabled: !campaign.canStartProject().ok, font: 'bold 30px system-ui, sans-serif' });
         if (h.robot) drawButton(ctx, buttonRect(i, 1), `Deliver #${h.robot.number}`, { active: true, accent: '#7CFFB2', font: 'bold 30px system-ui, sans-serif' });
       }
       return;
     }
     const when = campaign.clock.shortLabel(c.resolvedDay);
     if (c.status === 'success') {
-      text(ctx, `✓ Delivered ${when} · paid ${fmt(c.payout)}${c.result?.special ? ' + bonus Tech Chip' : ''}`, r.x + 24, y2, { size: 30, bold: true, color: '#7CFFB2', maxWidth: r.w - 48 });
+      text(ctx, `✓ Delivered ${when} · paid ${fmt(c.result?.paid ?? c.payout)}${c.result?.special ? ' + bonus Tech Chip' : ''}`, r.x + 24, y2, { size: 30, bold: true, color: '#7CFFB2', maxWidth: r.w - 48 });
     } else {
       const why = { deadline: 'deadline passed', cancelled: 'cancelled' }[c.result?.reason] ?? c.result?.reason;
       text(ctx, `✗ Failed ${when} (${why}) · ${c.failReputation} Rep`, r.x + 24, y2, { size: 30, bold: true, color: '#FF8A80', maxWidth: r.w - 48 });

@@ -31,6 +31,9 @@ import { createFinanceScreen } from './screens/FinanceScreen.js';
 import { createClosureScreen } from './screens/ClosureScreen.js';
 import { createComponentsScreen } from './screens/ComponentsScreen.js';
 import { createContractsScreen } from './screens/ContractsScreen.js';
+import { createBuildScreen } from './screens/BuildScreen.js';
+import { FACILITIES, BUILD_ART } from '../data/facilities.js';
+import { RANK_NOTES } from '../data/economy.js';
 import { FIRST_CONTRACT_ART } from '../data/contracts.js';
 import { SEGMENTS } from '../data/segments.js';
 import { createDebugBuilderScreen } from './screens/DebugBuilderScreen.js';
@@ -41,7 +44,7 @@ import { Campaign, SAVE_MIGRATIONS } from './app/Campaign.js';
 import { COMPONENTS } from '../data/components.js';
 import { STAFF, ROLES, STARTER_IDS } from '../data/staff.js';
 import { SAVE_VERSION } from '../data/balance.js';
-import { ROOM_ART, FURNITURE_ART } from '../data/workshop.js';
+import { ROOM_ART } from '../data/workshop.js';
 import { VFX_ART, STATUS_ART, SOUNDS, FLOAT_COLORS } from '../data/feedback.js';
 
 const W = 1080;
@@ -51,9 +54,11 @@ const MAX_H = 2640; // up to 9:22 fills edge to edge; taller still gets thin bar
 const starters = STAFF.filter((s) => STARTER_IDS.includes(s.id));
 const art = (folder, key) => [key, `assets/images/${folder}/${key}.png`];
 const ASSETS = {
-  // Workshop room: floor, walls, bench and pedestal.
-  ...Object.fromEntries([ROOM_ART.floor.key, ROOM_ART.corner.key, ...Object.values(ROOM_ART.pieces).map((p) => p.key)].map((k) => art('env', k))),
-  ...Object.fromEntries(Object.values(FURNITURE_ART).map((f) => art('facilities', f.key))),
+  // Workshop room: floor, walls, the expansion boundary and the test-zone floor; facilities F01–F15; build icons.
+  ...Object.fromEntries([ROOM_ART.floor.key, ROOM_ART.corner.key, ...Object.values(ROOM_ART.pieces).map((p) => p.key), BUILD_ART.boundary].map((k) => art('env', k))),
+  ...Object.fromEntries(Object.values(FACILITIES).map((f) => art('facilities', f.art))),
+  ...Object.fromEntries(Object.values(FACILITIES).filter((f) => f.floor).map((f) => art('env', f.floor))),
+  ...Object.fromEntries([BUILD_ART.buildIcon, BUILD_ART.expansionIcon, BUILD_ART.lockIcon].map((k) => art('ui', k))),
   // Effects and status icons.
   ...Object.fromEntries(Object.values(VFX_ART).map((k) => art('vfx', k))),
   ...Object.fromEntries(Object.values(STATUS_ART).map((k) => art('status', k))),
@@ -473,7 +478,7 @@ const guide = new GuideSystem({
   bus,
   targetRect: guideTarget,
   screen: () => router.currentName,
-  canShow: () => campaignReady && !major.active && !campaign.closed && !['boot', 'test', 'debugbuilder', 'help', 'components'].includes(router.currentName),
+  canShow: () => campaignReady && !major.active && !campaign.closed && !buildScreen?.confirm && !['boot', 'test', 'debugbuilder', 'help', 'components'].includes(router.currentName),
   pause: () => {
     if (campaign.clock.paused) return false;
     campaign.clock.pause();
@@ -500,6 +505,7 @@ bus.on('campaign:ready', () => {
 });
 const helpScreen = createHelpScreen({ renderer, layout, assets, router, guide });
 const contractsScreen = createContractsScreen({ renderer, layout, assets, campaign, router, goProject, hud });
+const buildScreen = createBuildScreen({ renderer, layout, assets, campaign, router, workshop: workshopScreen, hud });
 // A throwaway run with the three starters on its own bus: the debug builder builds robots in it.
 const makeSandbox = () => {
   const c = new Campaign({ bus: new EventBus() });
@@ -555,7 +561,7 @@ bus.on('economy:change', (line) => {
 });
 // Contracts: pay-out floats up; a failure floats red. The very first offer gets a "first customer" moment.
 bus.on('contract:success', ({ contract }) => {
-  floatNumber(`+${contract.payout.toLocaleString('en-US')}`, FLOAT_COLORS.credits, 'ui_icon_01_money', 0.24);
+  floatNumber(`+${(contract.result?.paid ?? contract.payout).toLocaleString('en-US')}`, FLOAT_COLORS.credits, 'ui_icon_01_money', 0.24);
   audio.play('sale');
 });
 bus.on('contract:failed', ({ contract }) => {
@@ -579,9 +585,18 @@ bus.on('contract:offered', ({ contract }) => {
     onAck: () => router.go('contracts', { tab: 'offered' }),
   });
 });
-bus.on('reputation:change', ({ amount }) => {
-  if (amount > 0) floatNumber(`+${amount} Rep`, FLOAT_COLORS.reputation, 'ui_icon_03_reputation', 0.74);
+bus.on('reputation:change', ({ amount, quiet }) => {
+  if (amount > 0 && !quiet) floatNumber(`+${amount} Rep`, FLOAT_COLORS.reputation, 'ui_icon_03_reputation', 0.74);
 });
+// A new Company Rank (§8.3) is a big moment: what it opens, then carry on.
+bus.on('reputation:rankUp', ({ rank }) => {
+  if (!campaignReady) return;
+  audio.play('levelUp');
+  campaign.save().catch(() => {});
+  major.show({ title: `Company Rank ${rank.id}!`, subtitle: RANK_NOTES[rank.id] ?? 'Your workshop is growing.', accent: '#FFD166' });
+});
+// Money for building shows in the ledger; a sale floats its refund.
+bus.on('facility:sold', ({ refund }) => floatNumber(`+${refund.toLocaleString('en-US')}`, FLOAT_COLORS.credits, 'ui_icon_01_money', 0.24));
 bus.on('project:phase', ({ job, phase }) => debug.log(`${job.name}: ${phase.name} done`));
 bus.on('robot:fault', ({ job }) => debug.log(`${job.name}: fault (${job.data.faults.length} open)`));
 bus.on('robot:breakthroughRoll', ({ job, phase, hit }) => debug.log(`${job.name}: ${phase.name} 60% check → ${hit ? 'BREAKTHROUGH' : 'none'}`));
@@ -610,6 +625,8 @@ if (debug.enabled) {
   bus.on('market:month', ({ started }) => started && debug.log(`trend: ${Object.entries(started.shifts).map(([k, v]) => k + (v > 0 ? ' +' : ' ') + v).join(', ')} for ${started.months} mo`));
   window.__m7 = { ...window.__m6, contracts: contractsScreen, SEGMENTS };
   window.__m7b = { ...window.__m7, guide, coach, guideTarget, help: helpScreen };
+  window.__m8 = { ...window.__m7b, build: buildScreen, facilities: campaign.facilities, FACILITIES };
+  bus.on('facility:layout', () => debug.log(`layout v${campaign.facilities.version}: ${campaign.facilities.placed.length} facilities`));
 }
 
 router
@@ -626,6 +643,7 @@ router
   .register('components', componentsScreen)
   .register('contracts', contractsScreen)
   .register('help', helpScreen)
+  .register('build', buildScreen)
   .register('debugbuilder', debugBuilderScreen);
 router.go('boot');
 loop.start();

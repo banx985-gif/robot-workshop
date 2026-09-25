@@ -1,5 +1,5 @@
 // One Robot Workshop run: seeded RNG, calendar, staff, robot projects, history, money, products,
-// reputation, market, contracts, and saving/loading.
+// reputation, market, contracts, the workshop layout (facilities + expansions), and saving/loading.
 // Random numbers: the main stream drives staff, projects and sales; the market and the contracts each
 // have their own seeded stream, so contract offers never change how a robot build rolls.
 // Everything that must come back identical after a reload lives here.
@@ -15,7 +15,9 @@ import { MarketSystem } from '../../../../core/MarketSystem.js';
 import { ContractSystem } from '../../../../core/ContractSystem.js';
 import { writeReview } from '../../../../core/ReviewText.js';
 import { ReputationSystem } from '../../../../core/ReputationSystem.js';
-import { STAFF, ROLES, TIERS, STARTER_IDS } from '../../data/staff.js';
+import { FacilitySystem } from '../../../../core/FacilitySystem.js';
+import { rankAtLeast, valueForRank } from '../../../../core/CompanyRank.js';
+import { STAFF, ROLES, TIERS, STARTER_IDS, EMPLOYEE_CAP } from '../../data/staff.js';
 import { TRAITS } from '../../data/traits.js';
 import { STAT_KEYS } from '../../data/stats.js';
 import { PHASES, BUDGET_FOCUS } from '../../data/phases.js';
@@ -27,6 +29,8 @@ import { REVIEW_TEMPLATES, FIT_BANDS } from '../../data/reviews.js';
 import { CALENDAR, SPEED_UNLOCKS, STAFF_RULES, PROJECT_RULES, CAMPAIGN_SEED } from '../../data/balance.js';
 import { CURRENCIES, STARTING_MONEY, DEBT_RULES, SALARY_RULES, OPERATING_COST, TECH_CHIP_REWARDS, RANKS, REPUTATION_RULES } from '../../data/economy.js';
 import { PRODUCT_SLOT_STEPS, SALES_RULES } from '../../data/market.js';
+import { FACILITIES, EXPANSIONS, WORKSHOP_START, PROJECT_BAYS, DISPLAY_RULES, LOCKED_LATER } from '../../data/facilities.js';
+import { describeUnlock } from '../systems/unlockRules.js';
 import { RobotBuildSystem } from '../systems/RobotBuildSystem.js';
 import { Sales } from '../systems/Sales.js';
 import { contractHooks, checkRecord } from '../systems/ContractRules.js';
@@ -59,6 +63,8 @@ export const SAVE_MIGRATIONS = {
   3: (record) => ({ ...record, data: { ...record.data, market: null, contracts: null } }),
   // v4 (Milestone 7) had no first-time guide: null tells the game this is an older run (see main.js).
   4: (record) => ({ ...record, data: { ...record.data, guide: null } }),
+  // v5 (Milestone 7b) had a fixed room: null = start from the starting layout (bench, pedestal, Assembly Bay).
+  5: (record) => ({ ...record, data: { ...record.data, workshop: null } }),
 };
 
 export class Campaign {
@@ -70,6 +76,17 @@ export class Campaign {
     this.rng = new Rng(this.seed);
     this.clock = new Clock({ bus, ...CALENDAR });
     this.clock.speedAllowed = (speed) => this.speedUnlocked(speed);
+    // Workshop layout (§18). Other systems read facility bonuses through fx(key), never by facility id.
+    this.facilities = new FacilitySystem({
+      bus,
+      defs: FACILITIES,
+      area: { cols: WORKSHOP_START.cols, rows: WORKSHOP_START.rows },
+      zones: EXPANSIONS,
+      entrance: WORKSHOP_START.entrance,
+      sellRefundPct: WORKSHOP_START.sellRefundPct,
+    });
+    const fx = (key) => this.facilities.total(key);
+    this.fx = fx;
     this.staff = new StaffSystem({
       rng: this.rng,
       bus,
@@ -81,6 +98,7 @@ export class Campaign {
       // On a project → working (Energy drains); otherwise resting (§9.5).
       planActivity: (s) => (s.assigned ? 'working' : 'resting'),
       energyLossMultiplier: (s) => 1 + (this.focusFor(s)?.energyDrainPct ?? 0) / 100,
+      restModifier: () => ({ energyMult: 1 + fx('restEnergyPct') / 100, morale: fx('restMorale') }), // Break Table, Charging Dock
     });
     this.history = new JobHistory({ bus });
     this.projects = new ProjectSystem({
@@ -97,7 +115,7 @@ export class Campaign {
     });
     this.assignments = new AssignmentSystem({ staff: this.staff, getJobs: () => this.projects.jobs, bus });
     this.projects.assignments = this.assignments;
-    this.robots = new RobotBuildSystem({ rng: this.rng, staff: this.staff, traits: TRAITS, bus, now: () => this.clock.now() });
+    this.robots = new RobotBuildSystem({ rng: this.rng, staff: this.staff, traits: TRAITS, bus, now: () => this.clock.now(), effects: fx });
     this.projects.hooks = this.robots.hooks();
 
     this.economy = new EconomySystem({ bus, currencies: CURRENCIES, debt: DEBT_RULES, now: () => this.clock.totalDays });
@@ -105,7 +123,7 @@ export class Campaign {
     this.marketRng = new Rng(`${this.seed}|market`);
     this.contractRng = new Rng(`${this.seed}|contracts`);
     this.market = new MarketSystem({ rng: this.marketRng, segments: SEGMENTS, rules: MARKET_RULES, bus });
-    this.sales = new Sales({ rng: this.rng, market: this.market, reputation: this.reputation });
+    this.sales = new Sales({ rng: this.rng, market: this.market, reputation: this.reputation, effects: fx });
     const slotSteps = PRODUCT_SLOT_STEPS.map((s) => ({ minRankIndex: RANKS.findIndex((r) => r.id === s.rank), slots: s.slots }));
     this.products = new ProductSystem({
       bus,
@@ -163,6 +181,25 @@ export class Campaign {
     this.staff.dailyTick();
     this._pushStreaks();
     this.contracts.dailyTick(this.clock.totalDays); // deadlines
+    this._displayReputation();
+  }
+
+  // F15: each robot on display earns reputation daily, up to a cap per robot (newest robots go on show).
+  _displayReputation() {
+    const slots = this.fx('displaySlots');
+    if (!slots) return;
+    for (const rec of this.displayedRecords(slots)) {
+      const got = rec.displayRep ?? 0;
+      if (got >= DISPLAY_RULES.capPerModel) continue;
+      const add = Math.min(DISPLAY_RULES.repPerDay, DISPLAY_RULES.capPerModel - got);
+      rec.displayRep = got + add;
+      this.reputation.add(add, `On display: ${rec.name}`, { quiet: true });
+    }
+  }
+
+  // The newest finished robots, one per display (newest first).
+  displayedRecords(slots = this.fx('displaySlots')) {
+    return slots > 0 ? this.history.records.slice(-slots).reverse() : [];
   }
 
   // Month end, then the new month's day 1.
@@ -188,12 +225,17 @@ export class Campaign {
     for (const s of this.staff.staff) this.economy.add('credits', -this.salaryFor(s), `Salary: ${s.name}`, 'salary');
   }
 
-  // §20.5 project operating cost per project day (no facilities yet, so that part is 0).
+  // §20.5 project operating cost per project day. The facility part (advanced facilities) comes from the effect query.
   operatingCostPerDay(job) {
     const c = OPERATING_COST;
     const staff = this.projects.teamOf(job).reduce((t, s) => t + this.salaryFor(s), 0);
     const base = c.base + job.data.buildCost / c.componentCostDivisor;
-    return Math.round((base + staff / c.salaryDivisor) * c.focusMultiplier[job.data.budgetFocus]);
+    return Math.round((base + staff / c.salaryDivisor + this.fx('runningCostPerDay')) * c.focusMultiplier[job.data.budgetFocus]);
+  }
+
+  // What the parts bill comes to today, after Parts Racks / Storage Crates.
+  buildCostFor(components) {
+    return Math.round(this.robots.buildCost(components) * (1 + this.fx('materialCostPct') / 100));
   }
 
   // Product data for launching a robot at a price position (also used for the launch forecast).
@@ -229,6 +271,124 @@ export class Campaign {
     const fitBand = fit >= FIT_BANDS.high ? 'high' : fit >= FIT_BANDS.mid ? 'mid' : 'low';
     const text = writeReview(REVIEW_TEMPLATES, { stats, fitBand, name: product.name, seed: `${this.seed}|${product.id}|${month}` });
     (product.data.reviews ||= []).push({ month, text });
+  }
+
+  // --- facility unlock rules (§18.2) ---
+  unlockMet(rule) {
+    if (this.flags.debugUnlockAll) return true;
+    switch (rule?.type) {
+      case 'start':
+        return true;
+      case 'rank':
+        return rankAtLeast(RANKS, this.reputation.highestRankIndex, rule.rank);
+      case 'flag':
+        return !!this.flags[rule.flag];
+      case 'role':
+        return this.staff.staff.some((s) => s.role === rule.role);
+      case 'facility':
+        return this.facilities.has(rule.id);
+      case 'all':
+        return rule.of.every((r) => this.unlockMet(r));
+      default:
+        return false; // research, competitions, counters, secrets: later milestones
+    }
+  }
+
+  facilityUnlocked(defId) {
+    return this.unlockMet(FACILITIES[defId]?.unlock);
+  }
+
+  // §39.1 employee cap at the company's rank.
+  get employeeCap() {
+    return valueForRank(RANKS, EMPLOYEE_CAP, this.reputation.highestRankIndex);
+  }
+
+  // §18.3 project bays: the Assembly Bay gives one; a second needs Rank C and F19 or F20.
+  get projectBays() {
+    const b = PROJECT_BAYS;
+    if (this.fx(b.effect) < 1) return 0;
+    let n = 1;
+    if (rankAtLeast(RANKS, this.reputation.highestRankIndex, b.second.rank) && b.second.needsAny.some((id) => this.facilities.has(id))) n++;
+    return Math.min(b.max, n);
+  }
+
+  // Can a new robot project start now? { ok, reason }
+  canStartProject() {
+    if (!this.projectBays) return { ok: false, reason: 'Build an Assembly Bay first (tap Build)' };
+    if (this.projects.jobs.length >= this.projectBays) return { ok: false, reason: 'The project bay is busy — finish the current project first' };
+    return { ok: true, reason: null };
+  }
+
+  // --- building (bible §18; money here, layout rules in core/FacilitySystem) ---
+  // Why this facility can't be bought right now, or null.
+  buyBlock(defId) {
+    const d = FACILITIES[defId];
+    if (!d) return 'Unknown facility';
+    if (!this.facilityUnlocked(defId)) return `Locked: ${describeUnlock(d.unlock)}`;
+    if (this.economy.isBlocked('facility')) return 'No building while in debt';
+    if (!this.economy.canAfford('credits', d.cost)) return 'Not enough credits';
+    return null;
+  }
+
+  buildFacility(defId, col, row, rot = 0) {
+    const block = this.buyBlock(defId);
+    if (block) return { ok: false, reason: block };
+    const res = this.facilities.place(defId, col, row, rot);
+    if (!res.ok) return res;
+    this.economy.add('credits', -FACILITIES[defId].cost, `Built: ${FACILITIES[defId].name}`, 'facility');
+    return res;
+  }
+
+  moveFacility(uid, col, row, rot) {
+    return this.facilities.move(uid, col, row, rot);
+  }
+
+  // Why this facility can't be sold, or null.
+  sellBlock(uid) {
+    const item = this.facilities.get(uid);
+    if (!item) return 'Unknown facility';
+    const bay = (FACILITIES[item.def].effects ?? []).some((e) => e.key === PROJECT_BAYS.effect);
+    if (bay && this.projects.jobs.length && this.fx(PROJECT_BAYS.effect) - 1 < this.projects.jobs.length) return 'A robot is being built in this bay';
+    return null;
+  }
+
+  sellFacility(uid) {
+    const block = this.sellBlock(uid);
+    if (block) return { ok: false, reason: block };
+    const { item, refund } = this.facilities.remove(uid);
+    this.economy.add('credits', refund, `Sold: ${FACILITIES[item.def].name}`, 'facilitySale');
+    return { ok: true, item, refund };
+  }
+
+  // Why this expansion can't be bought right now, or null.
+  expansionBlock(zoneId) {
+    const z = EXPANSIONS.find((e) => e.id === zoneId);
+    if (!z) return 'Unknown expansion';
+    if (this.facilities.isOwned(zoneId)) return 'Already open';
+    if (!z.buyable) return LOCKED_LATER;
+    if (!this.facilities.zoneReady(zoneId)) return `Open ${z.requires.map((r) => EXPANSIONS.find((e) => e.id === r)?.name ?? r).join(', ')} first`;
+    if (!this.unlockMet(z.unlock)) return `Needs ${describeUnlock(z.unlock)}`;
+    if (this.economy.isBlocked('facility')) return 'No building while in debt';
+    if (!this.economy.canAfford('credits', z.cost)) return 'Not enough credits';
+    return null;
+  }
+
+  buyExpansion(zoneId) {
+    const block = this.expansionBlock(zoneId);
+    if (block) return { ok: false, reason: block };
+    const z = EXPANSIONS.find((e) => e.id === zoneId);
+    this.economy.add('credits', -z.cost, `Workshop ${z.name}`, 'expansion');
+    this.facilities.openZone(zoneId);
+    return { ok: true, zone: z };
+  }
+
+  // A new run's room: the starting layout from data.
+  startLayout() {
+    this.facilities.reset();
+    for (const p of WORKSHOP_START.layout) {
+      const res = this.facilities.place(p.def, p.col, p.row, p.rot);
+      if (!res.ok) console.error('[Campaign] starting layout:', p.def, res.reason);
+    }
   }
 
   // --- what is open (research arrives in Milestone 9; debug can open everything) ---
@@ -285,7 +445,9 @@ export class Campaign {
 
   _contractPaid(c, rec) {
     if (rec) rec.deliveredContractId = c.id;
-    this.economy.add('credits', c.payout, `Contract: ${c.title}`, 'contract');
+    const paid = Math.round(c.payout * (1 + this.fx('contractPayoutPct') / 100)); // Reception Desk
+    c.result.paid = paid;
+    this.economy.add('credits', paid, `Contract: ${c.title}`, 'contract');
     this.reputation.add(c.reputation, `Contract: ${c.title}`);
     if (this.contractRng.chance(c.specialChance)) {
       this.economy.add('techChips', CONTRACT_RULES.special.techChips, `Contract bonus: ${c.title}`, 'reward');
@@ -338,8 +500,9 @@ export class Campaign {
   startRobotProject({ purposeId = 'helper', components = STARTER_PARTS, budgetFocus = 'balanced', teamIds = [], contractId = null }) {
     const job = this.robots.createProject(this.projects, this.history, { purposeId, components, budgetFocus });
     job.data.contractId = contractId;
+    job.data.paidCost = this.buildCostFor(components); // after facility discounts
     this.projects.start(job);
-    this.economy.add('credits', -job.data.buildCost, `Build cost: ${job.name}`, 'projectBuild');
+    this.economy.add('credits', -job.data.paidCost, `Build cost: ${job.name}`, 'projectBuild');
     for (const id of teamIds) this.assignments.assign(job, id);
     return job;
   }
@@ -354,6 +517,7 @@ export class Campaign {
     this.guideState = undefined; // a brand-new run: the guide starts from step 1
     this.reputation.load({ value: 0, highestRankIndex: 0 });
     this.clock.load({ year: 1, month: 1, day: 1, totalDays: 0, dayProgress: 0, speed: CALENDAR.speeds[0] });
+    this.startLayout();
     this.staff.load([]);
     for (const id of STARTER_IDS) this.staff.addFromDefinition(STAFF.find((s) => s.id === id));
     this.projects.load({ nextId: 1, jobs: [] });
@@ -385,6 +549,7 @@ export class Campaign {
       market: this.market.serialize(),
       products: this.products.serialize(),
       contracts: this.contracts.serialize(),
+      workshop: this.facilities.serialize(),
       guide: this.guideState ?? null,
       flags: { ...this.flags },
     };
@@ -408,6 +573,8 @@ export class Campaign {
     if (!this.market.load(data.market)) this.market.start(); // saves from before Milestone 7
     this.products.load(data.products);
     this.contracts.load(data.contracts);
+    if (data.workshop) this.facilities.load(data.workshop);
+    else this.startLayout(); // saves from before Milestone 8
     this.guideState = data.guide ?? null;
     this.assignments.refresh();
     this.bus.emit('campaign:ready', { fresh: false });

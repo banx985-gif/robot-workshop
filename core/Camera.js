@@ -12,6 +12,8 @@ export class Camera {
     this.y = y; // world coordinate shown at the screen's top edge
     this._drag = null;
     this.pixelScale = 0; // real pixels per logical unit; when set, the view snaps to whole pixels (sharper sprites)
+    this.viewX = 0; // where the view's top-left sits on the screen (e.g. below a header); 0,0 = full screen
+    this.viewY = 0;
     this.clamp();
   }
 
@@ -80,16 +82,17 @@ export class Camera {
   }
 
   screenToWorld(sx, sy) {
-    return { x: sx / this.zoom + this.x, y: sy / this.zoom + this.y };
+    return { x: (sx - this.viewX) / this.zoom + this.x, y: (sy - this.viewY) / this.zoom + this.y };
   }
 
   worldToScreen(wx, wy) {
-    return { x: (wx - this.x) * this.zoom, y: (wy - this.y) * this.zoom };
+    return { x: (wx - this.x) * this.zoom + this.viewX, y: (wy - this.y) * this.zoom + this.viewY };
   }
 
   // Wrap world drawing: camera.apply(ctx); ...draw in world units...; camera.restore(ctx);
   apply(ctx) {
     ctx.save();
+    if (this.viewX || this.viewY) ctx.translate(this.viewX, this.viewY);
     ctx.scale(this.zoom, this.zoom);
     const ps = this.pixelScale * this.zoom;
     if (ps > 0) ctx.translate(Math.round(-this.x * ps) / ps, Math.round(-this.y * ps) / ps);

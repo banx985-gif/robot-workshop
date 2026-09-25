@@ -62,3 +62,6 @@ export const STAFF = [
 ];
 
 export const STARTER_IDS = STAFF.filter((s) => s.unlock.type === 'starter').map((s) => s.id);
+
+// §39.1 employee cap by Company Rank (shown on the roster; hiring arrives in Milestone 10).
+export const EMPLOYEE_CAP = { E: 6, D: 8, C: 12, B: 16, A: 20, S: 24, 'S+': 24 };

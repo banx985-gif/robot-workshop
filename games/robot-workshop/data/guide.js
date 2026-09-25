@@ -1,8 +1,9 @@
-// First-time guide steps (Milestone 7b; the full tutorial, bible §26, comes in Milestone 26 and builds on this).
+// First-time guide steps (Milestone 7b; building and expansions added in Milestone 8; the full tutorial, bible §26, comes in Milestone 26 and builds on this).
 // Plain data for core/GuideSystem.js. Short, friendly words — no walls of text.
 // target names are resolved to screen spots by src/ui/guideTargets.js.
 // trigger: after = previous step done; event = has happened at least once; screen = only shows there.
 // advance: tap = tap the glowing spot; next = "Got it"; event = when it happens in the game.
+// skipIf: the player already did it without the guide (the step counts as done).
 
 export const GUIDE_STEPS = [
   {
@@ -137,6 +138,66 @@ export const GUIDE_STEPS = [
     trigger: { after: 'S11' },
     advance: { next: true },
     block: true,
+  },
+  {
+    id: 'S14',
+    title: 'Build your workshop',
+    text: 'Stations make your team faster. Tap Build to see what you can add.',
+    target: 'buildButton',
+    trigger: { after: 'S13', screen: ['workshop'] },
+    advance: { tap: true },
+    block: true,
+    skipIf: 'facility:placed', // already built something on their own
+  },
+  {
+    id: 'S15',
+    title: 'Pick a station',
+    text: 'The Engineering Desk speeds up the Engineering stage. Tap it.',
+    target: 'engineeringDeskCard',
+    trigger: { after: 'S14', screen: ['build'] },
+    advance: { tap: true },
+    block: true,
+    skipIf: 'facility:placed',
+  },
+  {
+    id: 'S16',
+    title: 'Place it',
+    text: 'Drag it to a green spot, then tap Place. Workers walk to it in the Engineering stage.',
+    target: 'placeButton',
+    trigger: { after: 'S15', screen: ['build'] },
+    advance: { event: 'facility:placed' },
+    block: false,
+    restartAt: 'S15',
+  },
+  {
+    id: 'S17',
+    title: 'More room!',
+    text: 'Your new rank opens Expansion 1: more floor for more stations. Tap Build.',
+    target: 'buildButton',
+    trigger: { after: 'S13', event: 'reputation:rankUp', screen: ['workshop'] },
+    advance: { tap: true },
+    block: true,
+    skipIf: 'facility:expansion',
+  },
+  {
+    id: 'S18',
+    title: 'Expansions',
+    text: 'Tap Expansions to see the areas you can open.',
+    target: 'expansionsTab',
+    trigger: { after: 'S17', screen: ['build'] },
+    advance: { tap: true },
+    block: true,
+    skipIf: 'facility:expansion',
+  },
+  {
+    id: 'S19',
+    title: 'Buy Expansion 1',
+    text: 'It costs 8,000 credits. Tap Buy when you have the money — the new floor opens straight away.',
+    target: 'buyExpansion1',
+    trigger: { after: 'S18', screen: ['build'] },
+    advance: { event: 'facility:expansion' },
+    block: false,
+    restartAt: 'S18',
   },
 ];
 

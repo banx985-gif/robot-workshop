@@ -59,8 +59,9 @@ export function referenceBuild({ purposeId, openParts, minCx = 0, maxCx = Infini
   return Object.fromEntries(SLOTS.map((s) => [s.id, pick[s.id].id]));
 }
 
-// Predict a finished robot for this build with the whole current team working on it.
-export function predictBuild(campaign, purposeId, components) {
+// Predict a finished robot for this build with the whole current team working on it, with today's facilities.
+// commercial: a commercial model gets commercial-only facility bonuses (contract builds do not).
+export function predictBuild(campaign, purposeId, components, { commercial = false } = {}) {
   const rb = campaign.robots;
   const team = campaign.staff.staff;
   const fake = { slots: team.map((s) => s.id), data: { components } };
@@ -74,15 +75,15 @@ export function predictBuild(campaign, purposeId, components) {
   for (const phase of PHASES) {
     let score = 0;
     for (const s of team) score += campaign.projects.workerScore(fake, phase, s);
-    for (const [k, share] of Object.entries(phase.gains)) gains[k] += Math.round(score * share * R.gainScale);
+    for (const [k, share] of Object.entries(phase.gains)) gains[k] += Math.round(score * share * R.gainScale * rb.gainMultiplier(k));
     if (phase.innovationShare) innovation += score * phase.innovationShare;
     if (phase.setsFit) fit = Math.min(100, Math.round(score * R.fitScale));
     bonus += Math.min(R.phaseQualityBonus.maxPerPhase, score * R.phaseQualityBonus.perScore);
-    const perDay = (R.progressBase + score / R.progressDivisor) * R.progressScale;
+    const perDay = (R.progressBase + score / R.progressDivisor) * R.progressScale * rb.progressMultiplier(phase);
     days += Math.ceil(tier.phaseTarget / perDay);
   }
   const stats = {};
-  for (const k of ROBOT_STAT_KEYS) stats[k] = Math.min(999, Math.max(0, base[k] + gains[k]));
+  for (const k of ROBOT_STAT_KEYS) stats[k] = Math.min(999, Math.max(0, base[k] + gains[k] + rb.facilityStat(k, commercial)));
   innovation += rb.partInnovation(components);
   const weighted = rb.weightedScore(purposeId, stats);
   const quality = Math.min(100, Math.max(0, weighted / 6.5 + innovation * 0.2 + bonus));

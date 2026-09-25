@@ -120,11 +120,12 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
       ctx.font = 'bold 48px system-ui, sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
-      ctx.fillText(`Staff (${campaign.staff.staff.length})`, lr.x + 8, lr.y - 24);
+      // §39.1: the cap grows with Company Rank (hiring arrives in Milestone 10).
+      ctx.fillText(`Staff ${campaign.staff.staff.length} / ${campaign.employeeCap}`, lr.x + 8, lr.y - 24);
       ctx.fillStyle = '#9AA8B5';
       ctx.font = '28px system-ui, sans-serif';
       ctx.textAlign = 'right';
-      ctx.fillText('Tap a worker to find them in the workshop', lr.x + lr.w - 8, lr.y - 28);
+      ctx.fillText('Cap rises with Company Rank · tap a worker to find them', lr.x + lr.w - 8, lr.y - 28, lr.w - 360);
 
       list.render(ctx);
       if (debug.enabled) drawButton(ctx, resetButtonRect(), 'New game (debug)', { accent: '#FF5A5A' });
