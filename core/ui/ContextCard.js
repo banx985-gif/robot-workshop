@@ -1,7 +1,9 @@
 // Small info card pinned to the bottom of the safe area, showing the selected thing.
 // The game supplies describe(item) → { title, subtitle?, lines?: string[], accent?, buttons?: [{ id, label }] }
 // so no content lives here. Drawn in screen (logical) units, on top of the world.
+import { THEME, font } from '../Theme.js';
 import { drawButton, hitRect } from './Button.js';
+const COL = THEME.color;
 
 export class ContextCard {
   constructor(layout, { describe, height = 280, margin = 24 } = {}) {
@@ -52,15 +54,15 @@ export class ContextCard {
     if (!this.item) return;
     const info = this.describe(this.item) || { title: '?' };
     const r = this.rect();
-    const accent = info.accent || '#4FC3F7';
+    const accent = info.accent || COL.progress;
     const pad = 36;
     const buttons = info.buttons || [];
 
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowColor = COL.overlay;
     ctx.shadowBlur = 24;
     ctx.shadowOffsetY = 8;
-    ctx.fillStyle = 'rgba(22,28,36,0.96)';
+    ctx.fillStyle = COL.panel;
     roundRect(ctx, r.x, r.y, r.w, r.h, 28);
     ctx.fill();
     ctx.shadowColor = 'transparent';
@@ -77,18 +79,18 @@ export class ContextCard {
     let ty = r.y + 36;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 52px system-ui, sans-serif';
+    ctx.fillStyle = COL.text;
+    ctx.font = font(52, true);
     ctx.fillText(info.title, tx, ty, maxW);
     ty += 66;
     if (info.subtitle) {
-      ctx.fillStyle = '#9AA8B5';
-      ctx.font = '32px system-ui, sans-serif';
+      ctx.fillStyle = COL.textMuted;
+      ctx.font = font(32);
       ctx.fillText(info.subtitle, tx, ty, maxW);
       ty += 50;
     }
-    ctx.fillStyle = '#E8EEF2';
-    ctx.font = '34px system-ui, sans-serif';
+    ctx.fillStyle = COL.text;
+    ctx.font = font(34);
     for (const line of info.lines || []) {
       ctx.fillText(line, tx, ty, maxW);
       ty += 46;

@@ -1,6 +1,7 @@
 // Hiring (bible §16): the candidate board (3 cards + a special-arrival card), free and Tech Chip refreshes,
 // and the five channels (paid refreshes). Candidate cards reuse core/ui/StaffCard.js. Opened from the roster.
 // The game pauses while this screen is open.
+import { THEME, font } from '../../../../core/Theme.js';
 import { SECRET_ART } from '../../data/secrets.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawStaffCard, staffCardButtonAt, STAFF_CARD_HEIGHT } from '../../../../core/ui/StaffCard.js';
@@ -11,14 +12,15 @@ import { WORK_STATS } from '../../data/stats.js';
 import { CHANNELS, RECRUIT_RULES, RECRUIT_ART, STORE_ITEMS } from '../../data/recruitment.js';
 import { describeUnlock } from '../systems/unlockRules.js';
 import { panel, text, contained, fmt } from '../ui/widgets.js';
+const COL = THEME.color;
 
-const HEADER_H = 130;
-const INFO_H = 190;
+const HEADER_H = 150;
+const INFO_H = 230;
 const GAP = 22;
 const CH_H = 150;
-const GREEN = '#7CFFB2';
-const GOLD = '#FFD166';
-const RED = '#FF8A80';
+const GREEN = COL.good;
+const GOLD = COL.gold;
+const RED = COL.bad;
 
 export function createRecruitmentScreen({ renderer, layout, assets, bus, campaign, router }) {
   const W = renderer.width;
@@ -28,7 +30,7 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
   const scroll = new ScrollPanel({ getRect: bodyRect, contentHeight: 0 });
 
   const sr = () => layout.safeRect;
-  const backRect = () => ({ x: sr().x + 24, y: sr().y + 24, w: 180, h: 86 });
+  const backRect = () => ({ x: sr().x + 24, y: sr().y + 24, w: 200, h: 110 });
   function bodyRect() {
     const s = sr();
     const y = s.y + HEADER_H;
@@ -37,14 +39,14 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
   const cw = () => bodyRect().w - 12;
   const infoButton = (k) => {
     const w = (cw() - 40 - 20) / 2;
-    return { x: 20 + k * (w + 20), y: INFO_H - 20 - 84, w, h: 84 };
+    return { x: 20 + k * (w + 20), y: INFO_H - 20 - 110, w, h: 110 };
   };
   const cardRect = (i) => ({ x: 0, y: INFO_H + GAP + i * (STAFF_CARD_HEIGHT + GAP), w: cw(), h: STAFF_CARD_HEIGHT });
   const channelsTop = () => INFO_H + GAP + rec.cards.length * (STAFF_CARD_HEIGHT + GAP) + 10;
   const channelRect = (i) => ({ x: 0, y: channelsTop() + 60 + i * (CH_H + 14), w: cw(), h: CH_H });
   const channelButton = (i) => {
     const r = channelRect(i);
-    return { x: r.x + r.w - 20 - 250, y: r.y + (r.h - 84) / 2, w: 250, h: 84 };
+    return { x: r.x + r.w - 20 - 250, y: r.y + (r.h - 110) / 2, w: 250, h: 110 };
   };
 
   function inScroll(r) {
@@ -151,15 +153,15 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
     onDragEnd: (p) => scroll.endDrag(p),
 
     render(ctx) {
-      ctx.fillStyle = '#101418';
+      ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const s = sr();
-      drawButton(ctx, backRect(), '‹ Back', { font: 'bold 32px system-ui, sans-serif' });
+      drawButton(ctx, backRect(), '‹ Back', { font: font(32, true) });
       contained(ctx, assets, RECRUIT_ART.icon, { x: s.x + 224, y: s.y + 26, w: 80, h: 80 });
       text(ctx, 'Hiring', s.x + 318, s.y + 66, { size: 48, bold: true, baseline: 'middle' });
       const full = campaign.staff.staff.length >= campaign.employeeCap;
-      text(ctx, `Staff ${campaign.staff.staff.length} / ${campaign.employeeCap}`, s.x + s.w - 24, s.y + 50, { size: 38, bold: true, align: 'right', baseline: 'middle', color: full ? RED : '#FFFFFF' });
-      text(ctx, `${fmt(campaign.economy.balance('credits'))} cr · ${campaign.economy.balance('techChips')} TC`, s.x + s.w - 24, s.y + 94, { size: 26, align: 'right', baseline: 'middle', color: '#9AA8B5' });
+      text(ctx, `Staff ${campaign.staff.staff.length} / ${campaign.employeeCap}`, s.x + s.w - 24, s.y + 50, { size: 38, bold: true, align: 'right', baseline: 'middle', color: full ? RED : COL.text });
+      text(ctx, `${fmt(campaign.economy.balance('credits'))} cr · ${campaign.economy.balance('techChips')} TC`, s.x + s.w - 24, s.y + 94, { size: 26, align: 'right', baseline: 'middle', color: COL.textMuted });
 
       const w = cw();
       scroll.contentHeight = channelsTop() + 60 + CHANNELS.length * (CH_H + 14) + 20;
@@ -168,10 +170,10 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
       panel(ctx, { x: 0, y: 0, w, h: INFO_H });
       const left = rec.freeManualLeft(campaign.clock.year);
       text(ctx, 'New candidates arrive free on day 1 of every odd month.', 20, 18, { size: 28, bold: true, maxWidth: w - 40 });
-      text(ctx, `Free refresh taps left this year: ${left}`, 20, 58, { size: 25, color: left ? GREEN : '#9AA8B5', maxWidth: w - 40 });
-      drawButton(ctx, infoButton(0), left ? 'Free refresh' : 'Free refresh used', { disabled: !left, font: 'bold 30px system-ui, sans-serif', accent: GREEN });
+      text(ctx, `Free refresh taps left this year: ${left}`, 20, 58, { size: 25, color: left ? GREEN : COL.textMuted, maxWidth: w - 40 });
+      drawButton(ctx, infoButton(0), left ? 'Free refresh' : 'Free refresh used', { disabled: !left, font: font(30, true), accent: GREEN });
       const tc = STORE_ITEMS[RECRUIT_RULES.techChipItem];
-      drawButton(ctx, infoButton(1), `Refresh · ${tc.cost} Tech Chips`, { disabled: !!campaign.refreshBlock('techChips'), font: 'bold 30px system-ui, sans-serif', accent: '#B39DDB' });
+      drawButton(ctx, infoButton(1), `Refresh · ${tc.cost} Tech Chips`, { disabled: !!campaign.refreshBlock('techChips'), font: font(30, true), accent: COL.purple });
 
       rec.cards.forEach((c, i) => {
         // Legendary / secret arrivals (M17): the legendary aura behind their card.
@@ -185,7 +187,7 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
         drawStaffCard(ctx, cardRect(i), viewFor(c), assets, { highlight: !!c.special, accent: GOLD });
         if (c.special) text(ctx, `★ ${c.special.note ?? 'Special arrival'}`, cardRect(i).x + 262, cardRect(i).y + cardRect(i).h - 24, { size: 26, bold: true, color: GOLD, baseline: 'bottom', maxWidth: cardRect(i).w - 290 });
       });
-      if (!rec.cards.length) text(ctx, 'No candidates right now — refresh below.', w / 2, INFO_H + GAP + 60, { size: 30, align: 'center', color: '#9AA8B5' });
+      if (!rec.cards.length) text(ctx, 'No candidates right now — refresh below.', w / 2, INFO_H + GAP + 60, { size: 30, align: 'center', color: COL.textMuted });
 
       const ct = channelsTop();
       text(ctx, 'Advertise (replaces the 3 cards above)', 4, ct + 10, { size: 30, bold: true });
@@ -195,7 +197,7 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
       if (message && performance.now() < message.until) {
         const b = bodyRect();
         const r = { x: b.x + 40, y: b.y + b.h - 110, w: b.w - 80, h: 84 };
-        panel(ctx, r, { fill: 'rgba(12,16,20,0.95)', stroke: message.color, radius: 20 });
+        panel(ctx, r, { fill: COL.panel, stroke: message.color, radius: 20 });
         text(ctx, message.text, r.x + r.w / 2, r.y + r.h / 2, { size: 30, bold: true, align: 'center', baseline: 'middle', color: message.color, maxWidth: r.w - 30 });
       }
     },
@@ -205,13 +207,13 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
     const r = channelRect(i);
     const open = campaign.channelOpen(ch.id);
     const block = campaign.refreshBlock('paid', ch.id);
-    panel(ctx, r, { fill: open ? 'rgba(26,32,40,0.96)' : 'rgba(20,24,30,0.96)', stroke: open ? '#35414F' : '#2A323C' });
-    if (!open) drawPadlock(ctx, r.x + 34, r.y + 38, 26, '#FFB74D');
-    text(ctx, ch.name, r.x + (open ? 24 : 64), r.y + 20, { size: 32, bold: true, color: open ? '#FFFFFF' : '#AEB8C2', maxWidth: r.w - 330 });
-    text(ctx, ch.pool, r.x + 24, r.y + 66, { size: 24, color: '#9AA8B5', maxWidth: r.w - 310 });
+    panel(ctx, r, { fill: open ? COL.panel : COL.panelDim, stroke: open ? COL.line : COL.line });
+    if (!open) drawPadlock(ctx, r.x + 34, r.y + 38, 26, COL.action);
+    text(ctx, ch.name, r.x + (open ? 24 : 64), r.y + 20, { size: 32, bold: true, color: open ? COL.text : COL.textMuted, maxWidth: r.w - 330 });
+    text(ctx, ch.pool, r.x + 24, r.y + 66, { size: 24, color: COL.textMuted, maxWidth: r.w - 310 });
     const tiers = Object.entries(campaign.recruitment.hooks.tierWeights(ch)).filter(([, v]) => v > 0).map(([t, v]) => `${TIERS[t].name} ${v}%`).join(' · ');
-    text(ctx, open ? tiers : `Needs ${describeUnlock(ch.unlock)}`, r.x + 24, r.y + 102, { size: 24, bold: true, color: open ? '#C9D3DD' : '#FFB74D', maxWidth: r.w - 310 });
-    drawButton(ctx, channelButton(i), open ? `Refresh · ${fmt(ch.cost)}` : 'Locked', { disabled: !!block, locked: !open, font: 'bold 30px system-ui, sans-serif' });
+    text(ctx, open ? tiers : `Needs ${describeUnlock(ch.unlock)}`, r.x + 24, r.y + 102, { size: 24, bold: true, color: open ? COL.textMuted : COL.action, maxWidth: r.w - 310 });
+    drawButton(ctx, channelButton(i), open ? `Refresh · ${fmt(ch.cost)}` : 'Locked', { disabled: !!block, locked: !open, font: font(30, true) });
   }
 
   return screen;

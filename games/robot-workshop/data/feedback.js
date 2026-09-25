@@ -1,6 +1,8 @@
 // Game-feel content: which effect art and which sound goes with which moment (bible §33.4, §36).
 // Plain values only. Sounds have no files yet — each is a silent placeholder hook until real audio arrives.
 
+import { THEME } from '../../../core/Theme.js';
+
 export const VFX_ART = {
   smallSparks: 'vfx_01', // welding sparks at the bench
   bigBurst: 'vfx_02', // large welding burst (robot completion)
@@ -30,11 +32,12 @@ export const SOUNDS = {
 };
 
 // Colours for floating numbers (bible §33.1: green positive, cyan information).
+// Milestone 17b: theme colours, so they read on the cream bars and the bright floor.
 export const FLOAT_COLORS = {
-  credits: '#7CFFB2',
-  techChips: '#B39DDB',
-  reputation: '#FFD166',
-  research: '#4FC3F7', // RP arrive in Milestone 9
-  info: '#4FC3F7',
-  level: '#FFD166',
+  credits: THEME.color.good,
+  techChips: THEME.color.purple,
+  reputation: THEME.color.gold,
+  research: THEME.color.progress, // RP arrive in Milestone 9
+  info: THEME.color.progress,
+  level: THEME.color.gold,
 };

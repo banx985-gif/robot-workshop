@@ -11,6 +11,7 @@ export class AssetManager {
     this.images = new Map(); // key → HTMLImageElement (loaded OK)
     this.missing = new Map(); // key → src that failed
     this.sprites = new SpriteCache();
+    this.detail = 1; // extra resolution for world drawing under a zoomed camera (see sprite())
   }
 
   // manifest: { key: 'path/to/file.png', ... }. Always resolves, even if files fail.
@@ -67,10 +68,11 @@ export class AssetManager {
     return this.sprites.setPixelScale(scale);
   }
 
-  // The display-size copy of an image for a logical w×h (null if the image is missing).
+  // The display-size copy of an image for a logical w×h (null if the image is missing). While `detail` is above 1
+  // (a zoomed-in camera draws everything bigger on screen) the copy is made that much larger, so it stays sharp.
   sprite(key, w, h) {
     const img = this.images.get(key);
-    return img ? this.sprites.get(key, img, w, h) : null;
+    return img ? this.sprites.get(key, img, w * this.detail, h * this.detail) : null;
   }
 
   // Draws the image at x, y, w×h (logical units), or a placeholder of the same size if it is not available.
@@ -80,8 +82,8 @@ export class AssetManager {
     if (img) {
       const dw = w ?? img.naturalWidth;
       const dh = h ?? img.naturalHeight;
-      const ps = this.sprites.pixelScale;
-      ctx.drawImage(this.sprites.get(key, img, dw, dh), Math.round(x * ps) / ps, Math.round(y * ps) / ps, dw, dh);
+      const ps = this.sprites.pixelScale * this.detail;
+      ctx.drawImage(this.sprites.get(key, img, dw * this.detail, dh * this.detail), Math.round(x * ps) / ps, Math.round(y * ps) / ps, dw, dh);
       return true;
     }
     this.drawPlaceholder(ctx, key, x, y, w ?? 128, h ?? 128);
@@ -110,7 +112,7 @@ export class AssetManager {
       this.drawPlaceholder(ctx, key, r.x, r.y, r.w, r.h);
       return;
     }
-    const sprite = this.sprites.get(key, img, r.w / crop.w, r.h / crop.h);
+    const sprite = this.sprites.get(key, img, (r.w / crop.w) * this.detail, (r.h / crop.h) * this.detail);
     ctx.drawImage(sprite, crop.x * sprite.width, crop.y * sprite.height, crop.w * sprite.width, crop.h * sprite.height, r.x, r.y, r.w, r.h);
   }
 

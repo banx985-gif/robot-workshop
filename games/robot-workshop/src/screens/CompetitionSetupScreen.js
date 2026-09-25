@@ -1,5 +1,6 @@
 // Competition setup (bible §21.1–21.2, §26): pick the robot, the pilot, a tuning package and a strategy, see a plain
 // "your chances" hint (average dice, never the seeded result), then Enter. Balanced is recommended, not forced.
+import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { COMPETITIONS_BY_ID } from '../../data/competitions.js';
@@ -11,6 +12,7 @@ import { chanceWords, entrantOf, rivalLine, behindHint } from '../systems/Compet
 import { robotArtOf } from '../systems/robotVisual.js';
 import { panel, text, hit, fmt } from '../ui/widgets.js';
 import { drawBackdrop, weightsLine, eventRating, rivalOf, drawSpeech } from '../ui/competitionDraw.js';
+const COL = THEME.color;
 
 const FOOTER_H = 330;
 const ROW_H = 140;
@@ -34,11 +36,11 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
   }
   const backRect = () => {
     const f = footerRect();
-    return { x: f.x, y: f.y + f.h - 104, w: 240, h: 104 };
+    return { x: f.x, y: f.y + f.h - 116, w: 240, h: 116 };
   };
   const enterRect = () => {
     const f = footerRect();
-    return { x: f.x + 256, y: f.y + f.h - 104, w: f.w - 256, h: 104 };
+    return { x: f.x + 256, y: f.y + f.h - 116, w: f.w - 256, h: 116 };
   };
   const cw = () => bodyRect().w;
 
@@ -58,7 +60,7 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
       out[`${kind}Label`] = y;
       y += 50;
       out[kind] = { x: 0, y, w, h: ROW_H };
-      out[`${kind}Change`] = { x: w - 24 - 200, y: y + (ROW_H - 84) / 2, w: 200, h: 84 };
+      out[`${kind}Change`] = { x: w - 24 - 200, y: y + (ROW_H - 110) / 2, w: 200, h: 110 };
       y += ROW_H + 12;
       out[`${kind}List`] = [];
       if (picker === kind) {
@@ -103,7 +105,7 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
   function tryEnter() {
     const res = campaign.enterCompetition(choice);
     if (!res.ok) {
-      message = { text: res.reason, color: '#FF8A80' };
+      message = { text: res.reason, color: COL.bad };
       return;
     }
     campaign.save().catch(() => {});
@@ -153,7 +155,7 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
       }
       for (const { t, r } of s.tunings) {
         if (!hit(c, r)) continue;
-        if (!campaign.tuningOpen(t.id)) message = { text: `${t.name} needs ${describeUnlock(t.requires)}`, color: '#FFD166' };
+        if (!campaign.tuningOpen(t.id)) message = { text: `${t.name} needs ${describeUnlock(t.requires)}`, color: COL.gold };
         else choice.tuningId = t.id;
         return;
       }
@@ -164,7 +166,7 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
     onDragEnd: (p) => scroll.endDrag(p),
 
     render(ctx) {
-      ctx.fillStyle = '#101418';
+      ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const s = sections();
       scroll.contentHeight = s.height;
@@ -174,7 +176,7 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
       drawPickSection(ctx, s, 'robot', 'Robot');
       drawPickSection(ctx, s, 'pilot', 'Pilot');
       text(ctx, 'Tuning package', 4, s.tuningLabel, { size: 32, bold: true });
-      text(ctx, 'one event only', cw() - 4, s.tuningLabel + 6, { size: 24, color: '#9AA8B5', align: 'right' });
+      text(ctx, 'one event only', cw() - 4, s.tuningLabel + 6, { size: 24, color: COL.textMuted, align: 'right' });
       for (const { t, r } of s.tunings) drawTuning(ctx, t, r);
       text(ctx, 'Strategy', 4, s.strategyLabel, { size: 32, bold: true });
       for (const { s: st, r } of s.strategies) drawStrategy(ctx, st, r);
@@ -189,10 +191,10 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
     const x = r.x + 314;
     const mw = r.w - 334;
     text(ctx, ev.name, x, r.y + 20, { size: 38, bold: true, maxWidth: mw });
-    text(ctx, weightsLine(campaign.competitionWeights(ev.id), { hidden: !campaign.weightsKnown(ev.id) }), x, r.y + 72, { size: 26, bold: true, color: '#4FC3F7', maxWidth: mw });
+    text(ctx, weightsLine(campaign.competitionWeights(ev.id), { hidden: !campaign.weightsKnown(ev.id) }), x, r.y + 72, { size: 26, bold: true, color: COL.progress, maxWidth: mw });
     text(ctx, `Rival field ≈ ${ev.target} · Entry ${campaign.entryFee(ev.id) ? fmt(campaign.entryFee(ev.id)) : 'free'}`, x, r.y + 114, { size: 26, maxWidth: mw });
-    text(ctx, `1st place: ${fmt(ev.rewards.credits)} + ${ev.rewards.rep} Rep`, x, r.y + 152, { size: 26, color: '#FFD166', maxWidth: mw });
-    text(ctx, `3 segments: ${ev.segments.join(' → ')}`, x, r.y + 192, { size: 22, color: '#9AA8B5', maxWidth: mw });
+    text(ctx, `1st place: ${fmt(ev.rewards.credits)} + ${ev.rewards.rep} Rep`, x, r.y + 152, { size: 26, color: COL.gold, maxWidth: mw });
+    text(ctx, `3 segments: ${ev.segments.join(' → ')}`, x, r.y + 192, { size: 22, color: COL.textMuted, maxWidth: mw });
   }
 
   // The strongest rival in this field says something before the event (flavour, seeded by the next entry).
@@ -212,61 +214,61 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
     if (sel) (kind === 'robot' ? drawRobotRow : drawPilotRow)(ctx, sel, r, true, s[`${kind}Change`].w + 24);
     else {
       panel(ctx, r);
-      text(ctx, kind === 'robot' ? 'No robot can race yet — finish one first.' : 'Nobody free to pilot.', 24, r.y + r.h / 2, { size: 28, color: '#FF8A80', baseline: 'middle' });
+      text(ctx, kind === 'robot' ? 'No robot can race yet — finish one first.' : 'Nobody free to pilot.', 24, r.y + r.h / 2, { size: 28, color: COL.bad, baseline: 'middle' });
     }
-    drawButton(ctx, s[`${kind}Change`], picker === kind ? 'Close' : 'Change', { font: 'bold 30px system-ui, sans-serif', selected: picker === kind });
+    drawButton(ctx, s[`${kind}Change`], picker === kind ? 'Close' : 'Change', { font: font(30, true), selected: picker === kind });
     for (const { item, r: rr } of s[`${kind}List`]) (kind === 'robot' ? drawRobotRow : drawPilotRow)(ctx, item, rr, kind === 'robot' ? item.number === choice.robotNumber : item.id === choice.pilotId, 0);
   }
 
   function drawRobotRow(ctx, rec, r, on, rightPad) {
-    panel(ctx, r, { fill: on ? 'rgba(40,64,56,0.96)' : 'rgba(26,32,40,0.96)', stroke: on ? '#7CFFB2' : '#35414F', lineWidth: on ? 5 : 3 });
+    panel(ctx, r, { fill: on ? COL.panelGood : COL.panel, stroke: on ? COL.good : COL.line, lineWidth: on ? 5 : 3 });
     assets.drawContained(ctx, robotArtOf(rec.result), { x: r.x + 12, y: r.y + 10, w: 110, h: r.h - 20 });
     const x = r.x + 140;
     const mw = r.w - 160 - rightPad;
     const st = rec.result.stats;
     text(ctx, `#${rec.number} ${rec.name}`, x, r.y + 16, { size: 32, bold: true, maxWidth: mw });
-    text(ctx, `Event rating ${campaign.weightsKnown(ev.id) ? eventRating(campaign.competitionWeights(ev.id), entrantOf(rec).stats) : '???'} · REL ${st.REL}${rec.result.faults ? ` · ${rec.result.faults} open fault${rec.result.faults === 1 ? '' : 's'}` : ''}`, x, r.y + 58, { size: 25, color: rec.result.faults ? '#FFB74D' : '#C9D3DD', maxWidth: mw });
+    text(ctx, `Event rating ${campaign.weightsKnown(ev.id) ? eventRating(campaign.competitionWeights(ev.id), entrantOf(rec).stats) : '???'} · REL ${st.REL}${rec.result.faults ? ` · ${rec.result.faults} open fault${rec.result.faults === 1 ? '' : 's'}` : ''}`, x, r.y + 58, { size: 25, color: rec.result.faults ? COL.action : COL.textMuted, maxWidth: mw });
     const c = rec.competitions;
-    text(ctx, `${rec.result.purposeName}${rec.launchedProductId ? ' · on sale' : ''}${c ? ` · raced ${c.entries}, won ${c.wins}` : ''}`, x, r.y + 96, { size: 22, color: '#9AA8B5', maxWidth: mw });
+    text(ctx, `${rec.result.purposeName}${rec.launchedProductId ? ' · on sale' : ''}${c ? ` · raced ${c.entries}, won ${c.wins}` : ''}`, x, r.y + 96, { size: 22, color: COL.textMuted, maxWidth: mw });
   }
 
   function drawPilotRow(ctx, s, r, on, rightPad) {
-    panel(ctx, r, { fill: on ? 'rgba(40,64,56,0.96)' : 'rgba(26,32,40,0.96)', stroke: on ? '#7CFFB2' : '#35414F', lineWidth: on ? 5 : 3 });
+    panel(ctx, r, { fill: on ? COL.panelGood : COL.panel, stroke: on ? COL.good : COL.line, lineWidth: on ? 5 : 3 });
     assets.drawContained(ctx, s.art, { x: r.x + 12, y: r.y + 8, w: 100, h: r.h - 16 });
     const x = r.x + 130;
     const mw = r.w - 150 - rightPad;
     const isPilot = s.role === 'pilot';
     text(ctx, s.name, x, r.y + 16, { size: 32, bold: true, maxWidth: mw });
-    text(ctx, `${ROLES[s.role].name} · Lv ${s.level} · TST ${s.stats.tst}${isPilot ? '' : ' · not a Test Pilot'}`, x, r.y + 58, { size: 25, color: isPilot ? '#C9D3DD' : '#FFB74D', maxWidth: mw });
+    text(ctx, `${ROLES[s.role].name} · Lv ${s.level} · TST ${s.stats.tst}${isPilot ? '' : ' · not a Test Pilot'}`, x, r.y + 58, { size: 25, color: isPilot ? COL.textMuted : COL.action, maxWidth: mw });
     const traits = s.traits.filter((t) => PILOT_TRAITS.has(t)).map((t) => TRAITS[t].name);
     const notes = [...traits, s.status?.stressed ? 'Stressed (more race pressure)' : null, campaign.busyReason(s.id, 'training')].filter(Boolean);
-    text(ctx, notes.join(' · ') || 'No race traits', x, r.y + 96, { size: 22, color: traits.length ? '#FFD166' : '#9AA8B5', maxWidth: mw });
+    text(ctx, notes.join(' · ') || 'No race traits', x, r.y + 96, { size: 22, color: traits.length ? COL.gold : COL.textMuted, maxWidth: mw });
   }
 
   function drawTuning(ctx, t, r) {
     const on = choice.tuningId === t.id;
     const open = campaign.tuningOpen(t.id);
     const tuner = campaign.staff.get(choice.pilotId)?.traits.includes('tuner');
-    panel(ctx, r, { fill: on ? 'rgba(40,56,72,0.96)' : 'rgba(26,32,40,0.96)', stroke: on ? '#4FC3F7' : '#35414F', lineWidth: on ? 5 : 3, radius: 18 });
-    text(ctx, t.name, r.x + 18, r.y + 16, { size: 28, bold: true, color: open ? '#E8EEF2' : '#6E7B88', maxWidth: r.w - 150 });
-    text(ctx, t.cost ? fmt(t.cost) : 'free', r.x + r.w - 18, r.y + 18, { size: 26, bold: true, align: 'right', color: open ? '#FFD166' : '#6E7B88' });
+    panel(ctx, r, { fill: on ? COL.panelInfo : COL.panel, stroke: on ? COL.progress : COL.line, lineWidth: on ? 5 : 3, radius: 18 });
+    text(ctx, t.name, r.x + 18, r.y + 16, { size: 28, bold: true, color: open ? COL.text : COL.textFaint, maxWidth: r.w - 150 });
+    text(ctx, t.cost ? fmt(t.cost) : 'free', r.x + r.w - 18, r.y + 18, { size: 26, bold: true, align: 'right', color: open ? COL.gold : COL.textFaint });
     const sub = open ? `${t.blurb}${tuner && t.id !== 'none' ? ' (+10% Tuner)' : ''}` : `Needs ${describeUnlock(t.requires)}`;
-    text(ctx, sub, r.x + 18, r.y + 62, { size: 22, color: open ? '#9AA8B5' : '#FFB74D', maxWidth: r.w - 36 });
+    text(ctx, sub, r.x + 18, r.y + 62, { size: 22, color: open ? COL.textMuted : COL.action, maxWidth: r.w - 36 });
   }
 
   function drawStrategy(ctx, st, r) {
     const on = choice.strategyId === st.id;
-    panel(ctx, r, { fill: on ? 'rgba(40,64,56,0.96)' : 'rgba(26,32,40,0.96)', stroke: on ? '#7CFFB2' : '#35414F', lineWidth: on ? 5 : 3, radius: 18 });
+    panel(ctx, r, { fill: on ? COL.panelGood : COL.panel, stroke: on ? COL.good : COL.line, lineWidth: on ? 5 : 3, radius: 18 });
     text(ctx, st.name, r.x + r.w / 2, r.y + 18, { size: 30, bold: true, align: 'center', maxWidth: r.w - 20 });
-    if (st.recommended) text(ctx, 'Recommended', r.x + r.w / 2, r.y + 56, { size: 22, bold: true, color: '#7CFFB2', align: 'center' });
+    if (st.recommended) text(ctx, 'Recommended', r.x + r.w / 2, r.y + 56, { size: 22, bold: true, color: COL.good, align: 'center' });
     const words = st.blurb.split(': ');
-    text(ctx, words[0], r.x + r.w / 2, r.y + 96, { size: 22, color: '#C9D3DD', align: 'center', maxWidth: r.w - 20 });
-    if (words[1]) text(ctx, words[1], r.x + r.w / 2, r.y + 130, { size: 20, color: '#9AA8B5', align: 'center', maxWidth: r.w - 20 });
+    text(ctx, words[0], r.x + r.w / 2, r.y + 96, { size: 22, color: COL.textMuted, align: 'center', maxWidth: r.w - 20 });
+    if (words[1]) text(ctx, words[1], r.x + r.w / 2, r.y + 130, { size: 20, color: COL.textMuted, align: 'center', maxWidth: r.w - 20 });
   }
 
   function drawFooter(ctx) {
     const f = footerRect();
-    panel(ctx, { x: f.x, y: f.y, w: f.w, h: f.h - 120 }, { fill: 'rgba(22,28,36,0.98)' });
+    panel(ctx, { x: f.x, y: f.y, w: f.w, h: f.h - 120 }, { fill: COL.panel });
     const pv = choice.robotNumber != null && choice.pilotId ? campaign.previewCompetition(choice) : null;
     const cost = campaign.competitionCost(choice.eventId, choice.tuningId);
     const block = campaign.competitionBlock(choice);
@@ -276,12 +278,12 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
       text(ctx, `Your chances: ${cw2.line}`, f.x + 20, f.y + 18, { size: 29, bold: true, color: cw2.color, maxWidth: f.w - 40 });
       text(ctx, cw2.riskLine, f.x + 20, f.y + 60, { size: 24, color: cw2.riskColor, maxWidth: f.w - 40 });
       const best = Math.max(...pv.rivals.map((r) => r.expected));
-      text(ctx, `Expected score ≈ ${pv.expected.toFixed(0)} · best rival ≈ ${best.toFixed(0)} · cost ${cost ? fmt(cost) : 'free'}`, f.x + 20, f.y + 98, { size: 24, color: '#9AA8B5', maxWidth: f.w - 40 });
+      text(ctx, `Expected score ≈ ${pv.expected.toFixed(0)} · best rival ≈ ${best.toFixed(0)} · cost ${cost ? fmt(cost) : 'free'}`, f.x + 20, f.y + 98, { size: 24, color: COL.textMuted, maxWidth: f.w - 40 });
       const behind = behindHint(pv.expected, best);
-      text(ctx, block ?? behind ?? 'A hint only: each run has its own luck.', f.x + 20, f.y + 134, { size: block || behind ? 22 : 20, bold: !!block, color: block ? '#FFB74D' : behind ? '#FFD166' : '#6E7B88', maxWidth: f.w - 40 });
-    } else text(ctx, 'Pick a robot and a pilot.', f.x + 20, f.y + 20, { size: 28, color: '#FFD166' });
-    drawButton(ctx, backRect(), 'Back', { font: 'bold 34px system-ui, sans-serif' });
-    drawButton(ctx, enterRect(), `Enter${cost ? ` · ${fmt(cost)}` : ''}`, { active: !block, disabled: !!block, accent: '#7CFFB2', font: 'bold 38px system-ui, sans-serif' });
+      text(ctx, block ?? behind ?? 'A hint only: each run has its own luck.', f.x + 20, f.y + 134, { size: block || behind ? 22 : 20, bold: !!block, color: block ? COL.action : behind ? COL.gold : COL.textFaint, maxWidth: f.w - 40 });
+    } else text(ctx, 'Pick a robot and a pilot.', f.x + 20, f.y + 20, { size: 28, color: COL.gold });
+    drawButton(ctx, backRect(), 'Back', { font: font(34, true) });
+    drawButton(ctx, enterRect(), `Enter${cost ? ` · ${fmt(cost)}` : ''}`, { active: !block, disabled: !!block, accent: COL.good, font: font(38, true) });
   }
 
   return screen;

@@ -4,7 +4,7 @@
 // After that the copy is drawn 1:1, which is fast and sharp. When the screen's pixel scale
 // changes (window resize, rotate) every copy is thrown away and remade on demand.
 export class SpriteCache {
-  constructor({ maxSizesPerImage = 12 } = {}) {
+  constructor({ maxSizesPerImage = 16 } = {}) {
     this.pixelScale = 1; // real screen pixels per logical unit
     this.maxSizesPerImage = maxSizesPerImage;
     this.byKey = new Map(); // key → Map(sizeCode → canvas)

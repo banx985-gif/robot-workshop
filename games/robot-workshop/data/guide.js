@@ -1,4 +1,4 @@
-// First-time guide steps (Milestone 7b; building and expansions added in Milestone 8; research in Milestone 9; hiring and training in Milestone 10; the first competition in Milestone 12; rivals in Milestone 13; the first combo hint in Milestone 14; the full tutorial, bible §26, comes in Milestone 26 and builds on this).
+// First-time guide steps (Milestone 17b: menus open from the stations and the bottom bar; Milestone 7b; building and expansions added in Milestone 8; research in Milestone 9; hiring and training in Milestone 10; the first competition in Milestone 12; rivals in Milestone 13; the first combo hint in Milestone 14; the full tutorial, bible §26, comes in Milestone 26 and builds on this).
 // Plain data for core/GuideSystem.js. Short, friendly words — no walls of text.
 // target names are resolved to screen spots by src/ui/guideTargets.js.
 // trigger: after = previous step done; event = has happened at least once; screen = only shows there.
@@ -9,7 +9,7 @@ export const GUIDE_STEPS = [
   {
     id: 'S1',
     title: 'Welcome to your workshop!',
-    text: 'These three are your team. Tap Mina to meet her.',
+    text: 'This is your workshop and your team. Tap Mina to see what she can do.',
     art: 'event_art_01',
     target: 'mina',
     trigger: { screen: ['workshop'] },
@@ -20,7 +20,7 @@ export const GUIDE_STEPS = [
   {
     id: 'S2',
     title: "Mina's card",
-    text: 'Here are her energy and mood. Tired or unhappy workers go slower. Tap Got it to close her card.',
+    text: 'Her card: energy, mood, stats and where she can work. Tired or unhappy workers go slower. Tap Got it.',
     target: 'staffCard',
     trigger: { after: 'S1', screen: ['workshop'] },
     advance: { next: true },
@@ -30,7 +30,7 @@ export const GUIDE_STEPS = [
   {
     id: 'S3',
     title: 'The top bar',
-    text: 'Your money, Tech Chips and company rank live up here. Underneath: pause and speed.',
+    text: 'Your money, Tech Chips and company rank live up here, next to pause and speed.',
     target: 'topBar',
     trigger: { after: 'S2', screen: ['workshop'] },
     advance: { next: true },
@@ -39,10 +39,10 @@ export const GUIDE_STEPS = [
   {
     id: 'S4',
     title: 'Build your first robot',
-    text: 'Tap Project to start building.',
+    text: 'Tap Build below, then New robot, to start your first robot.',
     target: 'projectButton',
     trigger: { after: 'S3', screen: ['workshop'] },
-    advance: { tap: true },
+    advance: { event: 'screen:builder' },
     block: true,
   },
   {
@@ -78,7 +78,7 @@ export const GUIDE_STEPS = [
   {
     id: 'S8',
     title: 'Five stages',
-    text: 'Your robot is built in 5 stages. Watch the bar fill up. Tired workers work slower.',
+    text: 'Watch the Assembly Bay: your robot is built there in 5 stages, from blueprint to finished machine. Tired workers go slower.',
     target: 'progress',
     trigger: { after: 'S7', event: 'project:phase' },
     advance: { next: true },
@@ -87,7 +87,7 @@ export const GUIDE_STEPS = [
   {
     id: 'S9',
     title: 'A fault!',
-    text: 'A fault is a small defect. Testing, the last stage, tries to fix it.',
+    text: 'A fault — see the smoke on the bay? Testing, the last stage, tries to fix it.',
     target: 'progress',
     trigger: { after: 'S7', event: 'robot:fault' },
     advance: { next: true },
@@ -97,11 +97,11 @@ export const GUIDE_STEPS = [
   {
     id: 'H1',
     title: 'Someone wants to join!',
-    text: 'Tessa Vale, a designer, would like a job. Designers speed up the Concept stage. Tap Roster.',
+    text: 'Tessa Vale, a designer, would like a job. Designers speed up the Concept stage. Tap Staff, then Staff again.',
     art: 'staff_designer_01',
     target: 'rosterButton',
     trigger: { after: 'S7', event: 'recruit:arrival', screen: ['workshop'] },
-    advance: { tap: true },
+    advance: { event: 'screen:roster' },
     block: true,
     skipIf: 'staff:hired', // already hired someone on their own
   },
@@ -148,19 +148,19 @@ export const GUIDE_STEPS = [
   {
     id: 'S11',
     title: 'Sales day',
-    text: 'Sales arrive at the end of each month. Tap Products to see them. Wages are paid on day 1, so keep earning more than you spend!',
+    text: 'Sales arrive at the end of each month. Tap Money, then Products, to see them.',
     target: 'productsButton',
     trigger: { after: 'S10', event: 'product:sales' },
-    advance: { tap: true },
+    advance: { event: 'screen:products' },
     block: true,
   },
   {
     id: 'S12',
     title: 'Contracts',
-    text: 'Contracts are customer orders with a deadline. They pay well! Tap Contracts.',
+    text: 'Contracts are customer orders with a deadline. They pay well! Tap Money, then Contracts.',
     target: 'contractsButton',
     trigger: { after: 'S7', event: 'contract:offered' },
-    advance: { tap: true },
+    advance: { event: 'screen:contracts' },
     block: true,
   },
   {
@@ -175,10 +175,10 @@ export const GUIDE_STEPS = [
   {
     id: 'S14',
     title: 'Build your workshop',
-    text: 'Stations make your team faster. Tap Build to see what you can add.',
+    text: 'Stations make your team faster. Tap Build, then Build & expand, to see what you can add.',
     target: 'buildButton',
     trigger: { after: 'S13', screen: ['workshop'] },
-    advance: { tap: true },
+    advance: { event: 'screen:build' },
     block: true,
     skipIf: 'facility:placed', // already built something on their own
   },
@@ -205,10 +205,10 @@ export const GUIDE_STEPS = [
   {
     id: 'S17',
     title: 'More room!',
-    text: 'Your new rank opens Expansion 1: more floor for more stations. Tap Build.',
+    text: 'Your new rank opens Expansion 1: more floor for more stations. Tap Build, then Build & expand.',
     target: 'buildButton',
     trigger: { after: 'S13', event: 'reputation:rankUp', screen: ['workshop'] },
-    advance: { tap: true },
+    advance: { event: 'screen:build' },
     block: true,
     skipIf: 'facility:expansion',
   },
@@ -236,10 +236,10 @@ export const GUIDE_STEPS = [
   {
     id: 'S20',
     title: 'Research Points!',
-    text: 'Finished robots earn Research Points (RP). Spend them on new parts — first you need a Research Desk. Tap Build.',
+    text: 'Finished robots earn Research Points (RP). A Research Desk turns them into new parts: tap Build, then Build & expand.',
     target: 'buildButton',
     trigger: { after: 'S16', event: 'research:rp', screen: ['workshop'] },
-    advance: { tap: true },
+    advance: { event: 'screen:build' },
     block: true,
     skipIf: 'research:desk', // already built one on their own
   },
@@ -267,10 +267,10 @@ export const GUIDE_STEPS = [
   {
     id: 'S23',
     title: 'Start researching',
-    text: 'Your Research Desk is ready. Tap Research.',
+    text: 'Your Research Desk is ready. Tap Research below, then Research tree.',
     target: 'researchButton',
     trigger: { after: 'S22', screen: ['workshop'] },
-    advance: { tap: true },
+    advance: { event: 'screen:research' },
     block: true,
     skipIf: 'research:start',
   },
@@ -308,10 +308,10 @@ export const GUIDE_STEPS = [
   {
     id: 'T1',
     title: 'Training',
-    text: 'Training makes a worker better at their job. Tap Roster.',
+    text: 'Training makes a worker better at their job. Tap Staff, then Staff again.',
     target: 'rosterButton',
     trigger: { after: 'S13', screen: ['workshop'] },
-    advance: { tap: true },
+    advance: { event: 'screen:roster' },
     block: true,
     skipIf: 'training:start',
   },
@@ -350,11 +350,11 @@ export const GUIDE_STEPS = [
   {
     id: 'K1',
     title: 'A test pilot!',
-    text: 'Kai West wants to join as your pilot for the Local Trial — and he is cheap. Tap Roster.',
+    text: 'Kai West wants to join as your pilot for the Local Trial — and he is cheap. Tap Staff, then Staff again.',
     art: 'staff_pilot_01',
     target: 'rosterButton',
     trigger: { event: 'competition:invite', screen: ['workshop'] },
-    advance: { tap: true },
+    advance: { event: 'screen:roster' },
     block: true,
     skipAlso: ['K2', 'K3'],
     skipIf: 'guide:pilotReady',
@@ -383,11 +383,11 @@ export const GUIDE_STEPS = [
   {
     id: 'C1',
     title: 'Your first competition',
-    text: 'The Local Workshop Trial has invited you. Tap Compete.',
+    text: 'The Local Workshop Trial has invited you. Tap Compete, then Competitions.',
     art: 'event_art_04',
     target: 'competeButton',
     trigger: { after: 'K3', event: 'competition:invite', screen: ['workshop'] },
-    advance: { tap: true },
+    advance: { event: 'screen:competitions' },
     block: true,
     skipIf: 'competition:enter',
   },

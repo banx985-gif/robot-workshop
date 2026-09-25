@@ -1,15 +1,17 @@
 // Drawing bits shared by the competition screens: the event backdrop (a cut-out scene, so a sky is painted
 // behind it), entrant markers (rival logo / the player's robot), rival speech bubbles and stat-weight lines.
+import { THEME, font } from '../../../../core/Theme.js';
 import { RIVALS_BY_ID, HIDDEN_RIVAL } from '../../data/rivals.js';
 import { panel, text } from './widgets.js';
+const COL = THEME.color;
 
-export const PLAYER_COLOR = '#7CFFB2';
+export const PLAYER_COLOR = COL.good;
 
 // A rival as the player may see it: a hidden one (R08 before its secret chain) is an unnamed team with no logo.
 // shown(id) → true once the game has revealed a hidden rival.
 export function rivalOf(id, shown = () => false) {
   const r = RIVALS_BY_ID[id];
-  if (!r) return { id, name: id, color: '#9AA8B5', logo: null, manager: null, lines: null };
+  if (!r) return { id, name: id, color: COL.textMuted, logo: null, manager: null, lines: null };
   if (r.hidden && !shown(id)) return { ...r, name: HIDDEN_RIVAL.name, color: HIDDEN_RIVAL.color, logo: null, manager: null, masked: true };
   return r;
 }
@@ -39,7 +41,7 @@ export function drawMarker(ctx, assets, x, y, size, { player = false, rivalId = 
   if (dim) ctx.globalAlpha = 0.5;
   ctx.beginPath();
   ctx.arc(x, y, size / 2, 0, Math.PI * 2);
-  ctx.fillStyle = player ? '#1E3A2E' : '#1A2028';
+  ctx.fillStyle = player ? COL.panelGood : COL.panelDim;
   ctx.fill();
   ctx.lineWidth = player ? 6 : 4;
   ctx.strokeStyle = player ? PLAYER_COLOR : rv.color;
@@ -71,19 +73,19 @@ export function placeText(place, dnf = false) {
 }
 
 export function placeColor(place, dnf = false) {
-  if (dnf) return '#FF8A80';
-  return ['#FFD166', '#CFD8DC', '#FFB74D'][place - 1] ?? '#9AA8B5';
+  if (dnf) return COL.bad;
+  return [COL.gold, COL.textMuted, COL.action][place - 1] ?? COL.textMuted;
 }
 
 // Small helper: a label + value row.
-export function row(ctx, label, value, x, y, w, { color = '#E8EEF2', size = 28 } = {}) {
-  text(ctx, label, x, y, { size, color: '#9AA8B5', maxWidth: w * 0.55 });
+export function row(ctx, label, value, x, y, w, { color = COL.text, size = 28 } = {}) {
+  text(ctx, label, x, y, { size, color: COL.textMuted, maxWidth: w * 0.55 });
   text(ctx, value, x + w, y, { size, bold: true, color, align: 'right', maxWidth: w * 0.5 });
 }
 
 // A rival speaking: manager portrait (R01–R05) or logo, name, and a line in a bubble. Height 150.
 export function drawSpeech(ctx, assets, rival, line, r) {
-  panel(ctx, r, { fill: 'rgba(30,36,46,0.97)', stroke: rival.color, lineWidth: 3, radius: 22 });
+  panel(ctx, r, { fill: COL.panel, stroke: rival.color, lineWidth: 3, radius: 22 });
   const face = rival.manager ?? rival.logo;
   if (face) assets.drawContained(ctx, face, { x: r.x + 10, y: r.y + 8, w: 120, h: r.h - 16 }, rival.manager ? 'bottom' : 'center');
   else text(ctx, '?', r.x + 70, r.y + r.h / 2, { size: 60, bold: true, align: 'center', baseline: 'middle', color: rival.color });
@@ -93,7 +95,7 @@ export function drawSpeech(ctx, assets, rival, line, r) {
 
 // Word-wrapped text; returns the height used.
 export function wrap(ctx, str, x, y, w, lineH, opts = {}, maxLines = 4) {
-  ctx.font = `${opts.bold ? 'bold ' : ''}${opts.size ?? 28}px system-ui, sans-serif`;
+  ctx.font = font(opts.size ?? 28, !!(opts.bold ? 'bold ' : ''));
   const words = str.split(' ');
   const lines = [];
   let cur = '';

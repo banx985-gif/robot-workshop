@@ -1,6 +1,7 @@
 // Training (bible §17, §39.2): the training slots with who is training and how far along, then every course
 // with its cost, days and effect. "Train…" opens a worker picker showing each worker's expected gain, already
 // clamped to their tier cap. A worker in training is off projects and research. The game pauses here.
+import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton, drawPadlock, hitRect } from '../../../../core/ui/Button.js';
 import { ROLES, TIERS } from '../../data/staff.js';
@@ -8,16 +9,17 @@ import { WORK_STATS } from '../../data/stats.js';
 import { COURSES, TRAINING_SLOTS, TRAINING_ART } from '../../data/training.js';
 import { describeUnlock } from '../systems/unlockRules.js';
 import { panel, text, contained, bar, fmt } from '../ui/widgets.js';
+const COL = THEME.color;
 
-const HEADER_H = 130;
+const HEADER_H = 150;
 const SLOT_ROW = 96;
 const ROW_H = 172;
 const GAP = 14;
 const PICK_ROW = 112;
-const GREEN = '#7CFFB2';
-const GOLD = '#FFD166';
-const RED = '#FF8A80';
-const CYAN = '#4FC3F7';
+const GREEN = COL.good;
+const GOLD = COL.gold;
+const RED = COL.bad;
+const CYAN = COL.progress;
 const SHORT = Object.fromEntries(WORK_STATS.map((s) => [s.key, s.short]));
 
 function effectText(c) {
@@ -44,7 +46,7 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
   const scroll = new ScrollPanel({ getRect: bodyRect, contentHeight: 0 });
 
   const sr = () => layout.safeRect;
-  const backRect = () => ({ x: sr().x + 24, y: sr().y + 24, w: 180, h: 86 });
+  const backRect = () => ({ x: sr().x + 24, y: sr().y + 24, w: 200, h: 110 });
   function bodyRect() {
     const s = sr();
     const y = s.y + HEADER_H;
@@ -65,7 +67,7 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
   const rowRect = (i) => ({ x: 0, y: slotsH() + 70 + i * (ROW_H + GAP), w: cw(), h: ROW_H });
   const rowButton = (i) => {
     const r = rowRect(i);
-    return { x: r.x + r.w - 20 - 220, y: r.y + r.h - 20 - 76, w: 220, h: 76 };
+    return { x: r.x + r.w - 20 - 220, y: r.y + r.h - 20 - 110, w: 220, h: 110 };
   };
 
   function inScroll(r) {
@@ -87,7 +89,7 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
   const dialogButton = (k) => {
     const d = dialogRect();
     const w = (d.w - 80) / 2;
-    return { x: d.x + 30 + k * (w + 20), y: d.y + d.h - 30 - 96, w, h: 96 };
+    return { x: d.x + 30 + k * (w + 20), y: d.y + d.h - 30 - 110, w, h: 110 };
   };
 
   function say(str, color = GOLD, secs = 3) {
@@ -179,10 +181,10 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
     onDragEnd: (p) => scroll.endDrag(p),
 
     render(ctx) {
-      ctx.fillStyle = '#101418';
+      ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const s = sr();
-      drawButton(ctx, backRect(), '‹ Back', { font: 'bold 32px system-ui, sans-serif' });
+      drawButton(ctx, backRect(), '‹ Back', { font: font(32, true) });
       contained(ctx, assets, TRAINING_ART.icon, { x: s.x + 224, y: s.y + 26, w: 80, h: 80 });
       text(ctx, 'Training', s.x + 318, s.y + 66, { size: 48, bold: true, baseline: 'middle' });
       contained(ctx, assets, TRAINING_ART.manual, { x: s.x + s.w - 24 - 270, y: s.y + 30, w: 72, h: 72 });
@@ -199,7 +201,7 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
       if (message && performance.now() < message.until) {
         const b = bodyRect();
         const r = { x: b.x + 40, y: b.y + b.h - 110, w: b.w - 80, h: 84 };
-        panel(ctx, r, { fill: 'rgba(12,16,20,0.95)', stroke: message.color, radius: 20 });
+        panel(ctx, r, { fill: COL.panel, stroke: message.color, radius: 20 });
         text(ctx, message.text, r.x + r.w / 2, r.y + r.h / 2, { size: 30, bold: true, align: 'center', baseline: 'middle', color: message.color, maxWidth: r.w - 30 });
       }
       if (picker) drawPicker(ctx);
@@ -214,8 +216,8 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
     lines.forEach((l, i) => {
       const y = 70 + i * SLOT_ROW;
       if (!l.open && !l.t) {
-        drawPadlock(ctx, 36, y + 34, 24, '#8C98A5');
-        text(ctx, `${l.slot.name}${l.slot.roles ? ' (pilots only)' : ''} — ${l.slot.roles ? 'needs a Pilot Simulator' : 'needs a Training Station'} (later update)`, 70, y + 20, { size: 25, color: '#8C98A5', maxWidth: w - 90 });
+        drawPadlock(ctx, 36, y + 34, 24, COL.textFaint);
+        text(ctx, `${l.slot.name}${l.slot.roles ? ' (pilots only)' : ''} — ${l.slot.roles ? 'needs a Pilot Simulator' : 'needs a Training Station'} (later update)`, 70, y + 20, { size: 25, color: COL.textFaint, maxWidth: w - 90 });
         return;
       }
       if (!l.t) {
@@ -235,24 +237,24 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
     const r = rowRect(i);
     const locked = tr.courseBlock(c.id) === 'Locked';
     const block = tr.courseBlock(c.id) ?? (campaign.staff.staff.some((s) => !tr.workerBlock(c.id, s.id)) ? null : tr.active.length >= tr.slots.reduce((t, sl) => t + tr.slotCount(sl), 0) ? 'All training slots are busy' : 'Nobody free for this right now');
-    panel(ctx, r, { fill: locked ? 'rgba(20,24,30,0.96)' : 'rgba(26,32,40,0.96)', stroke: locked ? '#2A323C' : '#35414F' });
-    if (locked) drawPadlock(ctx, r.x + 30, r.y + 36, 24, '#FFB74D');
+    panel(ctx, r, { fill: locked ? COL.panelDim : COL.panel, stroke: locked ? COL.line : COL.line });
+    if (locked) drawPadlock(ctx, r.x + 30, r.y + 36, 24, COL.action);
     const x = r.x + (locked ? 60 : 24);
-    text(ctx, c.name, x, r.y + 18, { size: 32, bold: true, color: locked ? '#AEB8C2' : '#FFFFFF', maxWidth: r.w - 330 });
+    text(ctx, c.name, x, r.y + 18, { size: 32, bold: true, color: locked ? COL.textMuted : COL.text, maxWidth: r.w - 330 });
     const cost = c.currency === 'credits' ? `${fmt(c.cost)} cr` : `${c.cost} Prestige Token`;
-    text(ctx, `${cost} · ${c.days} days`, r.x + r.w - 20, r.y + 22, { size: 28, bold: true, align: 'right', color: locked ? '#8C98A5' : GOLD });
-    text(ctx, effectText(c), r.x + 24, r.y + 66, { size: 26, color: locked ? '#6E8A7C' : GREEN, maxWidth: r.w - 290 });
+    text(ctx, `${cost} · ${c.days} days`, r.x + r.w - 20, r.y + 22, { size: 28, bold: true, align: 'right', color: locked ? COL.textFaint : GOLD });
+    text(ctx, effectText(c), r.x + 24, r.y + 66, { size: 26, color: locked ? COL.textFaint : GREEN, maxWidth: r.w - 290 });
     const note = locked ? `Needs ${describeUnlock(c.requires)}` : block ?? '';
-    if (note) text(ctx, note, r.x + 24, r.y + 110, { size: 24, bold: true, color: locked ? '#FFB74D' : RED, maxWidth: r.w - 290 });
-    drawButton(ctx, rowButton(i), locked ? 'Locked' : 'Train…', { disabled: !!block, locked, font: 'bold 30px system-ui, sans-serif', accent: CYAN });
+    if (note) text(ctx, note, r.x + 24, r.y + 110, { size: 24, bold: true, color: locked ? COL.action : RED, maxWidth: r.w - 290 });
+    drawButton(ctx, rowButton(i), locked ? 'Locked' : 'Train…', { disabled: !!block, locked, font: font(30, true), accent: CYAN });
   }
 
   function drawPicker(ctx) {
-    ctx.fillStyle = 'rgba(6,8,12,0.66)';
+    ctx.fillStyle = COL.overlay;
     ctx.fillRect(0, 0, W, renderer.height);
     const d = dialogRect();
     const c = tr.course(picker.courseId);
-    panel(ctx, d, { fill: 'rgba(26,32,40,0.99)', stroke: CYAN, lineWidth: 5, radius: 28 });
+    panel(ctx, d, { fill: COL.panel, stroke: CYAN, lineWidth: 5, radius: 28 });
     text(ctx, c.name, d.x + d.w / 2, d.y + 34, { size: 42, bold: true, align: 'center', maxWidth: d.w - 60 });
     text(ctx, `${fmt(c.cost)} cr · ${c.days} days · ${effectText(c)}`, d.x + d.w / 2, d.y + 96, { size: 27, align: 'center', color: GOLD, maxWidth: d.w - 60 });
     text(ctx, 'Who trains? They leave projects and research until it is done.', d.x + 30, d.y + 160, { size: 26, bold: true, maxWidth: d.w - 60 });
@@ -260,23 +262,23 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
       const r = pickRowRect(i);
       const block = tr.workerBlock(picker.courseId, s.id);
       const on = picker.staffId === s.id;
-      panel(ctx, r, { fill: on ? 'rgba(40,64,56,0.96)' : 'rgba(20,24,30,0.96)', stroke: on ? GREEN : '#35414F', lineWidth: on ? 5 : 3, radius: 18 });
+      panel(ctx, r, { fill: on ? COL.panelGood : COL.panelDim, stroke: on ? GREEN : COL.line, lineWidth: on ? 5 : 3, radius: 18 });
       ctx.save();
       if (block) ctx.globalAlpha = 0.45;
       contained(ctx, assets, s.art, { x: r.x + 10, y: r.y + 6, w: 80, h: r.h - 12 });
       text(ctx, s.name, r.x + 104, r.y + 14, { size: 30, bold: true, maxWidth: r.w - 480 });
-      text(ctx, `${ROLES[s.role].name} · ${TIERS[s.tier].name} (cap ${campaign.staff.statCap(s)})`, r.x + 104, r.y + 58, { size: 23, color: '#9AA8B5', maxWidth: r.w - 480 });
+      text(ctx, `${ROLES[s.role].name} · ${TIERS[s.tier].name} (cap ${campaign.staff.statCap(s)})`, r.x + 104, r.y + 58, { size: 23, color: COL.textMuted, maxWidth: r.w - 480 });
       ctx.restore();
       let tag = block;
       if (!block) {
         const pv = tr.preview(picker.courseId, s.id).filter((g) => g.max > 0);
         tag = pv.length > 2 ? `${pv.length} stats +${Math.min(...pv.map((g) => g.min))}–${Math.max(...pv.map((g) => g.max))}` : pv.map((g) => `${SHORT[g.key]} ${g.from}→${g.from + g.min}–${g.from + g.max}`).join(', ');
       }
-      text(ctx, on ? `✓ ${tag}` : tag, r.x + r.w - 20, r.y + r.h / 2, { size: 25, bold: true, align: 'right', baseline: 'middle', color: block ? RED : on ? GREEN : '#C9D3DD', maxWidth: 360 });
+      text(ctx, on ? `✓ ${tag}` : tag, r.x + r.w - 20, r.y + r.h / 2, { size: 25, bold: true, align: 'right', baseline: 'middle', color: block ? RED : on ? GREEN : COL.textMuted, maxWidth: 360 });
     });
     const ok = !!picker.staffId && !tr.workerBlock(picker.courseId, picker.staffId) && !tr.courseBlock(picker.courseId);
-    drawButton(ctx, dialogButton(0), `Start · ${fmt(c.cost)}`, { active: ok, disabled: !ok, accent: GREEN, font: 'bold 36px system-ui, sans-serif' });
-    drawButton(ctx, dialogButton(1), 'Cancel', { font: 'bold 36px system-ui, sans-serif' });
+    drawButton(ctx, dialogButton(0), `Start · ${fmt(c.cost)}`, { active: ok, disabled: !ok, accent: GREEN, font: font(36, true) });
+    drawButton(ctx, dialogButton(1), 'Cancel', { font: font(36, true) });
   }
 
   return screen;

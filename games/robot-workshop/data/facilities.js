@@ -291,11 +291,18 @@ export const WORKSHOP_START = {
   rows: 10,
   entrance: { col: 0, row: 5 },
   sellRefundPct: 50, // §20.3
-  // What a new run starts with (the bench and pedestal of Milestones 1–7, plus the Assembly Bay every project needs).
+  // What a new run starts with. Milestone 17b: a fuller, readable factory from minute one (existing saves keep their
+  // own layout): the desks along the back wall, the parts rack by the Assembly Bay, the bench in front, the break
+  // table by the door, the pedestal where finished robots are shown.
   layout: [
-    { def: 'F01', col: 3, row: 4, rot: 0 },
-    { def: 'F15', col: 6, row: 3, rot: 0 },
-    { def: 'F05', col: 4, row: 7, rot: 0 },
+    { def: 'F02', col: 1, row: 0, rot: 0 }, // Engineering Desk
+    { def: 'F04', col: 4, row: 0, rot: 0 }, // Programming Station
+    { def: 'F06', col: 7, row: 0, rot: 0 }, // Parts Rack
+    { def: 'F01', col: 2, row: 3, rot: 0 }, // Basic Workbench
+    { def: 'F05', col: 4, row: 4, rot: 0 }, // Assembly Bay (the robot-building machine)
+    { def: 'F15', col: 7, row: 6, rot: 0 }, // Prototype Pedestal
+    { def: 'F12', col: 1, row: 7, rot: 0 }, // Break Table
+    { def: 'F14', col: 6, row: 9, rot: 0 }, // Storage Crates
   ],
 };
 
@@ -309,3 +316,23 @@ export const BUILD_ART = {
 
 // Drawing: a footprint's picture is (w + h) × half-cell width × this wide (the M1 bench: 2×1 → 200 px).
 export const FACILITY_DRAW = { widthPerCell: 1.19, feet: 0.97 };
+
+// Milestone 17b station menus: what a station could become (bible §18.2), shown in its Upgrade section. F33–F35 are
+// real facilities; the others (F16–F32) are listed with their §18.2 price and rule but arrive in a later update.
+export const STATION_UPGRADES = {
+  F01: [{ id: 'F16', name: 'Advanced Engineering', cost: 4000, needs: 'Company Rank C', note: '+15% Engineering, +4 PWR/END' }],
+  F02: [{ id: 'F16', name: 'Advanced Engineering', cost: 4000, needs: 'Company Rank C', note: '+15% Engineering, +4 PWR/END' }],
+  F03: [{ id: 'F17', name: 'Advanced CAD', cost: 4000, needs: 'Company Rank C', note: '+15% Concept, +4 APL' }],
+  F04: [{ id: 'F18', name: 'AI Lab', cost: 5000, needs: 'AI Research 4', note: '+15% Software, fewer software faults' }],
+  F05: [
+    { id: 'F19', name: 'Precision Assembly', cost: 5500, needs: 'Mechanical Research 5', note: '+15% Assembly, +5 REL' },
+    { id: 'F20', name: 'Heavy Assembly Bay', cost: 6500, needs: 'Company Rank B', note: 'needed for CH08–CH10 robots' },
+  ],
+  F07: [{ id: 'F22', name: 'Power Lab', cost: 5500, needs: 'Power Research 4', note: '+6 PWR/END' }],
+  F08: [{ id: 'F25', name: 'Dyno Test Rig', cost: 6500, needs: 'Company Rank B', note: '+12 Testing for competition robots' }],
+  F10: [{ id: 'F29', name: 'Staff Lounge', cost: 4000, needs: 'Company Rank C', note: 'rest +60%, morale floor +5' }],
+  F11: [{ id: 'F33', name: 'Server Rack', cost: 6000, needs: 'Company Rank A', note: 'a second research queue' }],
+  F12: [{ id: 'F29', name: 'Staff Lounge', cost: 4000, needs: 'Company Rank C', note: 'rest +60%, morale floor +5' }],
+  F13: [{ id: 'F32', name: 'Sponsor Wall', cost: 3500, needs: 'First sponsor', note: 'sponsor rewards +10%' }],
+  F15: [{ id: 'F31', name: 'Showroom', cost: 7000, needs: 'Company Rank B', note: '+8% units sold' }],
+};

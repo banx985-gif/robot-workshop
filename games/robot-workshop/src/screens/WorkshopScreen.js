@@ -7,6 +7,16 @@
 // Staff on a research queue work at the Research Desk the same way.
 // Staff not on the project rest at a Break Table or Charging Dock if there is a free seat, else at their home spot.
 // Drag pans; tap selects a worker or a facility. The Build screen (BuildScreen.js) reuses this view.
+// Milestone 17b — the workshop is the home screen: zoomed in so people and machines are big (pinch / wheel to zoom,
+// double-tap to zoom to a station), tap a station or a worker to open its menu (a bottom sheet, src/ui/stationMenus.js),
+// hold on empty floor for Build mode, a 5-button bottom bar. While a robot is built its stages play on the Assembly Bay
+// (src/ui/buildShow.js); the machines light up and spark; workers carry parts; props dress the room.
+import { THEME, font } from '../../../../core/Theme.js';
+import { PinchZoom } from '../../../../core/PinchZoom.js';
+import { COMPONENTS, SLOTS } from '../../data/components.js';
+import { drawBuild } from '../ui/buildShow.js';
+import { createBottomBar } from '../ui/BottomBar.js';
+import { PROPS } from '../../data/workshop.js';
 import { Camera } from '../../../../core/Camera.js';
 import { Grid } from '../../../../core/Grid.js';
 import { Agent } from '../../../../core/Agent.js';
@@ -26,6 +36,7 @@ import { VFX_ART, STATUS_ART, STATUS_ORDER, FLOAT_COLORS } from '../../data/feed
 import { createTopBar } from '../ui/TopBar.js';
 import { RESEARCH_ART } from '../../data/research.js';
 import { COMPETITION_ART } from '../../data/competitions.js';
+const COL = THEME.color;
 
 const TASK_LABELS = {
   home: 'At home spot',
@@ -34,9 +45,13 @@ const TASK_LABELS = {
   working: 'Working',
   toHome: 'Walking back to home spot',
   resting: 'Resting (not on a project)',
+  tinker: 'Tinkering (not on a project)',
 };
 
-export function createWorkshopScreen({ renderer, layout, assets, bus, debug, campaign, router, goProject, hud }) {
+// Camera zoom (Milestone 17b): staff ~150 px tall on a 412-wide phone at the default; pinch between min and max.
+export const WORKSHOP_ZOOM = { start: 2.6, min: 0.8, max: 3.4, station: 3.0 };
+
+export function createWorkshopScreen({ renderer, layout, assets, bus, debug, campaign, router, goProject, hud, sheet = null, menus = null }) {
   const W = renderer.width;
   const vfx = hud.vfx;
   const F = campaign.facilities;
@@ -51,16 +66,19 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
   let buildMode = false; // Build screen: grid lines and footprints are baked into the room layer too
   let ghost = null; // Build screen placement preview: { def, col, row, rot, ok, hideUid }
   let buildSelected = null; // Build screen: uid of the facility being edited
-  const topBar = createTopBar({
-    layout,
-    campaign,
-    hud,
-    nav: [
-      { id: 'project', label: 'Project', onTap: goProject, badge: () => (campaign.activeProject ? null : '!') },
-      // "!" while a special candidate (e.g. the tutorial hire) is waiting and can be hired.
-      { id: 'roster', label: 'Roster', onTap: () => router.go('roster'), badge: () => (campaign.recruitment.special && !campaign.hireBlock(campaign.recruitment.special.id) ? '!' : null) },
-    ],
-  });
+  const topBar = createTopBar({ layout, campaign, hud, home: true });
+  // Menus: a station, a worker, the bottom bar, or the floor opens its sheet.
+  const openMenu = (kind, target = null) => {
+    const b = menus?.for(kind, target);
+    if (b && sheet) sheet.open(b);
+    bus.emit('workshop:menu', { kind });
+  };
+  const bottomBar = createBottomBar({ layout, assets, campaign, open: (kind) => openMenu(kind) });
+  camera.minZoom = WORKSHOP_ZOOM.min;
+  camera.maxZoom = WORKSHOP_ZOOM.max;
+  camera.zoom = WORKSHOP_ZOOM.start;
+  const pinch = new PinchZoom(camera);
+  let lastTap = null; // { x, y, t } — double-tap zooms to a station
 
   // --- facilities ------------------------------------------------------------
   // One view per placed facility: where it is drawn, who is using it, where people stand at it.
@@ -174,6 +192,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     });
     for (const a of agents) resetAgent(a);
     room.invalidate();
+    layoutProps();
     bus.emit('workshop:layout', {});
   }
   let homes = [];
@@ -263,6 +282,19 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
           a.task = 'home';
           a.setState('idle');
         } else if (a.restPending) startResting(a);
+        else if (a.state !== 'walking' && a.stateTime > 9 + a.seed * 2 && (staffOf(a)?.energy ?? 0) > 55 && !busyElsewhere(a)) startTinker(a);
+        break;
+      case 'tinker': // visual only (Milestone 17b): an idle worker fiddles at a free station for a moment
+        if (onShift || busyElsewhere(a)) {
+          if (a.station?.user === a) a.station.user = null;
+          a.station = null;
+          a.task = onShift ? 'home' : 'resting';
+          if (!onShift) startResting(a);
+        } else if (a.state === 'working' && a.stateTime >= ROUTINE.workSeconds * 1.5) {
+          if (a.station?.user === a) a.station.user = null;
+          a.station = null;
+          startResting(a);
+        }
         break;
       case 'waiting': {
         const st = a.station;
@@ -303,6 +335,28 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     a.walkTo(grid, h.col, h.row, () => {
       a.task = 'home';
       a.loops++;
+      puffAt(a);
+    });
+  }
+
+  // Research or training keeps a worker where those systems put them; tinkering is only for the truly idle.
+  const busyElsewhere = (a) => campaign.research.queueOfWorker(a.staffId) >= 0 || !!campaign.training.trainingOf(a.staffId);
+  const TINKER_AT = ['F01', 'F02', 'F04', 'F03', 'F06', 'F08', 'F09', 'F07'];
+  function startTinker(a) {
+    const free = stations.filter((s) => TINKER_AT.includes(s.item.def) && s.spot && !s.user && !s.queue.length);
+    if (!free.length) {
+      a.stateTime = 0;
+      return;
+    }
+    const st = free[Math.floor((a.seed * 7 + a.loops) % free.length)];
+    a.loops++;
+    st.user = a;
+    a.station = st;
+    a.restAt = null;
+    a.task = 'tinker';
+    a.walkTo(grid, st.spot.col, st.spot.row, () => {
+      a.setState('working');
+      a.facing = faceTowards(st.spot, st.fp);
       puffAt(a);
     });
   }
@@ -349,6 +403,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     const tr = campaign.training.trainingOf(a.staffId);
     if (tr) return `Training: ${campaign.training.course(tr.courseId).name}`;
     if (a.task === 'working' && a.station) return `Working at the ${defOf(a.station).name}`;
+    if (a.task === 'tinker' && a.station) return `Tinkering at the ${defOf(a.station).name}`;
     if (a.task === 'toStation' && a.station) return `Walking to the ${defOf(a.station).name}`;
     if (a.task === 'waiting' && a.station) return `Waiting for the ${defOf(a.station).name}`;
     if (a.task === 'resting' && a.restAt) return `Resting at the ${defOf(a.restAt.view).name}`;
@@ -356,20 +411,27 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
   }
 
   // --- info card ------------------------------------------------------------
-  const card = new ContextCard(layout, { describe, height: 300 });
+  // Milestone 17b: a tap opens the station's / worker's menu sheet (the old info card is gone). `card` stays as the
+  // name older code and the guide use for "the thing that is open".
+  const card = {
+    get isOpen() {
+      return !!sheet?.active;
+    },
+    rect: () => sheet?.rect() ?? null,
+    contains: (p) => !!sheet?.active && p.y >= sheet.rect().y,
+    close: () => sheet?.close(),
+    render() {},
+  };
   bus.on('selection:change', ({ selected }) => {
-    if (!selected) {
-      card.close();
-      return;
-    }
-    card.open(selected);
+    if (!selected) return;
+    openMenu(selected.kind === 'worker' ? 'worker' : selected.item.def, selected);
     // Selection pulse under whatever was picked.
     if (selected.kind === 'worker') {
       const f = agentFeet(selected);
-      vfx.pulse('world', f.x, f.y, { rx: 48, ry: 22, color: '#FFB74D' });
+      vfx.pulse('world', f.x, f.y, { rx: 48, ry: 22, color: COL.action });
     } else {
       const c = iso.corner(selected.fp.col + selected.fp.w / 2, selected.fp.row + selected.fp.h / 2);
-      vfx.pulse('world', c.x, c.y, { rx: HW * (selected.fp.w + selected.fp.h) * 0.55, ry: HH * (selected.fp.w + selected.fp.h) * 0.55, color: '#4FC3F7' });
+      vfx.pulse('world', c.x, c.y, { rx: HW * (selected.fp.w + selected.fp.h) * 0.55, ry: HH * (selected.fp.w + selected.fp.h) * 0.55, color: COL.progress });
     }
   });
 
@@ -381,7 +443,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
         title: s.name,
         subtitle: `${ROLES[s.role].name} · Lv ${s.level}${status.length ? ' · ' + status.join(', ') : ''}`,
         lines: [`Energy ${Math.round(s.energy)} · Morale ${Math.round(s.morale)}`, `Now: ${taskLabel(item)}`],
-        accent: '#FFB74D',
+        accent: COL.action,
         buttons: [{ id: 'roster', label: 'View in roster' }],
       };
     }
@@ -398,7 +460,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
       } else lines.push('Free');
       const buttons = [{ id: 'build', label: 'Build mode' }];
       if (d.effects.some((e) => e.key === 'researchQueues')) buttons.unshift({ id: 'research', label: 'Research' });
-      return { title: d.name, subtitle: `Facility · ${item.fp.w}×${item.fp.h} tiles`, lines, accent: '#4FC3F7', buttons };
+      return { title: d.name, subtitle: `Facility · ${item.fp.w}×${item.fp.h} tiles`, lines, accent: COL.progress, buttons };
     }
     return { title: '?' };
   }
@@ -570,7 +632,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     for (const z of F.nextZones) {
       g.save();
       diamond(g, z.col, z.row, z.w, z.h);
-      g.fillStyle = 'rgba(16,20,24,0.55)';
+      g.fillStyle = COL.overlay;
       g.fill();
       g.setLineDash([16, 12]);
       g.lineWidth = 5;
@@ -583,17 +645,17 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
       const sprite = assets.sprite(BUILD_ART.boundary, bw, bh);
       if (sprite) g.drawImage(sprite, c.x - bw / 2, c.y - bh * 0.62, bw, bh);
       const def = EXPANSIONS.find((e) => e.id === z.id);
-      g.font = 'bold 26px system-ui, sans-serif';
+      g.font = `bold 20px ${THEME.family}`; // world size: the camera zoom makes it big on screen
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       const label = `${def.name} · ${def.buyable ? describeUnlock(def.unlock) : 'later'}`;
       const tw = g.measureText(label).width + 28;
-      g.fillStyle = 'rgba(16,20,24,0.85)';
+      g.fillStyle = COL.chip;
       g.beginPath();
       if (g.roundRect) g.roundRect(c.x - tw / 2, c.y + bh * 0.42, tw, 40, 20);
       else g.rect(c.x - tw / 2, c.y + bh * 0.42, tw, 40);
       g.fill();
-      g.fillStyle = '#FFB199';
+      g.fillStyle = COL.bad;
       g.fillText(label, c.x, c.y + bh * 0.42 + 21);
       g.restore();
     }
@@ -706,71 +768,148 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     drawCharacter(ctx, assets, a.art, f.x, f.y, a.width, a.height, a.pose);
   }
 
-  // Status icons (tired / stressed / inspired) above heads, then name tags under the feet.
+  // Milestone 17b: over every head a name chip with one small status icon (stressed / tired / inspired, else happy
+  // when in good spirits); a worker carrying parts to a station holds the part icon. Name tags under the feet for
+  // resting workers stay as before.
   function drawOverheads(ctx) {
-    const size = SIZES.statusIcon;
-    for (const a of agents) {
-      const s = staffOf(a);
-      const f = agentFeet(a);
-      let n = 0;
-      for (const k of STATUS_ORDER) if (s?.status[k]) n++;
-      if (n) {
-        let x = f.x - (n * size + (n - 1) * 6) / 2;
-        const y = f.y - a.height - size - 4 + Math.sin(time * 2.4 + a.seed) * 3 + a.pose.bob;
-        for (const k of STATUS_ORDER) {
-          if (!s.status[k]) continue;
-          assets.drawContained(ctx, STATUS_ART[k], { x, y, w: size, h: size });
-          x += size + 6;
-        }
-      }
-    }
-    ctx.font = `bold ${SIZES.nameTag}px system-ui, sans-serif`;
+    const size = SIZES.statusIcon * 0.42;
+    ctx.font = `bold ${SIZES.nameTag}px ${THEME.family}`; // world size (zoomed ×2.6 by default)
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const a of agents) {
+      const s = staffOf(a);
+      if (!s) continue;
       const f = agentFeet(a);
-      const label = a.task === 'resting' ? a.restLabel || (a.restLabel = `${a.name.split(' ')[0]} · resting`) : a.firstName || (a.firstName = a.name.split(' ')[0]);
-      const w = ctx.measureText(label).width + 22;
-      const y = f.y + 12;
-      ctx.fillStyle = 'rgba(16,20,24,0.78)';
+      const top = f.y - a.height + a.pose.bob - 8 + Math.sin(time * 2.4 + a.seed) * 2;
+      const k = STATUS_ORDER.find((x) => s.status[x]) ?? (s.morale >= 60 ? 'happy' : null);
+      const name = a.firstName || (a.firstName = a.name.split(' ')[0]);
+      const tw = ctx.measureText(name).width;
+      const w = tw + 22 + (k ? size + 6 : 0);
+      const x0 = f.x - w / 2;
+      ctx.fillStyle = COL.chip;
       ctx.beginPath();
-      if (ctx.roundRect) ctx.roundRect(f.x - w / 2, y, w, 36, 18);
-      else ctx.rect(f.x - w / 2, y, w, 36);
+      if (ctx.roundRect) ctx.roundRect(x0, top - 30, w, 30, 15);
+      else ctx.rect(x0, top - 30, w, 30);
       ctx.fill();
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillText(label, f.x, y + 18);
+      if (k) assets.drawContained(ctx, STATUS_ART[k], { x: x0 + 6, y: top - 15 - size / 2, w: size, h: size });
+      ctx.fillStyle = COL.textOnDark;
+      ctx.fillText(name, x0 + (k ? size + 12 : 11) + tw / 2, top - 14);
+      // Carrying a part to the station during Engineering / Assembly.
+      const part = carriedPart(a);
+      if (part) assets.drawContained(ctx, part, { x: f.x - 26 + a.facing * 22, y: f.y - a.height * 0.55, w: 52, h: 52 });
     }
   }
 
-  // Phase progress pill over the stage's station, moving smoothly between day ticks (bible §40.2).
+  // --- the build you can watch (Milestone 17b) ------------------------------------------------
+  // How far through the current stage, moving smoothly between day ticks (bible §40.2).
   let perDay = 0;
   let perDayAt = -1;
-  function drawProgressPill(ctx) {
-    const job = campaign.activeProject;
-    if (!job) return;
-    const st = primaryStation(PHASES[job.phaseIndex].id);
-    if (!st) return;
+  function stageFrac(job) {
     if (perDayAt !== campaign.clock.totalDays) {
       perDay = campaign.projects.progressPerDay(job);
       perDayAt = campaign.clock.totalDays;
     }
     const smooth = campaign.clock.paused ? 0 : campaign.clock.dayProgress * perDay;
-    const frac = Math.min(1, (job.phaseProgress + smooth) / job.phaseTarget);
-    const r = facilityRectFor(defOf(st), st.fp);
-    const w = 180;
-    const x = r.x + r.w / 2 - w / 2;
-    const y = r.y - 30;
-    ctx.fillStyle = 'rgba(16,20,24,0.85)';
-    ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(x - 6, y - 6, w + 12, 30, 15);
-    else ctx.rect(x - 6, y - 6, w + 12, 30);
-    ctx.fill();
-    ctx.fillStyle = '#0E1217';
-    ctx.fillRect(x, y, w, 18);
-    ctx.fillStyle = '#4FC3F7';
-    ctx.fillRect(x, y, w * frac, 18);
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.fillRect(x, y, w * frac, 5);
+    return Math.min(1, (job.phaseProgress + smooth) / job.phaseTarget);
+  }
+
+  const bayView = () => stationOfDef('F05') ?? primaryStation('assembly');
+  const stationOfDef = (id) => stations.find((s) => s.item.def === id) ?? null;
+  function topOf(v, k = 0.35) {
+    const r = facilityRectFor(defOf(v), v.fp);
+    return { x: r.x + r.w / 2, y: r.y + r.h * k };
+  }
+  // Where the robot stands on the bay (its feet), and where it walks to be tested.
+  function bayFeet(v) {
+    const c = iso.corner(v.fp.col + v.fp.w / 2, v.fp.row + v.fp.h / 2);
+    return { x: c.x, y: c.y - HH * 0.3 };
+  }
+  function testSpot(v) {
+    const ped = stationOfDef('F08') ?? stations.find((s) => defOf(s).stand);
+    if (ped) {
+      const c = iso.corner(ped.fp.col + ped.fp.w / 2, ped.fp.row + ped.fp.h + 0.6);
+      return { x: c.x, y: c.y };
+    }
+    const c = iso.corner(v.fp.col + v.fp.w + 0.7, v.fp.row + v.fp.h / 2);
+    return { x: c.x, y: c.y };
+  }
+  const buildView = {};
+  function drawBuildShow(ctx) {
+    const job = campaign.activeProject;
+    const bay = bayView();
+    if (!job || !bay || buildMode) return;
+    const rack = stationOfDef('F06') ?? stationOfDef('F14');
+    const screenSt = stationOfDef('F04') ?? bay;
+    const v = buildView;
+    v.assets = assets;
+    v.job = job;
+    v.frac = stageFrac(job);
+    v.time = time;
+    v.bay = bayFeet(bay);
+    v.robotH = SIZES.robotH * 1.25;
+    v.rack = rack ? topOf(rack, 0.4) : { x: v.bay.x - 220, y: v.bay.y - 160 };
+    v.screen = topOf(screenSt, 0.3);
+    v.test = testSpot(bay);
+    v.robotKey = robotArtOf({ purpose: job.data.purpose });
+    v.partKeys = SLOTS.map((s) => COMPONENTS[job.data.components[s.id]]?.art).filter(Boolean);
+    v.reducedFlashes = vfx.reducedFlashes;
+    drawBuild(ctx, v);
+  }
+
+  // Machines while a project runs: the programming screens flicker (the research glow, faded in and out) when the
+  // Software stage is on or someone works there; the Research Desk glows while a topic runs.
+  function drawMachineGlow(ctx) {
+    const job = campaign.activeProject;
+    const glowAt = (v, size, a) => {
+      const p = topOf(v, 0.3);
+      ctx.save();
+      ctx.globalAlpha = a;
+      assets.drawContained(ctx, RESEARCH_ART.glow, { x: p.x - size / 2, y: p.y - size / 2, w: size, h: size });
+      ctx.restore();
+    };
+    for (const v of stations) {
+      const id = v.item.def;
+      const busy = v.user?.task === 'working';
+      if (id === 'F04' && (busy || (job && PHASES[job.phaseIndex].id === 'software'))) glowAt(v, 150, 0.35 + 0.35 * Math.abs(Math.sin(time * 9) * Math.sin(time * 2.3)));
+      if (id === 'F11' && (busy || campaign.research.queues.some((q) => q.nodeId))) glowAt(v, 140, 0.3 + 0.2 * Math.sin(time * 2));
+      if ((id === 'F02' || id === 'F03') && busy) glowAt(v, 120, 0.25 + 0.2 * Math.sin(time * 4));
+    }
+  }
+
+  // The part a worker carries while walking to a station in the Engineering or Assembly stage.
+  function carriedPart(a) {
+    const job = campaign.activeProject;
+    if (!job || a.task !== 'toStation' || !staffOf(a)?.assigned) return null;
+    const phase = PHASES[job.phaseIndex].id;
+    if (phase !== 'engineering' && phase !== 'assembly') return null;
+    const slot = SLOTS[Math.floor(a.seed * 3 + a.loops) % SLOTS.length];
+    return COMPONENTS[job.data.components[slot.id]]?.art ?? null;
+  }
+
+  // Props (data/workshop.js PROPS): decoration on free cells, drawn in depth order, never in the way (no collision).
+  let propViews = [];
+  function layoutProps() {
+    propViews = PROPS.filter((p) => F.isUsable(p.col, p.row) && !F.placed.some((it) => {
+      const fp = F.footprint(it);
+      return p.col >= fp.col && p.row >= fp.row && p.col < fp.col + fp.w && p.row < fp.row + fp.h;
+    }) && !(p.col === F.entrance.col && p.row === F.entrance.row)).map((p) => ({ kind: 'prop', p, depth: (p.col + p.row + 1) * ROOM.cellSize }));
+  }
+  function drawProp(ctx, pv) {
+    const p = pv.p;
+    const c = iso.cellCenter(p.col, p.row);
+    const h = (p.h ?? 90) * (p.scale ?? 1);
+    const w = h * assets.aspect(p.art);
+    assets.draw(ctx, p.art, c.x - w / 2 + (p.dx ?? 0), c.y - h * 0.92 + HH * 0.35 + (p.dy ?? 0), w, h);
+  }
+
+  // Sharper art when zoomed: sprites and the room layer are made at the zoom (in half steps), within a size budget.
+  function worldDetail() {
+    return Math.min(3.5, Math.max(1, Math.ceil(camera.zoom * 2) / 2));
+  }
+  function roomScaleFor(detail) {
+    const ps = renderer.pixelScale;
+    const budget = Math.sqrt(24e6 / Math.max(1, room.width * room.height * ps * ps));
+    return ps * Math.max(1, Math.min(detail, budget));
   }
 
   function outlinePath(ctx, fp) {
@@ -787,7 +926,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     ctx.lineWidth = 5;
     if (s.kind === 'worker') {
       const f = agentFeet(s);
-      ctx.strokeStyle = '#FFB74D';
+      ctx.strokeStyle = COL.action;
       ctx.fillStyle = 'rgba(255,183,77,0.25)';
       ctx.beginPath();
       ctx.ellipse(f.x, f.y, 46, 20, 0, 0, Math.PI * 2);
@@ -795,7 +934,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
       ctx.stroke();
     } else {
       outlinePath(ctx, s.fp);
-      ctx.strokeStyle = buildMode ? '#FFD166' : '#4FC3F7';
+      ctx.strokeStyle = buildMode ? COL.gold : COL.progress;
       ctx.fillStyle = buildMode ? 'rgba(255,209,102,0.25)' : 'rgba(79,195,247,0.22)';
       ctx.fill();
       ctx.stroke();
@@ -810,7 +949,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     ctx.save();
     outlinePath(ctx, { col: ghost.col, row: ghost.row, w: s.w, h: s.h });
     ctx.fillStyle = ghost.ok ? 'rgba(124,255,178,0.38)' : 'rgba(255,90,90,0.42)';
-    ctx.strokeStyle = ghost.ok ? '#7CFFB2' : '#FF5A5A';
+    ctx.strokeStyle = ghost.ok ? COL.good : COL.bad;
     ctx.lineWidth = 5;
     ctx.fill();
     ctx.stroke();
@@ -848,7 +987,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     const r = stripRect();
     const job = campaign.activeProject;
     ctx.save();
-    ctx.fillStyle = 'rgba(16,20,24,0.9)';
+    ctx.fillStyle = COL.chip;
     ctx.beginPath();
     if (ctx.roundRect) ctx.roundRect(r.x, r.y, r.w, r.h, 20);
     else ctx.rect(r.x, r.y, r.w, r.h);
@@ -859,28 +998,28 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     const tx = r.x + 100;
     if (!job) {
       const can = campaign.canStartProject();
-      ctx.fillStyle = '#FFD166';
-      ctx.font = 'bold 32px system-ui, sans-serif';
+      ctx.fillStyle = COL.gold;
+      ctx.font = font(32, true);
       ctx.fillText(can.ok ? 'No project running — tap here to build a robot' : can.reason, tx, r.y + r.h / 2, r.w - 120);
     } else {
       const phase = PHASES[job.phaseIndex];
       const pct = Math.min(1, job.phaseProgress / job.phaseTarget);
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 30px system-ui, sans-serif';
+      ctx.fillStyle = COL.text;
+      ctx.font = font(30, true);
       const forWho = job.data.contractId ? campaign.contracts.get(job.data.contractId)?.customer : null;
       ctx.fillText(`${job.name}${forWho ? ` for ${forWho}` : ''} · ${job.phaseIndex + 1}/5 ${phase.name}`, tx, r.y + 28, r.w - 380);
-      ctx.fillStyle = '#9AA8B5';
-      ctx.font = '26px system-ui, sans-serif';
+      ctx.fillStyle = COL.textMuted;
+      ctx.font = font(26);
       const team = job.slots.filter(Boolean).length;
       ctx.fillText(`Faults ${job.data.faults.length} · Team ${team}/5${team ? '' : ' — nobody working!'}`, tx, r.y + 66, r.w - 380);
       const bx = r.x + r.w - 270;
-      ctx.fillStyle = '#0E1217';
+      ctx.fillStyle = COL.track;
       ctx.fillRect(bx, r.y + 30, 190, 30);
-      ctx.fillStyle = '#7CFFB2';
+      ctx.fillStyle = COL.good;
       ctx.fillRect(bx, r.y + 30, 190 * pct, 30);
-      ctx.fillStyle = '#FFFFFF';
+      ctx.fillStyle = COL.text;
       ctx.textAlign = 'right';
-      ctx.font = 'bold 28px system-ui, sans-serif';
+      ctx.font = font(28, true);
       ctx.fillText(`${Math.floor(pct * 100)}%`, r.x + r.w - 20, r.y + 46);
     }
     ctx.restore();
@@ -913,15 +1052,15 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     const res = campaign.research;
     const busy = res.queues.findIndex((q, i) => q.nodeId && res.queueOpen(i));
     const ready = busy < 0 && res.nodes.some((n) => res.canStart(0, n.id).ok);
-    drawButton(ctx, r, '', { accent: '#4FC3F7', badge: ready ? '!' : null });
+    drawButton(ctx, r, '', { accent: COL.progress, badge: ready ? '!' : null });
     assets.drawContained(ctx, RESEARCH_ART.icon, { x: r.x + 12, y: r.y + 14, w: 84, h: 84 });
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 36px system-ui, sans-serif';
+    ctx.fillStyle = COL.text;
+    ctx.font = font(36, true);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('Research', r.x + 104, r.y + 40, r.w - 116);
-    ctx.font = 'bold 26px system-ui, sans-serif';
-    ctx.fillStyle = '#4FC3F7';
+    ctx.font = font(26, true);
+    ctx.fillStyle = COL.progress;
     const sub = busy >= 0 ? `${Math.floor(res.fraction(res.queues[busy].nodeId) * 100)}% · ${res.rp} RP` : `${res.rp} RP`;
     ctx.fillText(sub, r.x + 104, r.y + 80, r.w - 116);
   }
@@ -942,10 +1081,10 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
   function drawCompeteButton(ctx) {
     const r = competeButtonRect();
     if (!r) return;
-    drawButton(ctx, r, '', { accent: '#FFD166', badge: competeReady() ? '!' : null });
+    drawButton(ctx, r, '', { accent: COL.gold, badge: competeReady() ? '!' : null });
     assets.drawContained(ctx, COMPETITION_ART.icon, { x: r.x + 10, y: r.y + 14, w: 84, h: 84 });
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 34px system-ui, sans-serif';
+    ctx.fillStyle = COL.text;
+    ctx.font = font(34, true);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('Compete', r.x + 100, r.y + r.h / 2 - 2, r.w - 110);
@@ -953,10 +1092,10 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
 
   function drawBuildButton(ctx) {
     const r = buildButtonRect();
-    drawButton(ctx, r, '', { accent: '#FFB74D' });
+    drawButton(ctx, r, '', { accent: COL.action });
     assets.drawContained(ctx, BUILD_ART.buildIcon, { x: r.x + 14, y: r.y + 10, w: 88, h: 88 });
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 40px system-ui, sans-serif';
+    ctx.fillStyle = COL.text;
+    ctx.font = font(40, true);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('Build', r.x + 110, r.y + r.h / 2 - 2);
@@ -981,16 +1120,26 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     st.pop = 0.35;
     vfx.sprite('world', VFX_ART.blueprintPop, p.x, p.y - 30, { size: 140, life: 1.1, rise: 30 });
     // The last phase ends in the robot-finished moment, which says it louder.
-    if (job.phaseIndex < PHASES.length - 1) vfx.text('world', `${phase.name} done!`, p.x, p.y - 120, { color: FLOAT_COLORS.info, size: 34, life: 1.8 });
+    if (job.phaseIndex < PHASES.length - 1) vfx.text('world', `${phase.name} done!`, p.x, p.y - 120, { color: FLOAT_COLORS.info, size: 20, life: 1.8 });
   });
 
+  // Breakthroughs: a gold sparkle on the bay. Faults: a puff of smoke and the warning icon on the bay (Milestone 17b).
   bus.on('robot:breakthroughRoll', ({ hit, phase }) => {
     if (!hit) return;
-    const st = primaryStation(phase.id);
+    const st = bayView() ?? primaryStation(phase.id);
     if (!st) return;
-    const p = weldPoint(st);
+    const p = topOf(st, 0.2);
+    vfx.sprite('world', 'vfx_12', p.x, p.y - 40, { size: 190, life: 1.6, from: 0.4, to: 1.1, hold: 0.3 });
     vfx.sprite('world', STATUS_ART.breakthrough, p.x, p.y - 90, { size: 96, life: 2.2, rise: 40, hold: 0.6 });
-    vfx.text('world', 'Breakthrough!', p.x, p.y - 150, { color: '#FFD166', size: 34, life: 2 });
+    vfx.text('world', 'Breakthrough!', p.x, p.y - 150, { color: COL.gold, size: 20, life: 2 });
+  });
+  bus.on('robot:fault', () => {
+    const st = bayView();
+    if (!st) return;
+    const p = topOf(st, 0.25);
+    vfx.sprite('world', 'vfx_11', p.x, p.y - 20, { size: 170, life: 1.4, from: 0.5, to: 1.2, hold: 0.2, rise: 30 });
+    vfx.sprite('world', 'ui_icon_29', p.x + 40, p.y - 90, { size: 80, life: 2, rise: 40, hold: 0.8 });
+    vfx.dust('world', p.x, p.y + 20, { count: 12, spreadX: 70 });
   });
 
   // Research: a glow at the Research Desk when a topic starts; a blueprint pop and a note when one finishes.
@@ -1007,7 +1156,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     if (!p) return;
     vfx.sprite('world', RESEARCH_ART.glow, p.x, p.y - 20, { size: 200, life: 1.4, from: 0.4, to: 1.1, hold: 0.3 });
     vfx.sprite('world', RESEARCH_ART.blueprint, p.x, p.y - 40, { size: 150, life: 1.3, rise: 40, delay: 0.2 });
-    vfx.text('world', `${node.name} done!`, p.x, p.y - 140, { color: FLOAT_COLORS.research, size: 34, life: 2.2 });
+    vfx.text('world', `${node.name} done!`, p.x, p.y - 140, { color: FLOAT_COLORS.research, size: 20, life: 2.2 });
   });
 
   // Training finished: the level-up sparkle and the gains over the worker's head.
@@ -1016,7 +1165,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     if (!a) return;
     const f = agentFeet(a, { x: 0, y: 0 });
     vfx.sprite('world', VFX_ART.levelUp, f.x, f.y - a.height * 0.5, { size: 130, life: 1.2, hold: 0.2 });
-    vfx.text('world', txt, f.x, f.y - a.height - 14, { color: FLOAT_COLORS.info, size: 30, life: 2.2, rise: 50 });
+    vfx.text('world', txt, f.x, f.y - a.height - 14, { color: FLOAT_COLORS.info, size: 19, life: 2.2, rise: 50 });
   }
 
   bus.on('staff:levelup', ({ staff, level }) => {
@@ -1024,7 +1173,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     if (!a) return;
     const f = agentFeet(a, { x: 0, y: 0 });
     vfx.sprite('world', VFX_ART.levelUp, f.x, f.y - a.height * 0.5, { size: 140, life: 1.2, hold: 0.2 });
-    vfx.text('world', `Level ${level}!`, f.x, f.y - a.height - 14, { color: FLOAT_COLORS.level, size: 32, life: 1.9, rise: 50, delay: 0.15 });
+    vfx.text('world', `Level ${level}!`, f.x, f.y - a.height - 14, { color: FLOAT_COLORS.level, size: 20, life: 1.9, rise: 50, delay: 0.15 });
   });
 
   // A new facility lands with a puff and a pop.
@@ -1040,12 +1189,12 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
   let sparkTimer = 0;
   let spriteSparkTimer = 0;
   function updateSparks(dt) {
-    if (campaign.clock.paused || !campaign.activeProject) return;
+    if (campaign.clock.paused) return; // sparks wherever someone works (the project, or tinkering while idle)
     sparkTimer -= dt;
     spriteSparkTimer -= dt;
     for (const st of stations) {
       const a = st.user;
-      if (!a || a.task !== 'working') continue;
+      if (!a || a.state !== 'working' || (a.task !== 'working' && a.task !== 'tinker')) continue;
       const p = weldPoint(st);
       if (sparkTimer <= 0) vfx.sparks('world', p.x + (Math.random() - 0.5) * 30, p.y, { count: 4 });
       if (spriteSparkTimer <= 0) vfx.sprite('world', VFX_ART.smallSparks, p.x, p.y - 20, { size: 76, life: 0.4, from: 0.6, to: 1, hold: 0.1 });
@@ -1118,6 +1267,30 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     competeButtonRect,
     celebrateTraining,
     stripRect,
+    bottomBar,
+    openMenu,
+    displayRecordOf: (v) => displayRecord(v),
+    // Screen rect of a station's picture (the guide, tests); null if off screen.
+    stationScreenRect(defId) {
+      const v = stations.find((s) => s.item.def === defId);
+      if (!v) return null;
+      const b = facilityRectFor(defOf(v), v.fp);
+      const p = camera.worldToScreen(b.x, b.y);
+      const r = { x: p.x, y: p.y, w: b.w * camera.zoom, h: b.h * camera.zoom };
+      const top = topBar.rect().y + topBar.rect().h;
+      const bottom = bottomBar.rect().y;
+      return r.y + r.h > top + 40 && r.y < bottom - 40 && r.x + r.w > 0 && r.x < W ? r : null;
+    },
+    // Centre the camera on a station (e.g. for the guide, or after a menu).
+    focusStation(defId, zoom = null) {
+      const v = stations.find((s) => s.item.def === defId);
+      if (!v) return false;
+      if (zoom) camera.zoom = Math.min(camera.maxZoom, Math.max(camera.minZoom, zoom));
+      const c = iso.corner(v.fp.col + v.fp.w / 2, v.fp.row + v.fp.h / 2);
+      camera.centerOn(c.x, c.y - 60);
+      return true;
+    },
+    focusOn,
 
     // Build screen hooks.
     setBuildMode(on) {
@@ -1159,7 +1332,8 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
       roomOps = layoutRoom();
       room.setPixelScale(renderer.pixelScale);
       camera.pixelScale = renderer.pixelScale;
-      screen.centerRoom();
+      // Start zoomed in on the Assembly Bay, where the team works (Milestone 17b).
+      if (!screen.focusStation('F05', WORKSHOP_ZOOM.start)) screen.centerRoom();
     },
 
     // Screen pixel scale changed (resize / rotate): layer and sprites are remade at the new size.
@@ -1228,50 +1402,63 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
 
     onTap(p) {
       if (topBar.handleTap(p)) return;
-      if (hitRect(p, stripRect())) {
-        goProject();
-        return;
-      }
-      if (card.contains(p)) {
-        const b = card.buttonAt(p);
-        if (b === 'roster') router.go('roster', { focusId: card.item.staffId });
-        if (b === 'build') router.go('build', { selectUid: card.item.uid });
-        if (b === 'research') router.go('research');
-        return; // taps on the card stay on the card
-      }
-      if (hitRect(p, buildButtonRect())) {
-        router.go('build');
-        return;
-      }
-      const rb = researchButtonRect();
-      if (rb && hitRect(p, rb)) {
-        router.go('research');
-        return;
-      }
-      const cb = competeButtonRect();
-      if (cb && hitRect(p, cb)) {
-        router.go('competitions');
-        return;
-      }
+      if (bottomBar.handleTap(p)) return;
       const w = camera.screenToWorld(p.x, p.y);
+      // Double-tap: zoom in to what is under the finger (or back out if already close).
+      const now = performance.now();
+      if (lastTap && now - lastTap.t < 330 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 70) {
+        lastTap = null;
+        sheet?.close();
+        const target = camera.zoom < WORKSHOP_ZOOM.station - 0.1 ? WORKSHOP_ZOOM.station : WORKSHOP_ZOOM.start * 0.75;
+        camera.setZoom(target, p.x, p.y);
+        return;
+      }
+      lastTap = { x: p.x, y: p.y, t: now };
       const picked = selection.handleTap(w.x, w.y);
+      if (picked && selection.selected === picked) {
+        // Tapping the same thing again re-opens its menu.
+        if (!sheet?.active) openMenu(picked.kind === 'worker' ? 'worker' : picked.item.def, picked);
+      }
       screen.taps.push({ screen: { x: p.x, y: p.y }, world: w, picked: picked ? picked.staffId || picked.item?.def || picked.kind : null });
       if (screen.taps.length > 50) screen.taps.shift();
     },
 
+    // Hold on empty floor → Build mode (a hold on a station or worker just opens its menu).
+    onHold(p) {
+      if (topBar.contains(p) || bottomBar.contains(p)) return;
+      const w = camera.screenToWorld(p.x, p.y);
+      const picked = selection.pick(w.x, w.y);
+      if (picked) openMenu(picked.kind === 'worker' ? 'worker' : picked.item.def, picked);
+      else openMenu('floor');
+    },
+
+    onWheel(p) {
+      camera.zoomBy(p.deltaY > 0 ? 1 / 1.12 : 1.12, p.x, p.y);
+    },
+
     onDragStart(p) {
       const start = { x: p.startX, y: p.startY };
-      if (dragId !== null || card.contains(start) || topBar.contains(start) || hitRect(start, stripRect()) || hitRect(start, buildButtonRect()) || hitRect(start, researchButtonRect() ?? { x: 0, y: 0, w: -1, h: -1 }) || hitRect(start, competeButtonRect() ?? { x: 0, y: 0, w: -1, h: -1 })) return;
+      if (topBar.contains(start) || bottomBar.contains(start)) return;
+      pinch.down(p.id, p.startX, p.startY);
+      pinch.move(p.id, p.x, p.y);
+      if (pinch.active) {
+        camera.endDrag(); // two fingers: zoom instead of pan
+        dragId = null;
+        return;
+      }
+      if (dragId !== null) return;
       dragId = p.id;
       camera.beginDrag(p.startX, p.startY);
       camera.dragTo(p.x, p.y);
     },
 
     onDrag(p) {
+      if (pinch.move(p.id, p.x, p.y)) return;
       if (p.id === dragId) camera.dragTo(p.x, p.y);
     },
 
     onDragEnd(p) {
+      pinch.up(p.id);
       if (p.id !== dragId) return;
       camera.endDrag();
       dragId = null;
@@ -1280,6 +1467,9 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     // The room and everything in it, in the camera (shared with the Build screen).
     renderWorld(ctx) {
       ensureRoom();
+      const detail = worldDetail();
+      room.setPixelScale(roomScaleFor(detail));
+      assets.detail = detail;
       camera.apply(ctx);
       room.render(ctx, 0, 0);
       drawGhostFloor(ctx);
@@ -1299,30 +1489,32 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
       drawables.length = 0;
       for (const s of stations) if (!(ghost && ghost.hideUid === s.uid)) drawables.push(s);
       for (const a of agents) drawables.push(a);
+      for (const pv of propViews) drawables.push(pv);
       if (ghost) drawables.push(ghostDrawable(ghost));
       drawables.sort(byDepth);
       for (const d of drawables) {
         if (d.kind === 'worker') {
           if (camera.isVisible(agentBounds(d))) drawWorker(ctx, d);
-        } else if (d.kind === 'ghost') drawFacilityArt(ctx, FACILITIES[d.g.def], d.fp, !!d.g.rot, 0, 0.72);
+        } else if (d.kind === 'prop') drawProp(ctx, d);
+        else if (d.kind === 'ghost') drawFacilityArt(ctx, FACILITIES[d.g.def], d.fp, !!d.g.rot, 0, 0.72);
         else if (camera.isVisible(d.getBounds())) drawStation(ctx, d);
       }
-      if (!buildMode) drawProgressPill(ctx);
+      if (!buildMode) {
+        drawMachineGlow(ctx);
+        drawBuildShow(ctx);
+      }
       drawOverheads(ctx);
       vfx.render(ctx, 'world');
       camera.restore(ctx);
+      assets.detail = 1;
     },
 
     render(ctx) {
-      ctx.fillStyle = '#0B0E12';
+      ctx.fillStyle = COL.bgDeep;
       ctx.fillRect(0, 0, W, renderer.height);
       screen.renderWorld(ctx);
       topBar.render(ctx);
-      drawStrip(ctx);
-      drawBuildButton(ctx);
-      drawResearchButton(ctx);
-      drawCompeteButton(ctx);
-      card.render(ctx);
+      if (!sheet?.active) bottomBar.render(ctx); // an open menu sheet covers it
     },
   };
 

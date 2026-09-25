@@ -5,12 +5,14 @@
 //   Tap a built facility to edit it: drag it to move (free), Rotate, or Sell (50% back, with a confirm).
 //   Expansions tab — the four workshop expansions, with cost, rank and a Buy button (with a confirm).
 // The room itself is drawn by the workshop screen (same camera, cached floor layer).
+import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton, drawPadlock, hitRect } from '../../../../core/ui/Button.js';
 import { FACILITIES, FACILITY_ORDER, EXPANSIONS, BUILD_ART, LOCKED_LATER } from '../../data/facilities.js';
 import { describeUnlock } from '../systems/unlockRules.js';
 import { createTopBar } from '../ui/TopBar.js';
 import { panel, text, contained, fmt } from '../ui/widgets.js';
+const COL = THEME.color;
 
 const CARD_H = 250;
 const GAP = 14;
@@ -19,17 +21,20 @@ const TABS = [
   { id: 'facilities', label: 'Facilities' },
   { id: 'expansions', label: 'Expansions' },
 ];
-const GREEN = '#7CFFB2';
-const RED = '#FF8A80';
+const GREEN = COL.good;
+const RED = COL.bad;
+
+const BUILD_ZOOM = 1.7; // name tags (17 world px) stay at least 28 on screen
 
 export function createBuildScreen({ renderer, layout, assets, campaign, router, workshop, hud }) {
   const W = renderer.width;
   const F = campaign.facilities;
+  let homeZoom = null;
   // Secret facilities and the secret basement stay out of the lists until their secret opens them (M17); the Secret
   // Lab is never bought on its own (it comes with the basement).
   const shownFacilities = () => FACILITY_ORDER.filter((id) => FACILITIES[id].catalogue !== false && (!FACILITIES[id].secret || campaign.facilityUnlocked(id)));
   const shownZones = () => EXPANSIONS.filter((z) => !z.secret || F.zoneShown(z) || F.isOwned(z.id));
-  const topBar = createTopBar({ layout, campaign, hud, nav: [{ id: 'done', label: 'Done', onTap: () => router.go('workshop') }] });
+  const topBar = createTopBar({ layout, campaign, hud, back: { label: '✓ Done', onTap: () => router.go('workshop') } });
   let tab = 'facilities';
   let mode = 'catalogue'; // 'catalogue' | 'place' | 'edit'
   let placing = null; // { def, col, row, rot } while placing a new facility
@@ -62,7 +67,7 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
   function tabRect(i) {
     const p = panelRect();
     const w = (p.w - 40 - 16) / 2;
-    return { x: p.x + 20 + i * (w + 16), y: p.y + 18, w, h: 80 };
+    return { x: p.x + 20 + i * (w + 16), y: p.y + 18, w, h: 110 };
   }
   function scrollRect() {
     const p = panelRect();
@@ -74,12 +79,12 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
   const rowRect = (i) => ({ x: 0, y: i * (ROW_H + GAP), w: scrollRect().w - 12, h: ROW_H });
   const buyRect = (i) => {
     const r = rowRect(i);
-    return { x: r.x + r.w - 20 - 230, y: r.y + (r.h - 84) / 2, w: 230, h: 84 };
+    return { x: r.x + r.w - 20 - 230, y: r.y + (r.h - 110) / 2, w: 230, h: 110 };
   };
   function actionRect(i) {
     const p = panelRect();
     const w = (p.w - 40 - 2 * 16) / 3;
-    return { x: p.x + 20 + i * (w + 16), y: p.y + p.h - 20 - 96, w, h: 96 };
+    return { x: p.x + 20 + i * (w + 16), y: p.y + p.h - 20 - 110, w, h: 110 };
   }
   function dialogRect() {
     const s = sr();
@@ -88,7 +93,7 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
   const dialogButton = (i) => {
     const d = dialogRect();
     const w = (d.w - 60 - 20) / 2;
-    return { x: d.x + 30 + i * (w + 20), y: d.y + d.h - 30 - 96, w, h: 96 };
+    return { x: d.x + 30 + i * (w + 20), y: d.y + d.h - 30 - 110, w, h: 110 };
   };
 
   // Screen rect of a thing inside the scroll panel, only if fully in view (guide).
@@ -99,7 +104,7 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
     return { x: b.x + r.x, y, w: r.w, h: r.h };
   }
 
-  function say(textStr, color = '#FFD166', secs = 3) {
+  function say(textStr, color = COL.gold, secs = 3) {
     message = { text: textStr, color, until: performance.now() + secs * 1000 };
   }
 
@@ -325,6 +330,8 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
       tab = params.tab ?? 'facilities';
       workshop.selection.clear();
       workshop.setBuildMode(true);
+      homeZoom = workshop.camera.zoom; // Build mode looks at more of the room (Milestone 17b); put the zoom back on the way out
+      workshop.camera.zoom = BUILD_ZOOM;
       workshop.camera.viewY = -1; // force fitCamera to set the view
       fitCamera();
       workshop.centerRoom();
@@ -334,6 +341,7 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
     exit() {
       workshop.setBuildMode(false);
       workshop.camera.viewY = 0;
+      if (homeZoom) workshop.camera.zoom = homeZoom;
       workshop.camera.setView(W, renderer.height);
     },
 
@@ -423,7 +431,7 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
 
     render(ctx) {
       fitCamera();
-      ctx.fillStyle = '#0B0E12';
+      ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const wr = worldRect();
       ctx.save();
@@ -442,21 +450,21 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
   // --- drawing ---------------------------------------------------------------------------
   function drawMessage(ctx) {
     const r = msgRect();
-    panel(ctx, r, { fill: 'rgba(16,20,24,0.92)', stroke: null, radius: 20 });
+    panel(ctx, r, { fill: COL.panel, stroke: null, radius: 20 });
     contained(ctx, assets, BUILD_ART.buildIcon, { x: r.x + 14, y: r.y + 6, w: 60, h: 60 });
     let str;
-    let color = '#9AA8B5';
+    let color = COL.textMuted;
     if (message && performance.now() < message.until) ({ text: str, color } = message);
     else if (mode === 'place') str = 'Drag the facility or tap the floor to move it';
     else if (mode === 'edit') str = 'Drag it to move it (free) · tap another to pick it';
     else if (tab === 'expansions') str = 'More floor space for more stations';
     else str = 'Tap a facility to place it · tap a built one to move or sell it';
-    text(ctx, str, r.x + 88, r.y + r.h / 2, { size: 28, bold: color !== '#9AA8B5', color, baseline: 'middle', maxWidth: r.w - 104 });
+    text(ctx, str, r.x + 88, r.y + r.h / 2, { size: 28, bold: color !== COL.textMuted, color, baseline: 'middle', maxWidth: r.w - 104 });
   }
 
   function drawPanel(ctx) {
     const p = panelRect();
-    panel(ctx, p, { fill: 'rgba(22,28,36,0.97)', stroke: '#35414F', radius: 28 });
+    panel(ctx, p, { fill: COL.panel, stroke: COL.line, radius: 28 });
     if (mode === 'catalogue') return drawCatalogue(ctx);
     const defId = mode === 'place' ? placing.def : F.get(editUid)?.def;
     if (!defId) return;
@@ -465,27 +473,27 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
     const x = p.x + 210;
     const mw = p.w - 230;
     text(ctx, mode === 'place' ? `Place: ${d.name}` : d.name, x, p.y + 24, { size: 38, bold: true, maxWidth: mw });
-    text(ctx, mode === 'place' ? `Costs ${fmt(campaign.facilityCost(defId))} · ${d.w}×${d.h} tiles · you have ${fmt(campaign.economy.balance('credits'))}` : `${d.w}×${d.h} tiles · sells for ${fmt(F.sellValue(F.get(editUid)))}`, x, p.y + 74, { size: 26, color: '#9AA8B5', maxWidth: mw });
-    text(ctx, d.blurb, x, p.y + 112, { size: 26, color: '#E8EEF2', maxWidth: mw });
+    text(ctx, mode === 'place' ? `Costs ${fmt(campaign.facilityCost(defId))} · ${d.w}×${d.h} tiles · you have ${fmt(campaign.economy.balance('credits'))}` : `${d.w}×${d.h} tiles · sells for ${fmt(F.sellValue(F.get(editUid)))}`, x, p.y + 74, { size: 26, color: COL.textMuted, maxWidth: mw });
+    text(ctx, d.blurb, x, p.y + 112, { size: 26, color: COL.text, maxWidth: mw });
     const g = workshop.ghost;
     if (mode === 'place' && g) text(ctx, g.ok ? '✓ Fits here' : `✗ ${g.reason}`, x, p.y + 154, { size: 28, bold: true, color: g.ok ? GREEN : RED, maxWidth: mw });
     if (mode === 'edit' && g) text(ctx, g.ok ? '✓ Let go to move it here' : `✗ ${g.reason}`, x, p.y + 154, { size: 28, bold: true, color: g.ok ? GREEN : RED, maxWidth: mw });
-    const font = 'bold 34px system-ui, sans-serif';
-    drawButton(ctx, actionRect(0), 'Rotate', { font });
+    const btnFont = font(34, true);
+    drawButton(ctx, actionRect(0), 'Rotate', { font: btnFont });
     if (mode === 'place') {
-      drawButton(ctx, actionRect(1), 'Cancel', { font });
-      drawButton(ctx, actionRect(2), `Place ${fmt(campaign.facilityCost(defId))}`, { font, active: !!g?.ok, disabled: !g?.ok, accent: GREEN });
+      drawButton(ctx, actionRect(1), 'Cancel', { font: btnFont });
+      drawButton(ctx, actionRect(2), `Place ${fmt(campaign.facilityCost(defId))}`, { font: btnFont, active: !!g?.ok, disabled: !g?.ok, accent: GREEN });
     } else {
       const block = campaign.sellBlock(editUid);
-      drawButton(ctx, actionRect(1), `Sell +${fmt(F.sellValue(F.get(editUid)))}`, { font, disabled: !!block, accent: RED });
-      drawButton(ctx, actionRect(2), 'Done', { font, active: true });
+      drawButton(ctx, actionRect(1), `Sell +${fmt(F.sellValue(F.get(editUid)))}`, { font: btnFont, disabled: !!block, accent: RED });
+      drawButton(ctx, actionRect(2), 'Done', { font: btnFont, active: true });
     }
   }
 
   function drawCatalogue(ctx) {
     TABS.forEach((t, i) => {
       const label = t.id === 'facilities' ? `Facilities (${F.placed.length} built)` : 'Expansions';
-      drawButton(ctx, tabRect(i), label, { selected: tab === t.id, font: 'bold 32px system-ui, sans-serif', badge: t.id === 'expansions' && tab !== 'expansions' && shownZones().some((z) => !campaign.expansionBlock(z.id)) ? '!' : null });
+      drawButton(ctx, tabRect(i), label, { selected: tab === t.id, font: font(32, true), badge: t.id === 'expansions' && tab !== 'expansions' && shownZones().some((z) => !campaign.expansionBlock(z.id)) ? '!' : null });
     });
     const items = tab === 'facilities' ? shownFacilities() : shownZones();
     scroll.contentHeight = tab === 'facilities' ? Math.ceil(items.length / 3) * (CARD_H + GAP) : items.length * (ROW_H + GAP);
@@ -499,22 +507,22 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
     const d = FACILITIES[id];
     const unlocked = campaign.facilityUnlocked(id);
     const block = campaign.buyBlock(id);
-    panel(ctx, r, { fill: unlocked ? 'rgba(34,42,52,0.97)' : 'rgba(26,30,36,0.97)', stroke: unlocked ? (block ? '#35414F' : '#4FC3F7') : '#2A3038', radius: 20 });
+    panel(ctx, r, { fill: unlocked ? COL.panel : COL.panel, stroke: unlocked ? (block ? COL.line : COL.progress) : COL.line, radius: 20 });
     ctx.save();
     if (!unlocked) ctx.globalAlpha = 0.35;
     contained(ctx, assets, d.art, { x: r.x + 12, y: r.y + 10, w: r.w - 24, h: 118 });
     ctx.restore();
     const n = F.count(id);
     if (n) text(ctx, `×${n}`, r.x + r.w - 14, r.y + 12, { size: 26, bold: true, color: GREEN, align: 'right' });
-    text(ctx, d.name, r.x + r.w / 2, r.y + 134, { size: 26, bold: true, align: 'center', color: unlocked ? '#FFFFFF' : '#8C98A5', maxWidth: r.w - 16 });
-    text(ctx, `${fmt(campaign.facilityCost(id))} · ${d.w}×${d.h}`, r.x + r.w / 2, r.y + 168, { size: 23, align: 'center', color: unlocked && campaign.economy.canAfford('credits', campaign.facilityCost(id)) ? '#FFD166' : '#8C98A5', maxWidth: r.w - 16 });
+    text(ctx, d.name, r.x + r.w / 2, r.y + 134, { size: 26, bold: true, align: 'center', color: unlocked ? COL.text : COL.textFaint, maxWidth: r.w - 16 });
+    text(ctx, `${fmt(campaign.facilityCost(id))} · ${d.w}×${d.h}`, r.x + r.w / 2, r.y + 168, { size: 23, align: 'center', color: unlocked && campaign.economy.canAfford('credits', campaign.facilityCost(id)) ? COL.gold : COL.textFaint, maxWidth: r.w - 16 });
     if (!unlocked) {
       const rule = describeUnlock(d.unlock);
-      drawPadlock(ctx, r.x + 14, r.y + 216, 24, '#FFB74D');
-      text(ctx, rule, r.x + 46, r.y + 216, { size: 20, bold: true, color: '#FFB74D', baseline: 'middle', maxWidth: r.w - 56 });
+      drawPadlock(ctx, r.x + 14, r.y + 216, 24, COL.action);
+      text(ctx, rule, r.x + 46, r.y + 216, { size: 20, bold: true, color: COL.action, baseline: 'middle', maxWidth: r.w - 56 });
     } else {
-      const lines = wrapLines(ctx, d.blurb, r.w - 20, '20px system-ui, sans-serif').slice(0, 2);
-      lines.forEach((l, j) => text(ctx, l, r.x + r.w / 2, r.y + 198 + j * 24, { size: 20, align: 'center', color: '#9AA8B5', maxWidth: r.w - 12 }));
+      const lines = wrapLines(ctx, d.blurb, r.w - 20, font(20)).slice(0, 2);
+      lines.forEach((l, j) => text(ctx, l, r.x + r.w / 2, r.y + 198 + j * 24, { size: 20, align: 'center', color: COL.textMuted, maxWidth: r.w - 12 }));
       if (block && block !== 'Not enough credits') text(ctx, block, r.x + r.w / 2, r.y + 198 + lines.length * 24, { size: 19, align: 'center', color: RED, maxWidth: r.w - 16 });
     }
   }
@@ -523,26 +531,26 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
     const r = rowRect(i);
     const owned = F.isOwned(z.id);
     const block = campaign.expansionBlock(z.id);
-    panel(ctx, r, { fill: 'rgba(34,42,52,0.97)', stroke: owned ? GREEN : block ? '#35414F' : '#FFB74D', radius: 20 });
+    panel(ctx, r, { fill: COL.panel, stroke: owned ? GREEN : block ? COL.line : COL.action, radius: 20 });
     contained(ctx, assets, owned || !block ? BUILD_ART.expansionIcon : BUILD_ART.lockIcon, { x: r.x + 14, y: r.y + 15, w: 120, h: 120 });
     const x = r.x + 150;
     const mw = r.w - 150 - 270;
     text(ctx, `${z.name} · ${z.note}`, x, r.y + 20, { size: 32, bold: true, maxWidth: mw });
-    text(ctx, `${fmt(z.cost)} credits · needs ${describeUnlock(z.unlock)}`, x, r.y + 64, { size: 24, color: '#FFD166', maxWidth: mw });
+    text(ctx, `${fmt(z.cost)} credits · needs ${describeUnlock(z.unlock)}`, x, r.y + 64, { size: 24, color: COL.gold, maxWidth: mw });
     const state = owned ? 'Open ✓' : !z.buyable ? LOCKED_LATER : block ?? 'Ready to buy';
-    text(ctx, state, x, r.y + 102, { size: 24, bold: true, color: owned ? GREEN : block ? '#9AA8B5' : GREEN, maxWidth: mw });
-    if (!owned) drawButton(ctx, buyRect(i), z.buyable ? 'Buy' : 'Later', { font: 'bold 34px system-ui, sans-serif', active: !block, disabled: !!block, locked: !z.buyable, accent: GREEN });
+    text(ctx, state, x, r.y + 102, { size: 24, bold: true, color: owned ? GREEN : block ? COL.textMuted : GREEN, maxWidth: mw });
+    if (!owned) drawButton(ctx, buyRect(i), z.buyable ? 'Buy' : 'Later', { font: font(34, true), active: !block, disabled: !!block, locked: !z.buyable, accent: GREEN });
   }
 
   function drawConfirm(ctx) {
-    ctx.fillStyle = 'rgba(6,8,12,0.6)';
+    ctx.fillStyle = COL.overlay;
     ctx.fillRect(0, 0, W, renderer.height);
     const d = dialogRect();
-    panel(ctx, d, { fill: 'rgba(26,32,40,0.99)', stroke: '#FFB74D', lineWidth: 5, radius: 28 });
+    panel(ctx, d, { fill: COL.panel, stroke: COL.action, lineWidth: 5, radius: 28 });
     text(ctx, confirm.text, d.x + d.w / 2, d.y + 50, { size: 44, bold: true, align: 'center', maxWidth: d.w - 60 });
-    text(ctx, confirm.sub, d.x + d.w / 2, d.y + 130, { size: 30, align: 'center', color: '#C9D3DD', maxWidth: d.w - 60 });
-    drawButton(ctx, dialogButton(0), confirm.yes, { active: true, accent: '#FFB74D', font: 'bold 38px system-ui, sans-serif' });
-    drawButton(ctx, dialogButton(1), confirm.no, { font: 'bold 38px system-ui, sans-serif' });
+    text(ctx, confirm.sub, d.x + d.w / 2, d.y + 130, { size: 30, align: 'center', color: COL.textMuted, maxWidth: d.w - 60 });
+    drawButton(ctx, dialogButton(0), confirm.yes, { active: true, accent: COL.action, font: font(38, true) });
+    drawButton(ctx, dialogButton(1), confirm.no, { font: font(38, true) });
   }
 
   return screen;

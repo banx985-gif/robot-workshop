@@ -10,6 +10,8 @@ const LAYERS = { world: 0, screen: 1 };
 const SPARK_COLORS = ['#FFF6C2', '#FFD166', '#FFB74D', '#FFFFFF'];
 const CONFETTI_COLORS = ['#FF8A3D', '#4FC3F7', '#7CFFB2', '#FFD166', '#F06292', '#FFFFFF'];
 
+import { THEME } from './Theme.js';
+
 export class VfxSystem {
   constructor({
     assets,
@@ -403,7 +405,7 @@ export class VfxSystem {
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
     ctx.lineWidth = Math.max(4, t.size * 0.18);
-    ctx.strokeStyle = 'rgba(16,20,24,0.9)';
+    ctx.strokeStyle = THEME.color.sheet; // a cream halo: theme-coloured numbers read on bright floors and cream bars (M17b)
     ctx.strokeText(t.text, x, 0);
     ctx.fillStyle = t.color;
     ctx.fillText(t.text, x, 0);

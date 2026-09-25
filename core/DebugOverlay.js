@@ -36,7 +36,7 @@ export class DebugOverlay {
   }
 
   render(ctx) {
-    if (!this.enabled) return;
+    if (!this.enabled || this.hidden) return; // hidden: tests taking clean screenshots
     const s = this.loop.stats;
     const r = this.renderer;
     const sr = this.layout?.safeRect ?? { x: 0, y: 0, w: r.width, h: r.height };

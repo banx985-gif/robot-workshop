@@ -2,10 +2,12 @@
 // They never take a tap. toasts: NotificationSystem.toasts ([{ entry, age }]); life: seconds each one lasts.
 //   drawToasts(ctx, toasts, { x, y, w, life, drawIcon(ctx, entry, rect), accent(entry) → colour })
 // Stacks downwards from (x, y). Returns the height used.
+import { THEME } from '../Theme.js';
+const COL = THEME.color;
 const H = 104;
 const GAP = 14;
 
-export function drawToasts(ctx, toasts, { x, y, w, life = 3.6, drawIcon = null, accent = () => '#4FC3F7', font = 'system-ui, sans-serif' }) {
+export function drawToasts(ctx, toasts, { x, y, w, life = 3.6, drawIcon = null, accent = () => COL.progress, font = THEME.family }) {
   let cy = y;
   for (const t of toasts) {
     const inK = Math.min(1, t.age / 0.25);
@@ -16,7 +18,7 @@ export function drawToasts(ctx, toasts, { x, y, w, life = 3.6, drawIcon = null, 
     const r = { x, y: cy + slide, w, h: H };
     ctx.save();
     ctx.globalAlpha = a;
-    ctx.fillStyle = 'rgba(18,24,32,0.98)';
+    ctx.fillStyle = COL.panel;
     ctx.beginPath();
     if (ctx.roundRect) ctx.roundRect(r.x, r.y, r.w, r.h, 22);
     else ctx.rect(r.x, r.y, r.w, r.h);
@@ -32,11 +34,11 @@ export function drawToasts(ctx, toasts, { x, y, w, life = 3.6, drawIcon = null, 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = accent(t.entry);
-    ctx.font = `bold 32px ${font}`;
+    ctx.font = `bold ${THEME.size.body}px ${THEME.family}`;
     ctx.fillText(t.entry.title, tx, r.y + 34, r.x + r.w - 20 - tx);
     if (t.entry.body) {
-      ctx.fillStyle = '#E8EEF2';
-      ctx.font = `26px ${font}`;
+      ctx.fillStyle = COL.text;
+      ctx.font = `${THEME.size.small}px ${THEME.family}`;
       ctx.fillText(t.entry.body, tx, r.y + 74, r.x + r.w - 20 - tx);
     }
     ctx.restore();

@@ -8,6 +8,8 @@ export class Camera {
     this.worldW = worldW;
     this.worldH = worldH;
     this.zoom = zoom;
+    this.minZoom = 0.5;
+    this.maxZoom = 4;
     this.x = x; // world coordinate shown at the screen's left edge
     this.y = y; // world coordinate shown at the screen's top edge
     this._drag = null;
@@ -56,6 +58,21 @@ export class Camera {
 
   centerOn(wx, wy) {
     this.moveTo(wx - this.visibleW / 2, wy - this.visibleH / 2);
+  }
+
+  // Zoom to z (clamped to minZoom–maxZoom), keeping the world point under screen point (sx, sy) where it is —
+  // so a pinch or a wheel zooms towards the fingers / pointer.
+  setZoom(z, sx = this.viewX + this.viewW / 2, sy = this.viewY + this.viewH / 2) {
+    const nz = Math.min(this.maxZoom, Math.max(this.minZoom, z));
+    const w = this.screenToWorld(sx, sy);
+    this.zoom = nz;
+    this.x = w.x - (sx - this.viewX) / nz;
+    this.y = w.y - (sy - this.viewY) / nz;
+    this.clamp();
+  }
+
+  zoomBy(f, sx, sy) {
+    this.setZoom(this.zoom * f, sx, sy);
   }
 
   // Move the view by a screen-space amount.

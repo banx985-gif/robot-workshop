@@ -2,11 +2,13 @@
 // reads, its live value, the value needed (and the eased value on a repeat), true / false — plus how often the
 // engine has checked it on its trigger events. "Eased view" shows the §30.4a numbers even on a first run.
 // Also the debug New Game+ level setter and the "ending reached" switch (until Milestones 19–20 build them).
+import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { SECRETS } from '../../data/secrets.js';
 import { ruleLines } from '../systems/secretText.js';
 import { panel, text, hit } from '../ui/widgets.js';
+const COL = THEME.color;
 
 const HEAD_H = 230;
 const LINE = 40;
@@ -69,17 +71,17 @@ export function createSecretDebugScreen({ renderer, layout, campaign, router }) 
     onDrag: (p) => scroll.drag(p),
     onDragEnd: (p) => scroll.endDrag(p),
     render(ctx) {
-      ctx.fillStyle = '#101418';
+      ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const h = headRect();
-      drawButton(ctx, backRect(), '‹ Back', { font: 'bold 32px system-ui, sans-serif' });
+      drawButton(ctx, backRect(), '‹ Back', { font: font(32, true) });
       text(ctx, 'Why not?', h.x + 200, h.y + 43, { size: 42, bold: true, baseline: 'middle' });
-      drawButton(ctx, easedRect(), forceEased ? 'Eased view ✓' : 'Eased view', { active: forceEased, font: 'bold 28px system-ui, sans-serif' });
-      const f = 'bold 28px system-ui, sans-serif';
-      drawButton(ctx, rowBtn(0), '‹', { font: 'bold 40px system-ui, sans-serif' });
+      drawButton(ctx, easedRect(), forceEased ? 'Eased view ✓' : 'Eased view', { active: forceEased, font: font(28, true) });
+      const f = font(28, true);
+      drawButton(ctx, rowBtn(0), '‹', { font: font(40, true) });
       text(ctx, `${pick + 1}/${SECRETS.length}`, rowBtn(1).x + rowBtn(1).w / 2, rowBtn(1).y + 43, { size: 30, bold: true, align: 'center', baseline: 'middle' });
-      drawButton(ctx, rowBtn(2), '›', { font: 'bold 40px system-ui, sans-serif' });
-      text(ctx, 'NG+', rowBtn(3).x + 4, rowBtn(3).y + 43, { size: 26, bold: true, baseline: 'middle', color: '#9AA8B5' });
+      drawButton(ctx, rowBtn(2), '›', { font: font(40, true) });
+      text(ctx, 'NG+', rowBtn(3).x + 4, rowBtn(3).y + 43, { size: 26, bold: true, baseline: 'middle', color: COL.textMuted });
       drawButton(ctx, rowBtn(4), `− ${campaign.ngPlusRuns}`, { font: f });
       drawButton(ctx, rowBtn(5), '+', { font: f });
       drawButton(ctx, rowBtn(6), campaign.flags.endingReached ? 'Ending ✓' : 'Ending: no', { active: !!campaign.flags.endingReached, font: f });
@@ -89,14 +91,14 @@ export function createSecretDebugScreen({ renderer, layout, campaign, router }) 
       scroll.begin(ctx);
       panel(ctx, { x: 0, y: 0, w, h: 250 });
       text(ctx, `${rule.id} · ${rule.name}`, 20, 18, { size: 32, bold: true, maxWidth: w - 40 });
-      text(ctx, res.ok ? 'ALL MET — unlocks on its next trigger event' : 'Not met yet', 20, 64, { size: 28, bold: true, color: res.ok ? '#7CFFB2' : '#FF8A80' });
-      text(ctx, `Triggers: ${rule.triggerEvents.join(', ')} · ${rule.oncePerAccount ? 'once per account' : 'once per run'} · NG+ ${res.ng.value} / needs ${res.ng.need}`, 20, 108, { size: 24, color: '#9AA8B5', maxWidth: w - 40 });
-      text(ctx, `Run: ${S.unlockedInRun(rule.id) ? 'unlocked' : 'locked'} · clue stage ${S.clueStage(rule.id)} · account history: ${S.account.history[rule.id] ? `${S.account.history[rule.id].runs.length} run(s)` : 'none'} · ${res.eased ? 'EASED values' : 'first-time values'}`, 20, 146, { size: 24, color: '#9AA8B5', maxWidth: w - 40 });
-      text(ctx, `Checked ${S.stats.byRule[rule.id] ?? 0}× · engine: ${S.stats.notifications} events seen, ${S.stats.checks} rule checks (${Object.entries(S.stats.byEvent).map(([k, v]) => `${k} ${v}`).join(', ') || 'none yet'})`, 20, 184, { size: 22, color: '#7F8C99', maxWidth: w - 40 });
+      text(ctx, res.ok ? 'ALL MET — unlocks on its next trigger event' : 'Not met yet', 20, 64, { size: 28, bold: true, color: res.ok ? COL.good : COL.bad });
+      text(ctx, `Triggers: ${rule.triggerEvents.join(', ')} · ${rule.oncePerAccount ? 'once per account' : 'once per run'} · NG+ ${res.ng.value} / needs ${res.ng.need}`, 20, 108, { size: 24, color: COL.textMuted, maxWidth: w - 40 });
+      text(ctx, `Run: ${S.unlockedInRun(rule.id) ? 'unlocked' : 'locked'} · clue stage ${S.clueStage(rule.id)} · account history: ${S.account.history[rule.id] ? `${S.account.history[rule.id].runs.length} run(s)` : 'none'} · ${res.eased ? 'EASED values' : 'first-time values'}`, 20, 146, { size: 24, color: COL.textMuted, maxWidth: w - 40 });
+      text(ctx, `Checked ${S.stats.byRule[rule.id] ?? 0}× · engine: ${S.stats.notifications} events seen, ${S.stats.checks} rule checks (${Object.entries(S.stats.byEvent).map(([k, v]) => `${k} ${v}`).join(', ') || 'none yet'})`, 20, 184, { size: 22, color: COL.textMuted, maxWidth: w - 40 });
       lines.forEach((l, i) => {
         const y = 280 + i * LINE;
-        text(ctx, l.ok ? '✓' : '✗', 12 + l.depth * 36, y, { size: 28, bold: true, color: l.ok ? '#7CFFB2' : '#FF8A80' });
-        text(ctx, l.text, 52 + l.depth * 36, y + 2, { size: 24, color: '#E8EEF2', maxWidth: w - 64 - l.depth * 36 });
+        text(ctx, l.ok ? '✓' : '✗', 12 + l.depth * 36, y, { size: 28, bold: true, color: l.ok ? COL.good : COL.bad });
+        text(ctx, l.text, 52 + l.depth * 36, y + 2, { size: 24, color: COL.text, maxWidth: w - 64 - l.depth * 36 });
       });
       scroll.contentHeight = 300 + lines.length * LINE;
       scroll.end(ctx);

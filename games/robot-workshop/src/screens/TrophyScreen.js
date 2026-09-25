@@ -1,13 +1,15 @@
 // Trophy shelf and competition records (bible §21.6, §21.7): the six trophies (won ones shine, the rest are dark
 // silhouettes, the secret one stays a mystery), then every event's records.
+import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { COMPETITIONS, COMPETITIONS_BY_ID, TROPHIES, COMPETITION_ART } from '../../data/competitions.js';
 import { TUNINGS, STRATEGIES } from '../../data/tuning.js';
 import { panel, text, hit } from '../ui/widgets.js';
 import { placeText, row } from '../ui/competitionDraw.js';
+const COL = THEME.color;
 
-const HEAD_H = 130;
+const HEAD_H = 140;
 const SHELF_H = 400;
 const REC_H = 330;
 const NAME = (list, id) => list.find((x) => x.id === id)?.name ?? id;
@@ -54,13 +56,13 @@ export function createTrophyScreen({ renderer, layout, assets, campaign, router 
     onDrag: (p) => scroll.drag(p),
     onDragEnd: (p) => scroll.endDrag(p),
     render(ctx) {
-      ctx.fillStyle = '#101418';
+      ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const h = headRect();
-      drawButton(ctx, backRect(), '‹ Back', { font: 'bold 32px system-ui, sans-serif' });
+      drawButton(ctx, backRect(), '‹ Back', { font: font(32, true) });
       assets.drawContained(ctx, COMPETITION_ART.trophiesIcon, { x: h.x + 216, y: h.y + 14, w: 100, h: 100 });
       text(ctx, 'Trophies', h.x + 326, h.y + h.h / 2, { size: 44, bold: true, baseline: 'middle', maxWidth: h.w - 326 - 280 });
-      drawButton(ctx, rankingsRect(), 'Rankings', { accent: '#FFD166', font: 'bold 32px system-ui, sans-serif' });
+      drawButton(ctx, rankingsRect(), 'Rankings', { accent: COL.gold, font: font(32, true) });
       scroll.begin(ctx);
       text(ctx, `Your shelf: ${campaign.trophies.count} of ${TROPHIES.length}`, 4, 12, { size: 32, bold: true });
       TROPHIES.forEach((t, i) => drawTrophy(ctx, t, cellRect(i)));
@@ -69,7 +71,7 @@ export function createTrophyScreen({ renderer, layout, assets, campaign, router 
       y += 56;
       const entered = COMPETITIONS.filter((e) => campaign.competitions.records[e.id]?.entries);
       if (!entered.length) {
-        text(ctx, 'No events entered yet.', 4, y, { size: 26, color: '#9AA8B5' });
+        text(ctx, 'No events entered yet.', 4, y, { size: 26, color: COL.textMuted });
         y += 60;
       }
       for (const e of entered) {
@@ -84,12 +86,12 @@ export function createTrophyScreen({ renderer, layout, assets, campaign, router 
   function drawTrophy(ctx, t, r) {
     const won = campaign.trophies.awarded[t.id];
     const mystery = t.secret && !won;
-    panel(ctx, r, { fill: won ? 'rgba(52,44,24,0.96)' : 'rgba(22,26,32,0.96)', stroke: won ? '#FFD166' : '#35414F', lineWidth: won ? 5 : 3 });
+    panel(ctx, r, { fill: won ? COL.panelGold : COL.panelDim, stroke: won ? COL.gold : COL.line, lineWidth: won ? 5 : 3 });
     // A shelf board under the trophy.
-    ctx.fillStyle = won ? '#7A5A2A' : '#2A3038';
+    ctx.fillStyle = won ? COL.gold : COL.line;
     ctx.fillRect(r.x + 16, r.y + 228, r.w - 32, 14);
     const art = { x: r.x + 20, y: r.y + 16, w: r.w - 40, h: 212 };
-    if (mystery) text(ctx, '?', r.x + r.w / 2, art.y + art.h / 2, { size: 120, bold: true, align: 'center', baseline: 'middle', color: '#3A4452' });
+    if (mystery) text(ctx, '?', r.x + r.w / 2, art.y + art.h / 2, { size: 120, bold: true, align: 'center', baseline: 'middle', color: COL.line });
     else {
       ctx.save();
       if (!won) {
@@ -99,13 +101,13 @@ export function createTrophyScreen({ renderer, layout, assets, campaign, router 
       assets.drawContained(ctx, t.art, art, 'bottom');
       ctx.restore();
     }
-    text(ctx, mystery ? '???' : t.name, r.x + r.w / 2, r.y + 258, { size: 26, bold: true, align: 'center', color: won ? '#FFD166' : '#C9D3DD', maxWidth: r.w - 20 });
+    text(ctx, mystery ? '???' : t.name, r.x + r.w / 2, r.y + 258, { size: 26, bold: true, align: 'center', color: won ? COL.gold : COL.textMuted, maxWidth: r.w - 20 });
     const sub = won ? `Won ${won.day != null ? campaign.clock.shortLabel(won.day) : ''}${won.eventId ? ` · ${COMPETITIONS_BY_ID[won.eventId]?.id ?? ''}` : ''}` : mystery ? 'A secret' : t.note;
-    wrapCentered(ctx, sub, r.x + r.w / 2, r.y + 300, r.w - 24, won ? '#7CFFB2' : '#9AA8B5');
+    wrapCentered(ctx, sub, r.x + r.w / 2, r.y + 300, r.w - 24, won ? COL.good : COL.textMuted);
   }
 
   function wrapCentered(ctx, str, cx, y, w, color) {
-    ctx.font = '21px system-ui, sans-serif';
+    ctx.font = font(21);
     const words = str.split(' ');
     const lines = [];
     let cur = '';

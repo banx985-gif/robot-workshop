@@ -1,5 +1,7 @@
 // Small drawing helpers shared by the Robot Workshop project screens (logical units).
-export function panel(ctx, r, { fill = 'rgba(26,32,40,0.96)', stroke = '#35414F', lineWidth = 3, radius = 24 } = {}) {
+import { THEME, font } from '../../../../core/Theme.js';
+const COL = THEME.color;
+export function panel(ctx, r, { fill = COL.panel, stroke = COL.line, lineWidth = 3, radius = 24 } = {}) {
   ctx.beginPath();
   if (ctx.roundRect) ctx.roundRect(r.x, r.y, r.w, r.h, radius);
   else ctx.rect(r.x, r.y, r.w, r.h);
@@ -12,8 +14,8 @@ export function panel(ctx, r, { fill = 'rgba(26,32,40,0.96)', stroke = '#35414F'
   }
 }
 
-export function text(ctx, str, x, y, { size = 32, bold = false, color = '#E8EEF2', align = 'left', baseline = 'top', maxWidth } = {}) {
-  ctx.font = `${bold ? 'bold ' : ''}${size}px system-ui, sans-serif`;
+export function text(ctx, str, x, y, { size = 32, bold = false, color = COL.text, align = 'left', baseline = 'top', maxWidth } = {}) {
+  ctx.font = font(size, !!(bold ? 'bold ' : ''));
   ctx.fillStyle = color;
   ctx.textAlign = align;
   ctx.textBaseline = baseline;
@@ -21,7 +23,7 @@ export function text(ctx, str, x, y, { size = 32, bold = false, color = '#E8EEF2
   else ctx.fillText(str, x, y);
 }
 
-export function bar(ctx, x, y, w, h, frac, color, back = '#0E1217') {
+export function bar(ctx, x, y, w, h, frac, color, back = COL.track) {
   ctx.fillStyle = back;
   ctx.fillRect(x, y, w, h);
   const f = Math.min(1, Math.max(0, frac));
@@ -38,10 +40,10 @@ export function contained(ctx, assets, key, r, align = 'center') {
 }
 
 // Seven robot stat bars. stats: { SPD: n, ... }; list: [{ key, name }]; scaleMax: value that fills a bar.
-export function statBars(ctx, x, y, w, stats, list, { scaleMax = 400, rowH = 52, color = '#4FC3F7' } = {}) {
+export function statBars(ctx, x, y, w, stats, list, { scaleMax = 400, rowH = 52, color = COL.progress } = {}) {
   for (const [i, s] of list.entries()) {
     const ry = y + i * rowH;
-    text(ctx, s.key, x, ry + 6, { size: 28, bold: true, color: '#9AA8B5' });
+    text(ctx, s.key, x, ry + 6, { size: 28, bold: true, color: COL.textMuted });
     bar(ctx, x + 100, ry + 10, w - 100 - 110, 24, stats[s.key] / scaleMax, color);
     text(ctx, String(stats[s.key]), x + w, ry + 4, { size: 32, bold: true, align: 'right' });
   }
@@ -57,22 +59,22 @@ export function fmt(n) {
 }
 
 // One worker row with a portrait, name, role, Energy/Morale and an on/off tag (team pickers).
-export function staffRow(ctx, assets, r, s, { roleName, on = false, tag = '', tagColor = '#7CFFB2' } = {}) {
-  panel(ctx, r, { fill: on ? 'rgba(40,64,56,0.96)' : 'rgba(26,32,40,0.96)', stroke: on ? '#7CFFB2' : '#35414F', lineWidth: on ? 5 : 3 });
+export function staffRow(ctx, assets, r, s, { roleName, on = false, tag = '', tagColor = COL.good } = {}) {
+  panel(ctx, r, { fill: on ? COL.panelGood : COL.panel, stroke: on ? COL.good : COL.line, lineWidth: on ? 5 : 3 });
   contained(ctx, assets, s.art, { x: r.x + 12, y: r.y + 8, w: 90, h: r.h - 16 });
   text(ctx, s.name, r.x + 120, r.y + 16, { size: 34, bold: true, maxWidth: r.w - 520 });
-  text(ctx, `${roleName} · Lv ${s.level}`, r.x + 120, r.y + 60, { size: 26, color: '#9AA8B5', maxWidth: r.w - 520 });
+  text(ctx, `${roleName} · Lv ${s.level}`, r.x + 120, r.y + 60, { size: 26, color: COL.textMuted, maxWidth: r.w - 520 });
   const bx = r.x + r.w - 370;
-  text(ctx, 'Energy', bx, r.y + 18, { size: 22, color: '#9AA8B5' });
-  bar(ctx, bx + 90, r.y + 22, 100, 16, s.energy / 100, '#7CFFB2');
-  text(ctx, 'Morale', bx, r.y + 50, { size: 22, color: '#9AA8B5' });
-  bar(ctx, bx + 90, r.y + 54, 100, 16, s.morale / 100, '#FFB74D');
-  text(ctx, tag, r.x + r.w - 20, r.y + r.h / 2, { size: 26, bold: true, color: on ? tagColor : '#9AA8B5', align: 'right', baseline: 'middle' });
+  text(ctx, 'Energy', bx, r.y + 18, { size: 22, color: COL.textMuted });
+  bar(ctx, bx + 90, r.y + 22, 100, 16, s.energy / 100, COL.good);
+  text(ctx, 'Morale', bx, r.y + 50, { size: 22, color: COL.textMuted });
+  bar(ctx, bx + 90, r.y + 54, 100, 16, s.morale / 100, COL.action);
+  text(ctx, tag, r.x + r.w - 20, r.y + r.h / 2, { size: 26, bold: true, color: on ? tagColor : COL.textMuted, align: 'right', baseline: 'middle' });
 }
 
 // Word-wrapped text, at most maxLines lines (the last one is squeezed to fit). Returns the lines drawn.
 export function wrapText(ctx, str, x, y, w, { size = 26, lineH = size * 1.3, maxLines = 2, ...opts } = {}) {
-  ctx.font = `${opts.bold ? 'bold ' : ''}${size}px system-ui, sans-serif`;
+  ctx.font = font(size, !!(opts.bold ? 'bold ' : ''));
   const lines = [];
   let cur = '';
   for (const word of String(str).split(' ')) {

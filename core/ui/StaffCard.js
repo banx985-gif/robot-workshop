@@ -11,14 +11,17 @@
 //   footer,                                  "Now: working at the workbench"
 //   buttons: [{ id, label }],                optional small buttons (top-right)
 // }
+import { THEME, font } from '../Theme.js';
+import { drawButton } from './Button.js';
+const COL = THEME.color;
 export const STAFF_CARD_HEIGHT = 470;
 
-export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent = '#4FC3F7' } = {}) {
+export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent = COL.progress } = {}) {
   ctx.save();
-  ctx.fillStyle = highlight ? 'rgba(40,56,72,0.98)' : 'rgba(26,32,40,0.96)';
+  ctx.fillStyle = highlight ? COL.panelInfo : COL.panel;
   roundRect(ctx, r.x, r.y, r.w, r.h, 26);
   ctx.fill();
-  ctx.strokeStyle = highlight ? accent : '#35414F';
+  ctx.strokeStyle = highlight ? accent : COL.line;
   ctx.lineWidth = highlight ? 6 : 3;
   ctx.stroke();
 
@@ -27,7 +30,7 @@ export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent 
   const pw = 210;
   const ph = r.h - pad * 2;
   const pr = { x: r.x + pad, y: r.y + pad, w: pw, h: ph };
-  ctx.fillStyle = '#131820';
+  ctx.fillStyle = COL.panelAlt;
   roundRect(ctx, pr.x, pr.y, pr.w, pr.h, 18);
   ctx.fill();
   assets.drawContained(ctx, view.portraitKey, { x: pr.x + 8, y: pr.y + 8, w: pr.w - 16, h: pr.h - 16 }, 'bottom');
@@ -38,22 +41,22 @@ export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent 
   const tw = r.x + r.w - pad - tx;
   let y = r.y + pad;
   // The XP bar and stats row stay clear of the buttons column (top-right).
-  const sw = (view.buttons || []).length ? tw - 200 : tw;
+  const sw = (view.buttons || []).length ? tw - 230 : tw;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = 'bold 46px system-ui, sans-serif';
-  ctx.fillText(view.title, tx, y, tw - 200);
+  ctx.fillStyle = COL.text;
+  ctx.font = font(46, true);
+  ctx.fillText(view.title, tx, y, tw - 230);
   y += 56;
-  ctx.fillStyle = '#9AA8B5';
-  ctx.font = '30px system-ui, sans-serif';
-  ctx.fillText(view.subtitle || '', tx, y, tw - 200);
+  ctx.fillStyle = COL.textMuted;
+  ctx.font = font(30);
+  ctx.fillText(view.subtitle || '', tx, y, tw - 230);
   y += 44;
 
   if (view.xp) {
-    drawBar(ctx, tx, y, sw, 14, view.xp.value / view.xp.max, '#B39DDB');
-    ctx.fillStyle = '#B8C2CC';
-    ctx.font = '22px system-ui, sans-serif';
+    drawBar(ctx, tx, y, sw, 14, view.xp.value / view.xp.max, COL.purple);
+    ctx.fillStyle = COL.textMuted;
+    ctx.font = font(22);
     ctx.fillText(`XP ${view.xp.value} / ${view.xp.max}`, tx, y + 20);
     y += 54;
   }
@@ -63,26 +66,26 @@ export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent 
   const colW = sw / Math.max(1, stats.length);
   stats.forEach((s, i) => {
     const cx = tx + i * colW;
-    ctx.fillStyle = '#7F8C99';
-    ctx.font = 'bold 22px ui-monospace, Consolas, monospace';
+    ctx.fillStyle = COL.textMuted;
+    ctx.font = font(28, true);
     ctx.fillText(s.label, cx, y);
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 40px system-ui, sans-serif';
+    ctx.fillStyle = COL.text;
+    ctx.font = font(40, true);
     ctx.fillText(String(s.value), cx, y + 26);
   });
   y += 84;
 
   // Bars.
   for (const b of view.bars || []) {
-    ctx.fillStyle = '#B8C2CC';
-    ctx.font = '26px system-ui, sans-serif';
+    ctx.fillStyle = COL.textMuted;
+    ctx.font = font(26);
     ctx.fillText(b.label, tx, y - 2);
     const bx = tx + 130;
-    const bw = tw - 130 - 70;
+    const bw = sw - 130 - 70;
     drawBar(ctx, bx, y + 2, bw, 22, b.value / b.max, b.color);
     ctx.textAlign = 'right';
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillText(String(Math.round(b.value)), tx + tw, y - 2);
+    ctx.fillStyle = COL.text;
+    ctx.fillText(String(Math.round(b.value)), tx + sw, y - 2);
     ctx.textAlign = 'left';
     y += 40;
   }
@@ -90,14 +93,14 @@ export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent 
 
   // Trait chips, then status icons.
   let cx = tx;
-  ctx.font = 'bold 26px system-ui, sans-serif';
+  ctx.font = font(26, true);
   for (const c of view.chips || []) {
     const w = ctx.measureText(c.label).width + 32;
-    ctx.fillStyle = '#3B2F4F';
+    ctx.fillStyle = COL.panelInfo;
     roundRect(ctx, cx, y, w, 42, 21);
     ctx.fill();
-    ctx.fillStyle = '#E1D5FF';
-    ctx.fillText(c.label, cx + 16, y + 8);
+    ctx.fillStyle = COL.purple;
+    ctx.fillText(c.label, cx + 16, y + 6);
     cx += w + 12;
   }
   for (const key of view.icons || []) {
@@ -107,33 +110,18 @@ export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent 
   y += 54;
 
   if (view.footer) {
-    ctx.fillStyle = '#FFD166';
-    ctx.font = '28px system-ui, sans-serif';
-    ctx.fillText(view.footer, tx, y, tw);
+    ctx.fillStyle = COL.gold;
+    ctx.font = font(28);
+    ctx.fillText(view.footer, tx, y, sw);
   }
 
-  // Buttons (top-right).
-  for (const [i, b] of (view.buttons || []).entries()) {
-    const br = staffCardButtonRect(r, i);
-    ctx.fillStyle = '#2A3440';
-    roundRect(ctx, br.x, br.y, br.w, br.h, 14);
-    ctx.fill();
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.fillStyle = '#E8EEF2';
-    ctx.font = 'bold 26px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(b.label, br.x + br.w / 2, br.y + br.h / 2, br.w - 10);
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-  }
+  // Buttons (top-right): the shared themed button (Milestone 17b: 110 tall).
+  for (const [i, b] of (view.buttons || []).entries()) drawButton(ctx, staffCardButtonRect(r, i), b.label, { accent: b.accent ?? COL.action, disabled: !!b.disabled });
   ctx.restore();
 }
 
 export function staffCardButtonRect(r, i) {
-  return { x: r.x + r.w - 24 - 180, y: r.y + 24 + i * 76, w: 180, h: 64 };
+  return { x: r.x + r.w - 24 - 210, y: r.y + 24 + i * 124, w: 210, h: 110 };
 }
 
 // Which button (id) of the view is under p, or null.
@@ -146,7 +134,7 @@ export function staffCardButtonAt(r, view, p) {
 }
 
 function drawBar(ctx, x, y, w, h, frac, color) {
-  ctx.fillStyle = '#0E1217';
+  ctx.fillStyle = COL.track;
   roundRect(ctx, x, y, w, h, h / 2);
   ctx.fill();
   const f = Math.min(1, Math.max(0, frac));

@@ -1,15 +1,17 @@
 // Parts catalogue (minimal): browse all 50 parts by slot. Open parts show normally; locked parts are
 // greyed out with a padlock and the rule that opens them (what is still missing is shown in gold).
 // params.back: screen to return to (default 'builder').
+import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton, drawPadlock } from '../../../../core/ui/Button.js';
 import { SLOTS, partsInSlot } from '../../data/components.js';
 import { ROBOT_STAT_KEYS } from '../../data/stats.js';
 import { describeUnlock, missingParts } from '../systems/unlockRules.js';
 import { panel, text, contained, hit, fmt } from '../ui/widgets.js';
+const COL = THEME.color;
 
-const HEADER_H = 130;
-const TABS_H = 2 * 96 + 16 + 24;
+const HEADER_H = 150;
+const TABS_H = 2 * 110 + 16 + 24;
 const ROW_H = 196;
 
 export function createComponentsScreen({ renderer, layout, assets, campaign, router }) {
@@ -22,12 +24,12 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
 
   function backRect() {
     const sr = layout.safeRect;
-    return { x: sr.x + 24, y: sr.y + 24, w: 180, h: 86 };
+    return { x: sr.x + 24, y: sr.y + 24, w: 200, h: 110 };
   }
   function tabRect(i) {
     const sr = layout.safeRect;
     const w = (sr.w - 48 - 2 * 16) / 3;
-    return { x: sr.x + 24 + (i % 3) * (w + 16), y: sr.y + HEADER_H + Math.floor(i / 3) * (96 + 16), w, h: 96 };
+    return { x: sr.x + 24 + (i % 3) * (w + 16), y: sr.y + HEADER_H + Math.floor(i / 3) * (110 + 16), w, h: 110 };
   }
   function bodyRect() {
     const sr = layout.safeRect;
@@ -71,10 +73,10 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
     onDragEnd: (p) => scroll.endDrag(p),
 
     render(ctx) {
-      ctx.fillStyle = '#101418';
+      ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const sr = layout.safeRect;
-      drawButton(ctx, backRect(), '‹ Back', { font: 'bold 32px system-ui, sans-serif' });
+      drawButton(ctx, backRect(), '‹ Back', { font: font(32, true) });
       contained(ctx, assets, 'ui_icon_06_robot', { x: sr.x + 228, y: sr.y + 28, w: 76, h: 76 });
       text(ctx, 'Parts catalogue', sr.x + 320, sr.y + 66, { size: 48, bold: true, baseline: 'middle' });
 
@@ -82,7 +84,7 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
         const list = partsInSlot(s.id);
         const openSet = campaign.openParts;
         const open = list.filter((c) => openSet.has(c.id)).length;
-        drawButton(ctx, tabRect(i), `${s.name} ${open}/${list.length}`, { selected: s.id === slotId, font: 'bold 28px system-ui, sans-serif' });
+        drawButton(ctx, tabRect(i), `${s.name} ${open}/${list.length}`, { selected: s.id === slotId, font: font(28, true) });
       });
 
       const parts = partsInSlot(slotId);
@@ -95,22 +97,22 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
 
   function drawPart(ctx, c, r) {
     const open = campaign.partOpen(c.id);
-    panel(ctx, r, { fill: open ? 'rgba(26,32,40,0.96)' : 'rgba(20,24,30,0.96)', stroke: open ? '#7CFFB2' : '#2A323C' });
+    panel(ctx, r, { fill: open ? COL.panel : COL.panelDim, stroke: open ? COL.good : COL.line });
     ctx.save();
     if (!open) ctx.globalAlpha = 0.38; // greyed out
     contained(ctx, assets, c.art, { x: r.x + 14, y: r.y + 18, w: 150, h: 150 });
     ctx.restore();
-    if (!open) drawPadlock(ctx, r.x + 128, r.y + 150, 34, '#FFD166');
+    if (!open) drawPadlock(ctx, r.x + 128, r.y + 150, 34, COL.gold);
 
     const x = r.x + 186;
     const mw = r.w - 200;
-    const dim = open ? '#E8EEF2' : '#8C98A5';
-    text(ctx, `${c.id} · ${c.name}`, x, r.y + 18, { size: 34, bold: true, color: open ? '#FFFFFF' : '#AEB8C2', maxWidth: mw });
+    const dim = open ? COL.text : COL.textFaint;
+    text(ctx, `${c.id} · ${c.name}`, x, r.y + 18, { size: 34, bold: true, color: open ? COL.text : COL.textMuted, maxWidth: mw });
     text(ctx, `Cost ${fmt(c.cost)} · Complexity ${c.cx}${c.faultPct ? ` · fault chance +${c.faultPct}%` : ''}`, x, r.y + 64, { size: 26, color: dim, maxWidth: mw });
     const stats = ROBOT_STAT_KEYS.filter((k) => c.stats[k]).map((k) => `${k} ${c.stats[k] > 0 ? '+' : ''}${c.stats[k]}`);
     if (c.inn) stats.push(`INN +${c.inn}`);
-    text(ctx, stats.join('  '), x, r.y + 102, { size: 28, bold: true, color: open ? '#7CFFB2' : '#6E8A7C', maxWidth: mw });
-    text(ctx, open ? 'Open — ready to use' : `Locked — needs ${missingParts(c.unlock, (r) => campaign.unlockMet(r, { type: 'part', id: c.id })).join(' + ') || describeUnlock(c.unlock)}`, x, r.y + 146, { size: 26, bold: true, color: open ? '#7CFFB2' : '#FFD166', maxWidth: mw });
+    text(ctx, stats.join('  '), x, r.y + 102, { size: 28, bold: true, color: open ? COL.good : COL.textFaint, maxWidth: mw });
+    text(ctx, open ? 'Open — ready to use' : `Locked — needs ${missingParts(c.unlock, (r) => campaign.unlockMet(r, { type: 'part', id: c.id })).join(' + ') || describeUnlock(c.unlock)}`, x, r.y + 146, { size: 26, bold: true, color: open ? COL.good : COL.gold, maxWidth: mw });
   }
 
   return screen;

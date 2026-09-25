@@ -4,13 +4,15 @@
 // Before the Year 16 ending it lists only secrets you have heard of — never how many there are. After the ending
 // (or in New Game+) the unknown ones show as "???" too.
 // Opened from the Inbox. ?debug=1 adds a "Why not?" button (the inspector).
+import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { SECRETS, SECRET_ART, SECRET_GROUPS } from '../../data/secrets.js';
 import { ruleLines } from '../systems/secretText.js';
 import { panel, text, hit, wrapText } from '../ui/widgets.js';
+const COL = THEME.color;
 
-const HEAD_H = 130;
+const HEAD_H = 150;
 const LINE = 38;
 const GROUP_H = 60;
 
@@ -23,10 +25,10 @@ export function createRumourArchiveScreen({ renderer, layout, assets, campaign, 
     const sr = layout.safeRect;
     return { x: sr.x + 24, y: sr.y + 24, w: sr.w - 48, h: HEAD_H - 24 };
   }
-  const backRect = () => ({ ...headRect(), w: 180, h: 86 });
+  const backRect = () => ({ ...headRect(), w: 200, h: 110 });
   const whyRect = () => {
     const h = headRect();
-    return { x: h.x + h.w - 220, y: h.y, w: 220, h: 86 };
+    return { x: h.x + h.w - 230, y: h.y, w: 230, h: 110 };
   };
   function bodyRect() {
     const sr = layout.safeRect;
@@ -76,20 +78,20 @@ export function createRumourArchiveScreen({ renderer, layout, assets, campaign, 
     onDrag: (p) => scroll.drag(p),
     onDragEnd: (p) => scroll.endDrag(p),
     render(ctx) {
-      ctx.fillStyle = '#101418';
+      ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const h = headRect();
-      drawButton(ctx, backRect(), '‹ Back', { font: 'bold 32px system-ui, sans-serif' });
+      drawButton(ctx, backRect(), '‹ Back', { font: font(32, true) });
       assets.drawContained(ctx, SECRET_ART.records, { x: h.x + 196, y: h.y, w: 86, h: 86 });
       text(ctx, 'Rumour Archive', h.x + 292, h.y + 43, { size: 44, bold: true, baseline: 'middle', maxWidth: h.w - 292 - (debugEnabled ? 240 : 0) });
-      if (debugEnabled) drawButton(ctx, whyRect(), 'Why not?', { accent: '#FFD166', font: 'bold 30px system-ui, sans-serif' });
+      if (debugEnabled) drawButton(ctx, whyRect(), 'Why not?', { accent: COL.gold, font: font(30, true) });
       const w = bodyRect().w - 12;
       scroll.begin(ctx);
       const groups = rows();
-      text(ctx, groups.length ? 'Secrets you have heard about. Discovered ones show exactly what they took — for good.' : 'No rumours yet. Keep building — people talk.', 4, 8, { size: 26, color: '#9AA8B5', maxWidth: w });
+      text(ctx, groups.length ? 'Secrets you have heard about. Discovered ones show exactly what they took — for good.' : 'No rumours yet. Keep building — people talk.', 4, 8, { size: 26, color: COL.textMuted, maxWidth: w });
       let y = 60;
       for (const g of groups) {
-        text(ctx, g.group, 4, y + 12, { size: 30, bold: true, color: '#B388FF' });
+        text(ctx, g.group, 4, y + 12, { size: 30, bold: true, color: COL.purple });
         y += GROUP_H;
         for (const r of g.rows) {
           drawRow(ctx, r, y, w);
@@ -104,22 +106,22 @@ export function createRumourArchiveScreen({ renderer, layout, assets, campaign, 
   function drawRow(ctx, r, y, w) {
     const rule = r.rule;
     const found = r.stage === 3;
-    panel(ctx, { x: 0, y, w, h: r.h }, { stroke: found ? '#FFD166' : r.stage ? '#B388FF' : '#35414F', lineWidth: found ? 4 : 3 });
+    panel(ctx, { x: 0, y, w, h: r.h }, { stroke: found ? COL.gold : r.stage ? COL.purple : COL.line, lineWidth: found ? 4 : 3 });
     assets.drawContained(ctx, found ? SECRET_ART.badge : SECRET_ART.marker, { x: 16, y: y + 20, w: 110, h: 110 });
     const x = 146;
     const mw = w - x - 20;
     if (found) {
       const got = S().run.unlocked[rule.id] ?? S().account.history[rule.id]?.first;
-      text(ctx, rule.name, x, y + 20, { size: 34, bold: true, color: '#FFD166', maxWidth: mw });
-      text(ctx, `${S().unlockedInRun(rule.id) ? `Discovered ${campaign.clock.shortLabel(got?.day ?? 0)}` : 'Discovered in an earlier run'}${S().isRepeat(rule.id) ? ' · repeat: easier numbers this run' : ''}`, x, y + 66, { size: 24, color: '#9AA8B5', maxWidth: mw });
-      r.lines.forEach((l, i) => text(ctx, `${'   '.repeat(l.depth)}${l.ok ? '✓' : '•'} ${l.text}`, x, y + 112 + i * LINE, { size: 25, color: l.ok ? '#7CFFB2' : '#E8EEF2', maxWidth: mw }));
+      text(ctx, rule.name, x, y + 20, { size: 34, bold: true, color: COL.gold, maxWidth: mw });
+      text(ctx, `${S().unlockedInRun(rule.id) ? `Discovered ${campaign.clock.shortLabel(got?.day ?? 0)}` : 'Discovered in an earlier run'}${S().isRepeat(rule.id) ? ' · repeat: easier numbers this run' : ''}`, x, y + 66, { size: 24, color: COL.textMuted, maxWidth: mw });
+      r.lines.forEach((l, i) => text(ctx, `${'   '.repeat(l.depth)}${l.ok ? '✓' : '•'} ${l.text}`, x, y + 112 + i * LINE, { size: 25, color: l.ok ? COL.good : COL.text, maxWidth: mw }));
     } else if (r.stage === 0) {
-      text(ctx, '???', x, y + 30, { size: 40, bold: true, color: '#7F8C99' });
-      text(ctx, 'No rumours yet.', x, y + 86, { size: 26, color: '#7F8C99', maxWidth: mw });
+      text(ctx, '???', x, y + 30, { size: 40, bold: true, color: COL.textMuted });
+      text(ctx, 'No rumours yet.', x, y + 86, { size: 26, color: COL.textMuted, maxWidth: mw });
     } else {
-      text(ctx, r.stage === 2 ? 'A clue' : 'A rumour', x, y + 20, { size: 32, bold: true, color: '#B388FF' });
+      text(ctx, r.stage === 2 ? 'A clue' : 'A rumour', x, y + 20, { size: 32, bold: true, color: COL.purple });
       wrapText(ctx, rule.clueStages[r.stage - 1]?.text ?? '', x, y + 66, mw, { size: 26, maxLines: 2 });
-      if (r.stage === 2 && r.missing?.length) text(ctx, `Missing: ${r.missing.join(', ')}`, x, y + 142, { size: 26, bold: true, color: '#FFD166', maxWidth: mw });
+      if (r.stage === 2 && r.missing?.length) text(ctx, `Missing: ${r.missing.join(', ')}`, x, y + 142, { size: 26, bold: true, color: COL.gold, maxWidth: mw });
     }
   }
   return screen;

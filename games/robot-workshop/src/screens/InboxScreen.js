@@ -1,15 +1,17 @@
 // Inbox (Milestone 15): every message the game has sent, newest first — events, milestone moments, sponsors, rank-ups,
 // research, contracts. Tap one to reopen it in the event pop-up. Rumours opens the Rumour Archive (secrets, M16). A question still waiting for an answer can be
 // answered from here (it then leaves the pop-up queue).
+import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton, hitRect } from '../../../../core/ui/Button.js';
 import { createTopBar } from '../ui/TopBar.js';
 import { panel, text, wrapText, contained } from '../ui/widgets.js';
+const COL = THEME.color;
 
 const ROW_H = 168;
 const GAP = 14;
-const HEAD_H = 110;
-const LEVEL_COLOR = { minor: '#9AA8B5', medium: '#4FC3F7', major: '#FFD166' };
+const HEAD_H = 140;
+const LEVEL_COLOR = { minor: COL.textMuted, medium: COL.progress, major: COL.gold };
 
 export function createInboxScreen({ renderer, layout, assets, campaign, router, goProject, hud, openEntry }) {
   const W = renderer.width;
@@ -77,21 +79,21 @@ export function createInboxScreen({ renderer, layout, assets, campaign, router, 
     onDragEnd: (p) => scroll.endDrag(p),
 
     render(ctx) {
-      ctx.fillStyle = '#101418';
+      ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       topBar.render(ctx);
       const notes = campaign.notes;
       const hr = headRect();
       text(ctx, 'Inbox', hr.x + 4, hr.y + hr.h / 2, { size: 48, bold: true, baseline: 'middle' });
-      text(ctx, `${notes.inbox.length} messages · ${notes.unread} new${notes.pending ? ` · ${notes.pending} waiting` : ''}`, hr.x + 180, hr.y + hr.h / 2, { size: 28, color: '#9AA8B5', baseline: 'middle', maxWidth: hr.w - 180 - 310 - 236 });
-      drawButton(ctx, rumoursRect(), 'Rumours', { accent: '#B388FF', font: 'bold 28px system-ui, sans-serif' });
-      drawButton(ctx, readAllRect(), 'Mark all read', { font: 'bold 28px system-ui, sans-serif', disabled: !notes.unread });
+      text(ctx, `${notes.inbox.length} messages · ${notes.unread} new${notes.pending ? ` · ${notes.pending} waiting` : ''}`, hr.x + 180, hr.y + hr.h / 2, { size: 28, color: COL.textMuted, baseline: 'middle', maxWidth: hr.w - 180 - 310 - 236 });
+      drawButton(ctx, rumoursRect(), 'Rumours', { accent: COL.purple, font: font(28, true) });
+      drawButton(ctx, readAllRect(), 'Mark all read', { font: font(28, true), disabled: !notes.unread });
 
       const list = notes.inbox;
       const lr = listRect();
       scroll.contentHeight = Math.max(1, list.length * (ROW_H + GAP));
       scroll.begin(ctx);
-      if (!list.length) text(ctx, 'No messages yet. Events, sponsors and big moments will land here.', 12, 20, { size: 30, color: '#9AA8B5', maxWidth: lr.w - 24 });
+      if (!list.length) text(ctx, 'No messages yet. Events, sponsors and big moments will land here.', 12, 20, { size: 30, color: COL.textMuted, maxWidth: lr.w - 24 });
       // Only the rows on screen are drawn.
       const first = Math.max(0, Math.floor(scroll.scrollY / (ROW_H + GAP)));
       const last = Math.min(list.length, first + Math.ceil(lr.h / (ROW_H + GAP)) + 2);
@@ -100,7 +102,7 @@ export function createInboxScreen({ renderer, layout, assets, campaign, router, 
         const e = list[i];
         const r = rowRect(i);
         const waiting = notes.queue.includes(e.id);
-        panel(ctx, r, { fill: e.read ? 'rgba(26,32,40,0.96)' : 'rgba(34,44,58,0.98)', stroke: e.read ? '#35414F' : LEVEL_COLOR[e.level], lineWidth: e.read ? 3 : 4 });
+        panel(ctx, r, { fill: e.read ? COL.panel : COL.panelInfo, stroke: e.read ? COL.line : LEVEL_COLOR[e.level], lineWidth: e.read ? 3 : 4 });
         const key = e.art ?? e.icon;
         if (key) contained(ctx, assets, key, { x: r.x + 14, y: r.y + 14, w: 140, h: ROW_H - 28 });
         const x = r.x + 172;
@@ -111,11 +113,11 @@ export function createInboxScreen({ renderer, layout, assets, campaign, router, 
           ctx.arc(r.x + r.w - 30, r.y + 34, 10, 0, Math.PI * 2);
           ctx.fill();
         }
-        text(ctx, clock.shortLabel(e.day), r.x + r.w - 52, r.y + 20, { size: 22, color: '#7F8C99', align: 'right' });
-        text(ctx, e.title, x, r.y + 18, { size: 32, bold: true, color: e.read ? '#E8EEF2' : '#FFFFFF', maxWidth: mw - 190 });
-        wrapText(ctx, e.body, x, r.y + 66, mw, { size: 25, maxLines: 2, color: '#C9D3DD' });
+        text(ctx, clock.shortLabel(e.day), r.x + r.w - 52, r.y + 20, { size: 22, color: COL.textMuted, align: 'right' });
+        text(ctx, e.title, x, r.y + 18, { size: 32, bold: true, color: e.read ? COL.text : COL.text, maxWidth: mw - 190 });
+        wrapText(ctx, e.body, x, r.y + 66, mw, { size: 25, maxLines: 2, color: COL.textMuted });
         const tag = waiting ? 'Waiting to pop up — tap to open now' : e.folded ? 'Folded into the inbox (too many at once)' : '';
-        if (tag) text(ctx, tag, x, r.y + ROW_H - 36, { size: 22, color: waiting ? '#FFD166' : '#7F8C99', maxWidth: mw });
+        if (tag) text(ctx, tag, x, r.y + ROW_H - 36, { size: 22, color: waiting ? COL.gold : COL.textMuted, maxWidth: mw });
       }
       scroll.end(ctx);
     },

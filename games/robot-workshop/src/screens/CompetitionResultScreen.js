@@ -1,6 +1,7 @@
 // Competition result (bible §21.4, §21.7): the final placings, prizes, what the pilot got out of it, the three
 // segments, the event's records and trophy progress; new trophies and the rankings move (Milestone 13), a rival's
 // word on the result and, when the player is falling behind, an honest hint. Reached from the watch view (or Skip) and from the list.
+import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { COMPETITIONS_BY_ID, TROPHIES_BY_ID, COMPETITION_ART } from '../../data/competitions.js';
@@ -10,6 +11,7 @@ import { robotArtOf } from '../systems/robotVisual.js';
 import { panel, text, hit, fmt } from '../ui/widgets.js';
 import { drawMarker, rivalOf, placeText, placeColor, row, drawSpeech, PLAYER_COLOR } from '../ui/competitionDraw.js';
 import { rivalLine, behindHint, ordinal } from '../systems/CompetitionRules.js';
+const COL = THEME.color;
 
 const FOOTER_H = 150;
 const NAME = (list, id) => list.find((x) => x.id === id)?.name ?? id;
@@ -62,7 +64,7 @@ export function createCompetitionResultScreen({ renderer, layout, assets, campai
     onDragEnd: (p) => scroll.endDrag(p),
 
     render(ctx) {
-      ctx.fillStyle = '#101418';
+      ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       if (!result) return;
       scroll.begin(ctx);
@@ -76,8 +78,8 @@ export function createCompetitionResultScreen({ renderer, layout, assets, campai
       y = drawRecords(ctx, y + 20);
       scroll.contentHeight = y + 30;
       scroll.end(ctx);
-      drawButton(ctx, replayRect(), 'Watch again', { font: 'bold 32px system-ui, sans-serif' });
-      drawButton(ctx, doneRect(), 'Done', { active: true, accent: '#7CFFB2', font: 'bold 38px system-ui, sans-serif' });
+      drawButton(ctx, replayRect(), 'Watch again', { font: font(32, true) });
+      drawButton(ctx, doneRect(), 'Done', { active: true, accent: COL.good, font: font(38, true) });
     },
   };
 
@@ -92,8 +94,8 @@ export function createCompetitionResultScreen({ renderer, layout, assets, campai
     const head = dnf ? 'A breakdown ended the run.' : result.won ? 'You won!' : result.place <= 3 ? 'A podium finish!' : `Finished ${placeText(result.place)} of ${result.standings.length}.`;
     text(ctx, head, 24, y + 76, { size: 32, bold: true, color: placeColor(result.place, dnf), maxWidth: w - 300 });
     text(ctx, `${result.setup.entrantName} · pilot ${result.setup.pilotName}`, 24, y + 128, { size: 26, maxWidth: w - 300 });
-    text(ctx, `${NAME(STRATEGIES, result.setup.strategyId)} · ${NAME(TUNINGS, result.setup.tuningId)} · score ${result.player.final.toFixed(1)}`, 24, y + 166, { size: 26, color: '#9AA8B5', maxWidth: w - 300 });
-    text(ctx, `Paid: entry ${result.costs?.entry ? fmt(result.costs.entry) : 'free'}${result.costs?.tuning ? `, tuning ${fmt(result.costs.tuning)}` : ''}${result.signatures?.length ? ` · ${result.signatures.map((s) => TRAITS[s]?.name ?? s).join(', ')}` : ''}`, 24, y + 204, { size: 22, color: '#7F8C99', maxWidth: w - 300 });
+    text(ctx, `${NAME(STRATEGIES, result.setup.strategyId)} · ${NAME(TUNINGS, result.setup.tuningId)} · score ${result.player.final.toFixed(1)}`, 24, y + 166, { size: 26, color: COL.textMuted, maxWidth: w - 300 });
+    text(ctx, `Paid: entry ${result.costs?.entry ? fmt(result.costs.entry) : 'free'}${result.costs?.tuning ? `, tuning ${fmt(result.costs.tuning)}` : ''}${result.signatures?.length ? ` · ${result.signatures.map((s) => TRAITS[s]?.name ?? s).join(', ')}` : ''}`, 24, y + 204, { size: 22, color: COL.textMuted, maxWidth: w - 300 });
     return y + h;
   }
 
@@ -107,23 +109,23 @@ export function createCompetitionResultScreen({ renderer, layout, assets, campai
     const rk = result.ranking;
     if (rk?.after) {
       const moved = rk.before == null ? `Rankings: you enter at ${ordinal(rk.after)}` : rk.after < rk.before ? `Rankings: up from ${ordinal(rk.before)} to ${ordinal(rk.after)}!` : rk.after > rk.before ? `Rankings: down from ${ordinal(rk.before)} to ${ordinal(rk.after)}` : `Rankings: still ${ordinal(rk.after)}`;
-      lines.push({ text: moved, color: rk.before == null || rk.after <= rk.before ? '#7CFFB2' : '#FFB74D' });
+      lines.push({ text: moved, color: rk.before == null || rk.after <= rk.before ? COL.good : COL.action });
     }
     if (!result.won && result.place > 3) {
       const best = Math.max(...result.rivals.map((r) => r.final));
       const hint = behindHint(result.player.final, best);
-      if (hint) lines.push({ text: hint, color: '#FFD166', small: true });
+      if (hint) lines.push({ text: hint, color: COL.gold, small: true });
     }
     if (!lines.length) return y - 20;
     const h = 24 + lines.reduce((t, l) => t + (l.trophy ? 170 : l.small ? 70 : 50), 0);
-    panel(ctx, { x: 0, y, w, h }, { stroke: result.trophies?.length ? '#FFD166' : '#35414F', lineWidth: result.trophies?.length ? 5 : 3 });
+    panel(ctx, { x: 0, y, w, h }, { stroke: result.trophies?.length ? COL.gold : COL.line, lineWidth: result.trophies?.length ? 5 : 3 });
     let ly = y + 16;
     for (const l of lines) {
       if (l.trophy) {
         assets.drawContained(ctx, l.trophy.art, { x: 24, y: ly, w: 130, h: 150 });
-        text(ctx, 'New trophy!', 180, ly + 20, { size: 30, bold: true, color: '#FFD166' });
+        text(ctx, 'New trophy!', 180, ly + 20, { size: 30, bold: true, color: COL.gold });
         text(ctx, l.trophy.name, 180, ly + 64, { size: 40, bold: true, maxWidth: w - 200 });
-        text(ctx, l.trophy.note, 180, ly + 116, { size: 22, color: '#9AA8B5', maxWidth: w - 200 });
+        text(ctx, l.trophy.note, 180, ly + 116, { size: 22, color: COL.textMuted, maxWidth: w - 200 });
         ly += 170;
       } else {
         text(ctx, l.text, 24, ly + 6, { size: l.small ? 23 : 29, bold: !l.small, color: l.color, maxWidth: w - 48 });
@@ -152,19 +154,19 @@ export function createCompetitionResultScreen({ renderer, layout, assets, campai
     const h = 70 + rows.length * 84;
     panel(ctx, { x: 0, y, w, h });
     text(ctx, 'Final placings', 24, y + 18, { size: 32, bold: true });
-    text(ctx, 'score', w - 24, y + 24, { size: 24, color: '#9AA8B5', align: 'right' });
+    text(ctx, 'score', w - 24, y + 24, { size: 24, color: COL.textMuted, align: 'right' });
     const art = robotArtOf(campaign.history.get(result.robotNumber)?.result);
     rows.forEach((s, i) => {
       const ry = y + 70 + i * 84;
       const me = s.id === 'player';
       if (me) {
-        ctx.fillStyle = 'rgba(124,255,178,0.1)';
+        ctx.fillStyle = COL.panelGood;
         ctx.fillRect(8, ry, w - 16, 80);
       }
       text(ctx, s.dnf ? '–' : placeText(s.place), 70, ry + 40, { size: 32, bold: true, align: 'center', baseline: 'middle', color: placeColor(s.place, s.dnf) });
       drawMarker(ctx, assets, 170, ry + 40, 66, { player: me, rivalId: s.id, robotArt: art, shown });
-      text(ctx, me ? `${result.setup.entrantName} (you)` : rivalOf(s.id, shown).name, 220, ry + 40, { size: 28, bold: me, baseline: 'middle', color: me ? PLAYER_COLOR : '#E8EEF2', maxWidth: w - 420 });
-      text(ctx, s.dnf ? 'DNF' : s.final.toFixed(1), w - 24, ry + 40, { size: 30, bold: true, align: 'right', baseline: 'middle', color: me ? PLAYER_COLOR : '#E8EEF2' });
+      text(ctx, me ? `${result.setup.entrantName} (you)` : rivalOf(s.id, shown).name, 220, ry + 40, { size: 28, bold: me, baseline: 'middle', color: me ? PLAYER_COLOR : COL.text, maxWidth: w - 420 });
+      text(ctx, s.dnf ? 'DNF' : s.final.toFixed(1), w - 24, ry + 40, { size: 30, bold: true, align: 'right', baseline: 'middle', color: me ? PLAYER_COLOR : COL.text });
     });
     return y + h;
   }
@@ -173,11 +175,11 @@ export function createCompetitionResultScreen({ renderer, layout, assets, campai
     const w = cw();
     const r = result.rewards;
     const lines = [
-      ['Prize money', r.credits ? `+${fmt(r.credits)}` : '—', r.credits ? '#7CFFB2' : '#7F8C99'],
-      ['Reputation', `+${r.rep}`, '#FFD166'],
-      ['Research Points', `+${r.rp}`, '#4FC3F7'],
-      [`${result.setup.pilotName}: XP`, `+${r.xp}`, '#FFD166'],
-      [`${result.setup.pilotName}: Morale`, r.morale ? `${r.morale > 0 ? '+' : ''}${r.morale}` : '—', r.morale > 0 ? '#7CFFB2' : r.morale < 0 ? '#FF8A80' : '#7F8C99'],
+      ['Prize money', r.credits ? `+${fmt(r.credits)}` : '—', r.credits ? COL.good : COL.textMuted],
+      ['Reputation', `+${r.rep}`, COL.gold],
+      ['Research Points', `+${r.rp}`, COL.progress],
+      [`${result.setup.pilotName}: XP`, `+${r.xp}`, COL.gold],
+      [`${result.setup.pilotName}: Morale`, r.morale ? `${r.morale > 0 ? '+' : ''}${r.morale}` : '—', r.morale > 0 ? COL.good : r.morale < 0 ? COL.bad : COL.textMuted],
     ];
     const h = 76 + lines.length * 46;
     panel(ctx, { x: 0, y, w, h });
@@ -201,10 +203,10 @@ export function createCompetitionResultScreen({ renderer, layout, assets, campai
       if (s.carryPct) notes.push(`still shaken −${s.carryPct}%`);
       if (s.stressPct) notes.push(`pressure −${s.stressPct}%`);
       if (s.breakdown) notes.push(`${s.breakdown.severity} breakdown${s.breakdown.severity === 'catastrophic' ? ' (DNF)' : ` −${s.breakdown.lossPct}%`}`);
-      text(ctx, notes.join(' · ') || 'clean run', 24, ry + 38, { size: 23, color: s.breakdown ? '#FF8A80' : '#9AA8B5', maxWidth: w - 48 });
+      text(ctx, notes.join(' · ') || 'clean run', 24, ry + 38, { size: 23, color: s.breakdown ? COL.bad : COL.textMuted, maxWidth: w - 48 });
     });
     const n = result.numbers;
-    text(ctx, `Robot ${n.weighted} + pilot ${n.pilot}${n.prep ? ` + prep ${n.prep}` : ''} → base ${n.base} · breakdown chance ${n.breakdownPct}% a segment (REL ${n.effectiveRel})`, 24, y + h - 44, { size: 21, color: '#7F8C99', maxWidth: w - 48 });
+    text(ctx, `Robot ${n.weighted} + pilot ${n.pilot}${n.prep ? ` + prep ${n.prep}` : ''} → base ${n.base} · breakdown chance ${n.breakdownPct}% a segment (REL ${n.effectiveRel})`, 24, y + h - 44, { size: 21, color: COL.textMuted, maxWidth: w - 48 });
     return y + h;
   }
 
@@ -232,14 +234,14 @@ export function createCompetitionResultScreen({ renderer, layout, assets, campai
       const cy = y + 76 + lines.length * 46;
       if (cup.art) assets.drawContained(ctx, cup.art, { x: 24, y: cy, w: 120, h: 150 });
       const x = cup.art ? 170 : 24;
-      text(ctx, `${cup.name} progress`, x, cy + 12, { size: 30, bold: true, color: '#FFD166' });
+      text(ctx, `${cup.name} progress`, x, cy + 12, { size: 30, bold: true, color: COL.gold });
       const parts = cup.rule.events.map((id) => {
         const e = COMPETITIONS_BY_ID[id];
         const won = (campaign.competitions.records[id]?.wins ?? 0) > 0;
         return `${id} ${won ? '✓ won' : e ? 'not yet' : '(later)'}`;
       });
       text(ctx, `${cup.note}: ${parts.join(' · ')}`, x, cy + 58, { size: 24, maxWidth: w - x - 24 });
-      text(ctx, campaign.trophies.has(cup.id) ? 'Won — it is on your trophy shelf.' : 'See the trophy shelf from Competitions.', x, cy + 98, { size: 22, color: campaign.trophies.has(cup.id) ? '#7CFFB2' : '#7F8C99', maxWidth: w - x - 24 });
+      text(ctx, campaign.trophies.has(cup.id) ? 'Won — it is on your trophy shelf.' : 'See the trophy shelf from Competitions.', x, cy + 98, { size: 22, color: campaign.trophies.has(cup.id) ? COL.good : COL.textMuted, maxWidth: w - x - 24 });
     }
     return y + h;
   }

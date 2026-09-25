@@ -1,9 +1,11 @@
 // Robot Workshop's side of a competition entry (bible §21): turns a finished robot and a worker into the
 // setup core/CompetitionSystem.js scores. Robot stats, faults and part complexity come from the robot's
 // history record; the pilot's traits (§9.8) and signature traits (§15) become the setup's mods.
+import { THEME } from '../../../../core/Theme.js';
 import { COMPONENTS } from '../../data/components.js';
 import { COMPETITION_RULES, QUALITY_STAT_SCALE } from '../../data/competitions.js';
 import { Rng } from '../../../../core/Rng.js';
+const COL = THEME.color;
 
 // The entrant: a finished robot (its saved stats and the faults still open when it was finished). QLT / INN are its
 // Quality and Innovation on the stat scale, for the events that judge them (C10).
@@ -45,13 +47,13 @@ export function chanceWords(pv) {
   const gap = (pv.expected - best) / best;
   let line;
   let color;
-  if (gap > 0.06) [line, color] = ['Strong favourite to win', '#7CFFB2'];
-  else if (gap > 0) [line, color] = ['Good chance to win — it could be close', '#7CFFB2'];
-  else if (pv.place <= 3) [line, color] = [`Podium likely (about ${ordinal(pv.place)}) — a win needs luck`, '#FFD166'];
-  else [line, color] = [`Tough field — expect about ${ordinal(pv.place)} place`, '#FF8A80'];
+  if (gap > 0.06) [line, color] = ['Strong favourite to win', COL.good];
+  else if (gap > 0) [line, color] = ['Good chance to win — it could be close', COL.good];
+  else if (pv.place <= 3) [line, color] = [`Podium likely (about ${ordinal(pv.place)}) — a win needs luck`, COL.gold];
+  else [line, color] = [`Tough field — expect about ${ordinal(pv.place)} place`, COL.bad];
   const risk = pv.anyBreakdownPct >= 25 ? 'High' : pv.anyBreakdownPct >= 10 ? 'Some' : 'Low';
   const riskLine = `${risk} breakdown risk (${pv.anyBreakdownPct}% chance of at least one)${pv.catastrophicPossible ? ' · could fail to finish!' : ''}`;
-  return { line, color, riskLine, riskColor: risk === 'High' ? '#FF8A80' : risk === 'Some' ? '#FFD166' : '#9AA8B5' };
+  return { line, color, riskLine, riskColor: risk === 'High' ? COL.bad : risk === 'Some' ? COL.gold : COL.textMuted };
 }
 
 export function ordinal(n) {

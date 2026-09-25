@@ -4,6 +4,7 @@
 //   input:tap                                (quick press + release without moving)
 //   input:dragstart, input:drag, input:dragend
 //   input:hold                               (pressed still for holdMs)
+//   input:wheel                              (mouse wheel / trackpad: { x, y, deltaY } — zoom on desktop)
 // Every payload has logical { x, y, id, pointerType }; drag payloads also have dx/dy and startX/startY.
 export class Input {
   constructor(renderer, bus, { dragThreshold = 24, holdMs = 500, tapMaxMs = 400 } = {}) {
@@ -30,6 +31,15 @@ export class Input {
     c.addEventListener('pointercancel', this._onCancel);
     c.addEventListener('lostpointercapture', this._onCancel);
     c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener(
+      'wheel',
+      (e) => {
+        if (!this.enabled) return;
+        e.preventDefault();
+        this.bus.emit('input:wheel', this._payload(e, { deltaY: e.deltaY }));
+      },
+      { passive: false },
+    );
   }
 
   _payload(e, extra) {

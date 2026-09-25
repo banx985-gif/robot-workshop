@@ -4,16 +4,19 @@
 //   const cm = new CoachMark({ layout, assets, face: { key, crop: { x, y, w, h } } });
 //   cm.render(ctx, step, targetRect, { block, next })   targetRect in screen units or null (centred box)
 //   cm.hit(p) → 'next' | 'skip' | 'off' | 'box' | 'target' | null     (uses the last rendered layout)
+import { drawButton } from './Button.js';
+import { THEME } from '../Theme.js';
+const COL = THEME.color;
 const PAD = 26;
 const FACE = 112;
-const BTN_H = 70;
-const TITLE = 38;
-const BODY = 31;
-const LINE = 41;
+const BTN_H = THEME.button.minH; // Milestone 17b: big, bright and readable (bible §33.2)
+const TITLE = THEME.size.heading;
+const BODY = THEME.size.body;
+const LINE = 44;
 const ART_H = 250;
 
 export class CoachMark {
-  constructor({ layout, assets, face = null, font = 'system-ui, sans-serif', labels = { next: 'Got it', skip: 'Skip', off: 'Guide off' } }) {
+  constructor({ layout, assets, face = null, font = THEME.family, labels = { next: 'Got it', skip: 'Skip', off: 'Guide off' } }) {
     this.layout = layout;
     this.assets = assets;
     this.face = face;
@@ -67,7 +70,7 @@ export class CoachMark {
 
     // Dim everything except the hole.
     ctx.save();
-    ctx.fillStyle = block ? 'rgba(6,8,12,0.64)' : 'rgba(6,8,12,0.34)';
+    ctx.fillStyle = block ? COL.overlay : COL.overlay;
     ctx.beginPath();
     ctx.rect(0, 0, W, H);
     if (hole) roundRect(ctx, hole.x, hole.y, hole.w, hole.h, 22, true);
@@ -80,7 +83,7 @@ export class CoachMark {
       ctx.lineWidth = 14 + pulse * 10;
       roundRect(ctx, hole.x, hole.y, hole.w, hole.h, 22);
       ctx.stroke();
-      ctx.strokeStyle = '#FFB74D';
+      ctx.strokeStyle = COL.action;
       ctx.lineWidth = 6;
       roundRect(ctx, hole.x, hole.y, hole.w, hole.h, 22);
       ctx.stroke();
@@ -119,18 +122,18 @@ export class CoachMark {
     }
     const box = { x, y, w: boxW, h: boxH };
 
-    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowColor = COL.overlay;
     ctx.shadowBlur = 24;
-    ctx.fillStyle = 'rgba(250,244,232,0.98)'; // warm cream (bible §33.1)
+    ctx.fillStyle = COL.sheet; // warm cream (bible §33.1)
     roundRect(ctx, box.x, box.y, box.w, box.h, 28);
     ctx.fill();
     ctx.shadowColor = 'transparent';
-    ctx.strokeStyle = '#2B2F36';
+    ctx.strokeStyle = COL.outline;
     ctx.lineWidth = 4;
     ctx.stroke();
     if (arrow && hole) {
       const ax = Math.min(box.x + box.w - 60, Math.max(box.x + 60, hole.x + hole.w / 2));
-      ctx.fillStyle = 'rgba(250,244,232,0.98)';
+      ctx.fillStyle = COL.sheet;
       ctx.beginPath();
       if (arrow === 'up') {
         ctx.moveTo(ax - 22, box.y + 2);
@@ -154,7 +157,7 @@ export class CoachMark {
       ctx.save();
       ctx.beginPath();
       ctx.arc(box.x + PAD + FACE / 2, cy + FACE / 2, FACE / 2, 0, Math.PI * 2);
-      ctx.fillStyle = '#FFE0B2';
+      ctx.fillStyle = COL.panelGold;
       ctx.fill();
       ctx.clip();
       this.assets.drawCrop(ctx, this.face.key, this.face.crop, { x: box.x + PAD, y: cy, w: FACE, h: FACE });
@@ -162,28 +165,28 @@ export class CoachMark {
     }
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = '#1D2128';
+    ctx.fillStyle = COL.text;
     ctx.font = `bold ${TITLE}px ${this.font}`;
     ctx.fillText(step.title, box.x + textX, cy, textW);
     ctx.font = `${BODY}px ${this.font}`;
-    ctx.fillStyle = '#2E3440';
+    ctx.fillStyle = COL.text;
     lines.forEach((l, i) => ctx.fillText(l, box.x + textX, cy + TITLE + 14 + i * LINE));
 
     // Buttons: [Guide off] [Skip] ........ [Got it]
     const by = box.y + box.h - PAD - BTN_H;
     const buttons = {};
-    buttons.off = { x: box.x + PAD, y: by, w: 200, h: BTN_H };
-    buttons.skip = { x: box.x + PAD + 212, y: by, w: 150, h: BTN_H };
-    if (next) buttons.next = { x: box.x + box.w - PAD - 230, y: by, w: 230, h: BTN_H };
+    buttons.off = { x: box.x + PAD, y: by, w: 230, h: BTN_H };
+    buttons.skip = { x: box.x + PAD + 244, y: by, w: 180, h: BTN_H };
+    if (next) buttons.next = { x: box.x + box.w - PAD - 250, y: by, w: 250, h: BTN_H };
     drawPill(ctx, buttons.off, this.labels.off, false, this.font);
     drawPill(ctx, buttons.skip, this.labels.skip, false, this.font);
     if (next) drawPill(ctx, buttons.next, this.labels.next, true, this.font);
     else {
-      ctx.fillStyle = '#8A5A00';
+      ctx.fillStyle = COL.gold;
       ctx.font = `bold 28px ${this.font}`;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      ctx.fillText(hole ? (step.hint ?? 'Tap the glowing spot') : '', box.x + box.w - PAD, by + BTN_H / 2, box.w - PAD * 2 - 380);
+      ctx.fillText(hole ? (step.hint ?? 'Tap the glowing spot') : '', box.x + box.w - PAD, by + BTN_H / 2, box.w - PAD * 2 - 440);
     }
     ctx.restore();
     this.last = { box, target: hole, buttons };
@@ -201,16 +204,7 @@ function roundRect(ctx, x, y, w, h, r, sub = false) {
   else ctx.rect(x, y, w, h);
 }
 
-function drawPill(ctx, r, label, primary, font) {
-  ctx.fillStyle = primary ? '#FF8A3D' : 'rgba(43,47,54,0.08)';
-  roundRect(ctx, r.x, r.y, r.w, r.h, r.h / 2);
-  ctx.fill();
-  ctx.strokeStyle = primary ? '#C85A12' : '#8C96A3';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  ctx.fillStyle = primary ? '#FFFFFF' : '#3A414C';
-  ctx.font = `bold ${primary ? 32 : 26}px ${font}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 1, r.w - 16);
+// The guide's buttons are the shared themed buttons (Milestone 17b): orange for Got it, quieter for the others.
+function drawPill(ctx, r, label, primary) {
+  drawButton(ctx, r, label, { accent: primary ? COL.action : COL.textMuted });
 }

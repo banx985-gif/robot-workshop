@@ -1,7 +1,9 @@
 // Workshop Closure ending (bible §20.6): three month-ends in a row below the emergency limit.
+import { THEME, font } from '../../../../core/Theme.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { DEBT_RULES } from '../../data/economy.js';
 import { text, contained, fmt, hit } from '../ui/widgets.js';
+const COL = THEME.color;
 
 export function createClosureScreen({ renderer, layout, assets, campaign, router }) {
   const W = renderer.width;
@@ -23,22 +25,22 @@ export function createClosureScreen({ renderer, layout, assets, campaign, router
       router.go('workshop');
     },
     render(ctx) {
-      ctx.fillStyle = '#1A0E10';
+      ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const sr = layout.safeRect;
       const cx = W / 2;
       contained(ctx, assets, 'ui_icon_29', { x: cx - 90, y: sr.y + 160, w: 180, h: 180 });
-      text(ctx, 'Workshop Closed', cx, sr.y + 400, { size: 84, bold: true, align: 'center', color: '#FF8A80' });
+      text(ctx, 'Workshop Closed', cx, sr.y + 400, { size: 84, bold: true, align: 'center', color: COL.bad });
       text(ctx, `Three month-ends in a row below ${fmt(DEBT_RULES.limit)} credits.`, cx, sr.y + 520, { size: 34, align: 'center', maxWidth: sr.w - 80 });
-      text(ctx, 'The bank has shut the doors.', cx, sr.y + 572, { size: 34, align: 'center', color: '#9AA8B5' });
+      text(ctx, 'The bank has shut the doors.', cx, sr.y + 572, { size: 34, align: 'center', color: COL.textMuted });
       const lines = [
         `Closed on ${campaign.clock.label()}`,
         `Final balance ${fmt(campaign.economy.balance('credits'))} credits`,
         `Robots built ${campaign.history.records.length} · launched ${campaign.products.products.length}`,
         `Reputation ${campaign.reputation.value} · Rank ${campaign.reputation.rank.id}`,
       ];
-      lines.forEach((l, i) => text(ctx, l, cx, sr.y + 720 + i * 60, { size: 34, align: 'center', color: '#E8EEF2', maxWidth: sr.w - 80 }));
-      drawButton(ctx, newGameRect(), 'Start a new game', { active: true, accent: '#7CFFB2', font: 'bold 44px system-ui, sans-serif' });
+      lines.forEach((l, i) => text(ctx, l, cx, sr.y + 720 + i * 60, { size: 34, align: 'center', color: COL.text, maxWidth: sr.w - 80 }));
+      drawButton(ctx, newGameRect(), 'Start a new game', { active: true, accent: COL.good, font: font(44, true) });
     },
   };
 }

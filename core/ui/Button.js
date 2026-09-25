@@ -1,3 +1,4 @@
+import { THEME, shade as darken } from '../Theme.js';
 // Canvas buttons (logical units) with the six states from bible §33.3:
 //   normal · pressed (finger down on it) · selected · disabled · locked · attention badge.
 // Pressed needs no per-button code: the game calls setPressPoint() on pointer down and clearPress()
@@ -27,48 +28,67 @@ export function isPressed(ctx, r) {
   return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
 
-const LIP = 6; // chunky bottom edge; a pressed button sinks onto it
+const LIP = THEME.button.lip; // chunky bottom edge; a pressed button sinks onto it
 
+// A button label font: the theme family, never below the button minimum (bible §33.2).
+function labelFont(f) {
+  const m = /(d+(?:.d+)?)px/.exec(f ?? '');
+  const size = Math.max(THEME.size.button, m ? Number(m[1]) : THEME.size.button);
+  return `${/bold/.test(f ?? 'bold') ? 'bold ' : ''}${size}px ${THEME.family}`;
+}
+
+// Milestone 17b look (bible §33): plain buttons are orange (or the accent given), selected ones graphite with a
+// cream label (the chosen tab / option), disabled and locked ones a dim cream. Graphite outline, darker lip.
 // opts: { active|selected, disabled, locked, badge (number or text), pressed (force), font, accent }
 export function drawButton(ctx, r, label, opts = {}) {
-  const { disabled = false, locked = false, badge = null, font = 'bold 34px system-ui, sans-serif', accent = '#4FC3F7' } = opts;
+  const C = THEME.color;
+  // Layout audit (tests only): every button drawn, in screen units.
+  if (globalThis.__uiAudit) {
+    const m = ctx.getTransform();
+    globalThis.__uiAudit.buttons.push({ label, h: r.h * (m.d / (globalThis.__uiAudit.ps || 1)), w: r.w * (m.a / (globalThis.__uiAudit.ps || 1)), x: (r.x * m.a + m.e) / (globalThis.__uiAudit.ps || 1), y: (r.y * m.d + m.f) / (globalThis.__uiAudit.ps || 1) });
+  }
+  const { disabled = false, locked = false, badge = null } = opts;
+  const accent = opts.accent && opts.accent.startsWith('#') ? opts.accent : C.action;
   const selected = !!(opts.selected ?? opts.active);
   const inert = disabled || locked;
   const pressed = !inert && (opts.pressed ?? isPressed(ctx, r));
-  const radius = Math.min(18, r.h / 3);
+  const radius = Math.min(THEME.button.radius, r.h / 3);
   const sink = pressed ? LIP - 2 : 0;
   const face = { x: r.x, y: r.y + sink, w: r.w, h: r.h - LIP };
+  const base = selected ? C.outline : accent;
 
   ctx.save();
   // Lip (the button's "side"), hidden when pressed down onto it.
   if (!pressed) {
-    ctx.fillStyle = inert ? '#1A2028' : selected ? shade(accent) : '#161C24';
+    ctx.fillStyle = inert ? C.line : shade(base);
     roundRect(ctx, r.x, r.y + LIP, r.w, r.h - LIP, radius);
     ctx.fill();
   }
   // Face
-  let fill = '#2A3440';
-  if (selected) fill = accent;
-  if (pressed) fill = selected ? shade(accent) : '#1E2630';
-  if (inert) fill = '#232A33';
-  ctx.fillStyle = fill;
+  ctx.fillStyle = inert ? C.panelDim : pressed ? shade(base) : base;
   roundRect(ctx, face.x, face.y, face.w, face.h, radius);
   ctx.fill();
-  ctx.strokeStyle = inert ? '#3A4452' : accent;
-  ctx.lineWidth = 3;
+  ctx.strokeStyle = inert ? C.line : C.outline;
+  ctx.lineWidth = 4;
   ctx.stroke();
+  if (selected && !inert) {
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 3;
+    roundRect(ctx, face.x + 5, face.y + 5, face.w - 10, face.h - 10, Math.max(4, radius - 5));
+    ctx.stroke();
+  }
 
   // Label (+ padlock when locked)
-  ctx.font = font;
+  ctx.font = labelFont(opts.font);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = inert ? '#6E7B88' : selected ? '#101418' : '#E8EEF2';
+  ctx.fillStyle = inert ? C.textFaint : selected ? C.textOnDark : C.textOnAction;
   const cy = face.y + face.h / 2 + 1;
   if (locked) {
-    const lockW = 26;
+    const lockW = 28;
     const tw = Math.min(ctx.measureText(label).width, face.w - 24 - lockW - 10);
     const lx = face.x + face.w / 2 - (lockW + 8 + tw) / 2;
-    drawPadlock(ctx, lx, cy, lockW, '#8C98A5');
+    drawPadlock(ctx, lx, cy, lockW, C.textFaint);
     ctx.textAlign = 'left';
     ctx.fillText(label, lx + lockW + 8, cy, face.w - 24 - lockW - 10);
   } else {
@@ -82,15 +102,15 @@ export function drawButton(ctx, r, label, opts = {}) {
 // Orange attention dot with a number or "!" (orange = interaction accent, bible §33.1).
 export function drawBadge(ctx, cx, cy, text) {
   ctx.save();
-  ctx.font = 'bold 26px system-ui, sans-serif';
-  const w = Math.max(40, ctx.measureText(text).width + 22);
-  roundRect(ctx, cx - w / 2, cy - 20, w, 40, 20);
-  ctx.fillStyle = '#FF7A1A';
+  ctx.font = `bold ${THEME.size.small}px ${THEME.family}`;
+  const w = Math.max(46, ctx.measureText(text).width + 24);
+  roundRect(ctx, cx - w / 2, cy - 23, w, 46, 23);
+  ctx.fillStyle = THEME.color.bad;
   ctx.fill();
   ctx.lineWidth = 4;
-  ctx.strokeStyle = '#101418';
+  ctx.strokeStyle = THEME.color.textOnDark;
   ctx.stroke();
-  ctx.fillStyle = '#FFFFFF';
+  ctx.fillStyle = THEME.color.textOnDark;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, cx, cy + 1);
@@ -119,15 +139,10 @@ function roundRect(ctx, x, y, w, h, r) {
   else ctx.rect(x, y, w, h);
 }
 
-// A darker version of a #RRGGBB colour (pressed / lip), worked out once per colour.
+// A darker version of a colour (pressed / lip), worked out once per colour.
 const shades = new Map();
 function shade(hex) {
   let out = shades.get(hex);
-  if (!out) {
-    const n = parseInt(hex.slice(1), 16);
-    const k = 0.72;
-    out = `rgb(${Math.round(((n >> 16) & 255) * k)},${Math.round(((n >> 8) & 255) * k)},${Math.round((n & 255) * k)})`;
-    shades.set(hex, out);
-  }
+  if (!out) shades.set(hex, (out = hex.startsWith('#') ? darken(hex, 0.28) : hex));
   return out;
 }

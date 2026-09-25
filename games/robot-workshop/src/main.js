@@ -1,6 +1,7 @@
 // Robot Workshop — boot.
 // Starts the shared engine, loads (or starts) the campaign and opens the workshop.
 // Add ?screen=test to the address to open the Milestone 0 scaling/tap test screen instead.
+import { THEME, font } from '../../../core/Theme.js';
 import { EventBus } from '../../../core/EventBus.js';
 import { Rng } from '../../../core/Rng.js';
 import { Renderer } from '../../../core/Renderer.js';
@@ -45,6 +46,9 @@ import { createRankingsScreen } from './screens/RankingsScreen.js';
 import { createTrophyScreen } from './screens/TrophyScreen.js';
 import { createComboArchiveScreen } from './screens/ComboArchiveScreen.js';
 import { createInboxScreen } from './screens/InboxScreen.js';
+import { BottomSheet } from '../../../core/ui/BottomSheet.js';
+import { createStationMenus } from './ui/stationMenus.js';
+import { PROPS } from '../data/workshop.js';
 import { createRumourArchiveScreen } from './screens/RumourArchiveScreen.js';
 import { createSecretDebugScreen } from './screens/SecretDebugScreen.js';
 import { SECRET_ART } from '../data/secrets.js';
@@ -74,6 +78,7 @@ import { STAFF, ROLES } from '../data/staff.js';
 import { SAVE_VERSION } from '../data/balance.js';
 import { ROOM_ART } from '../data/workshop.js';
 import { VFX_ART, STATUS_ART, SOUNDS, FLOAT_COLORS } from '../data/feedback.js';
+const COL = THEME.color;
 
 const W = 1080;
 const BASE_H = 1920; // 9:16; taller phones grow the height (see Renderer)
@@ -110,6 +115,10 @@ const ASSETS = {
   ui_icon_13: 'assets/images/ui/ui_icon_13.png',
   // Contracts: icon, customer portraits, the first-contract moment.
   ui_icon_14: 'assets/images/ui/ui_icon_14.png',
+  // Milestone 17b: the workshop props, the save icon and the effects the build show uses.
+  ...Object.fromEntries(PROPS.map((p) => art('props', p.art))),
+  ...Object.fromEntries(['ui_icon_28', 'ui_icon_05_staff', 'ui_icon_13', 'ui_icon_12'].map((k) => art('ui', k))),
+  ...Object.fromEntries(['vfx_01', 'vfx_02', 'vfx_03', 'vfx_04', 'vfx_09', 'vfx_11', 'vfx_12'].map((k) => art('vfx', k))),
   // First-time guide: help icon and the two event pictures.
   [HELP_ICON]: `assets/images/ui/${HELP_ICON}.png`,
   event_art_01: 'assets/images/events/event_art_01.png',
@@ -214,6 +223,7 @@ const loop = new FixedStepLoop({
     vfx.update(dt); // real time: effects keep playing while the calendar is paused
     major.update(dt);
     eventPopup.update(dt);
+    if (router.currentName === 'workshop') sheet.update(dt);
     coach.update(dt);
     if (campaignReady) {
       campaign.notes.update(dt, { hold: !toastPlace() }); // toasts fade in real time, only while they can show
@@ -222,8 +232,9 @@ const loop = new FixedStepLoop({
     }
   },
   render: (alpha) => {
-    const ctx = renderer.begin('#101418');
+    const ctx = renderer.begin(COL.bg);
     router.render(ctx, alpha);
+    if (router.currentName === 'workshop') sheet.render(ctx); // station menus (Milestone 17b)
     if (campaignReady && toastPlace()) drawToastStack(ctx);
     if (guide.active) {
       const step = guide.current;
@@ -273,14 +284,14 @@ const bootScreen = {
       });
   },
   render(ctx) {
-    ctx.fillStyle = '#E8EEF2';
-    ctx.font = 'bold 64px system-ui, sans-serif';
+    ctx.fillStyle = COL.text;
+    ctx.font = font(64, true);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('Robot Workshop', W / 2, H / 2 - 60);
-    ctx.fillStyle = '#2A3440';
+    ctx.fillStyle = COL.line;
     ctx.fillRect(W / 2 - 300, H / 2 + 20, 600, 24);
-    ctx.fillStyle = '#4FC3F7';
+    ctx.fillStyle = COL.progress;
     ctx.fillRect(W / 2 - 300, H / 2 + 20, 600 * this.progress, 24);
   },
 };
@@ -341,7 +352,7 @@ const testScreen = {
     drawFrame(ctx);
 
     // Round-ness check: this must look like a perfect circle on every screen shape.
-    ctx.strokeStyle = '#4FC3F7';
+    ctx.strokeStyle = COL.progress;
     ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.arc(W / 2, H / 2, 300, 0, Math.PI * 2);
@@ -352,17 +363,17 @@ const testScreen = {
     ctx.save();
     ctx.translate(W / 2, H / 2);
     ctx.rotate(this.angle);
-    ctx.fillStyle = '#FFD166';
+    ctx.fillStyle = COL.gold;
     ctx.fillRect(-12, -260, 24, 220);
     ctx.restore();
 
-    ctx.fillStyle = '#E8EEF2';
-    ctx.font = 'bold 44px system-ui, sans-serif';
+    ctx.fillStyle = COL.text;
+    ctx.font = font(44, true);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('Milestone 0 — test screen', W / 2, H / 2 - 420);
-    ctx.font = '30px system-ui, sans-serif';
-    ctx.fillStyle = '#9AA8B5';
+    ctx.font = font(30);
+    ctx.fillStyle = COL.textMuted;
     ctx.fillText('Tap anywhere: the cross should sit exactly under your finger.', W / 2, H / 2 - 360);
     ctx.fillText(`sim time ${this.time.toFixed(2)}s`, W / 2, H / 2 + 360);
 
@@ -373,8 +384,8 @@ const testScreen = {
       ctx.fillStyle = c;
       ctx.fillRect(W / 2 - 320 + i * 80, sr.y + sr.h - 220, 64, 64);
     });
-    ctx.fillStyle = '#9AA8B5';
-    ctx.font = '24px system-ui, sans-serif';
+    ctx.fillStyle = COL.textMuted;
+    ctx.font = font(24);
     ctx.fillText('seeded colours (same every reload)', W / 2, sr.y + sr.h - 124);
 
     // Drag trail
@@ -405,11 +416,11 @@ const testScreen = {
     if (loop.paused) {
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 96px system-ui, sans-serif';
+      ctx.fillStyle = COL.text;
+      ctx.font = font(96, true);
       ctx.textAlign = 'center';
       ctx.fillText('PAUSED', W / 2, H / 2);
-      ctx.font = '34px system-ui, sans-serif';
+      ctx.font = font(34);
       ctx.fillText('tap to resume', W / 2, H / 2 + 80);
     }
   },
@@ -425,14 +436,14 @@ function drawGrid(ctx) {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   for (let x = 0; x <= W; x += 60) {
-    ctx.strokeStyle = x % 120 === 0 ? '#243040' : '#18202A';
+    ctx.strokeStyle = x % 120 === 0 ? COL.bgDeep : COL.bgDeep;
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, H);
     ctx.stroke();
   }
   for (let y = 0; y <= H; y += 60) {
-    ctx.strokeStyle = y % 120 === 0 ? '#243040' : '#18202A';
+    ctx.strokeStyle = y % 120 === 0 ? COL.bgDeep : COL.bgDeep;
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(W, y);
@@ -446,10 +457,10 @@ function drawGrid(ctx) {
 // Red border on the logical edge + corner labels: if any are cut off, the canvas is clipping.
 // Green dashed box = safe area (inside notch/home bar).
 function drawFrame(ctx) {
-  ctx.strokeStyle = '#FF5A5A';
+  ctx.strokeStyle = COL.bad;
   ctx.lineWidth = 8;
   ctx.strokeRect(4, 4, W - 8, H - 8);
-  ctx.fillStyle = '#FF5A5A';
+  ctx.fillStyle = COL.bad;
   ctx.font = 'bold 26px ui-monospace, Consolas, monospace';
   const m = 16;
   ctx.textBaseline = 'top';
@@ -464,7 +475,7 @@ function drawFrame(ctx) {
 
   const sr = layout.safeRect;
   if (sr.x > 0 || sr.y > 0 || sr.w < W || sr.h < H) {
-    ctx.strokeStyle = '#7CFFB2';
+    ctx.strokeStyle = COL.good;
     ctx.lineWidth = 4;
     ctx.setLineDash([16, 12]);
     ctx.strokeRect(sr.x + 2, sr.y + 2, sr.w - 4, sr.h - 4);
@@ -474,7 +485,7 @@ function drawFrame(ctx) {
 
 function drawTapMarker(ctx, tap) {
   const { x, y } = tap;
-  ctx.strokeStyle = '#FFFFFF';
+  ctx.strokeStyle = COL.text;
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(x - 50, y);
@@ -503,18 +514,18 @@ function drawTapMarker(ctx, tap) {
   const tw = ctx.measureText(label).width;
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillRect(right ? tx - 8 : tx - tw - 8, ty - 22, tw + 16, 44);
-  ctx.fillStyle = '#FFFFFF';
+  ctx.fillStyle = COL.text;
   ctx.fillText(label, tx, ty);
 }
 
 function drawPauseButton(ctx, b, paused) {
-  ctx.fillStyle = paused ? '#FFD166' : '#2A3440';
+  ctx.fillStyle = paused ? COL.gold : COL.line;
   ctx.fillRect(b.x, b.y, b.w, b.h);
-  ctx.strokeStyle = '#4FC3F7';
+  ctx.strokeStyle = COL.progress;
   ctx.lineWidth = 4;
   ctx.strokeRect(b.x, b.y, b.w, b.h);
-  ctx.fillStyle = paused ? '#101418' : '#E8EEF2';
-  ctx.font = 'bold 40px system-ui, sans-serif';
+  ctx.fillStyle = paused ? COL.bg : COL.text;
+  ctx.font = font(40, true);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(paused ? 'RESUME' : 'PAUSE', b.x + b.w / 2, b.y + b.h / 2);
@@ -543,9 +554,19 @@ const hud = {
   goProducts: () => router.go('products'),
   goContracts: () => router.go('contracts'),
   goHelp: () => router.go('help'),
+  goHome: () => router.go('workshop'),
   goInbox: () => router.go('inbox'),
 };
-const workshopScreen = createWorkshopScreen({ renderer, layout, assets, bus, debug, campaign, router, goProject, hud });
+// Station menus (Milestone 17b): tap a station, a worker or a bottom-bar button → a bottom sheet (core/ui/BottomSheet).
+const sheet = new BottomSheet({ layout, assets, onClose: () => workshopScreen.selection.clear() });
+const menuHolder = { reg: null, for: (kind, target) => menuHolder.reg?.for(kind, target) ?? null };
+const workshopScreen = createWorkshopScreen({ renderer, layout, assets, bus, debug, campaign, router, goProject, hud, sheet, menus: menuHolder });
+menuHolder.reg = createStationMenus({ campaign, router, workshop: workshopScreen, sheet });
+// Every screen change closes the sheet and tells the guide which screen opened ('screen:builder', …).
+bus.on('screen:change', ({ to }) => {
+  if (to !== 'workshop') sheet.close();
+  bus.emit(`screen:${to}`, {});
+});
 bus.on('renderer:resize', () => workshopScreen.resize());
 const rosterScreen = createStaffRosterScreen({ renderer, layout, assets, bus, debug, campaign, router, workshop: workshopScreen, goProject, hud });
 const builderScreen = createRobotBuilderScreen({ renderer, layout, assets, campaign, router, debugEnabled: debug.enabled });
@@ -560,7 +581,7 @@ const componentsScreen = createComponentsScreen({ renderer, layout, assets, camp
 // Steps are data (data/guide.js); the engine (core/GuideSystem.js) shows one at a time when it makes sense,
 // pauses the game while it waits, and its progress travels in the save. ?guide=reset replays it.
 const GUIDE_RESET = new URLSearchParams(window.location.search).get('guide') === 'reset';
-const guideTarget = createGuideTargets({ router, campaign });
+const guideTarget = createGuideTargets({ router, campaign, sheet });
 const guide = new GuideSystem({
   steps: GUIDE_STEPS,
   bus,
@@ -577,9 +598,11 @@ const guide = new GuideSystem({
 });
 const coach = new CoachMark({ layout, assets, face: GUIDE_FACE });
 router.layers.push({ get active() { return guide.active; }, handleInput: (hook, p) => guide.handleInput(hook, p, hook === 'onTap' ? coach.hit(p) : null) });
+// The open menu sheet takes its taps and drags before the workshop does (the guide still comes first).
+router.layers.push({ get active() { return sheet.active && router.currentName === 'workshop'; }, handleInput: (hook, p) => sheet.handleInput(hook, p) });
 bus.on('guide:change', () => (campaign.guideState = guide.serialize()));
 bus.on('guide:done', ({ step }) => {
-  if (step.id === 'S2') workshopScreen.selection.clear(); // "Got it" also closes Mina's card
+  if (step.id === 'S2') sheet.close(); // "Got it" also closes Mina's card
   campaign.save().catch(() => {});
 });
 bus.on('campaign:ready', () => {
@@ -661,14 +684,14 @@ bus.on('project:complete', ({ record }) => {
 // --- Pop-ups (Milestone 15) -----------------------------------------------------------------------
 // Everything that pops up waits in one queue (campaign.notes, saved with the run) and shows one at a time, only on
 // the workshop view and only when nothing else is open there — never over another pop-up, a guide step or a screen.
-const presentPlace = () => campaignReady && !campaign.closed && router.currentName === 'workshop';
+const presentPlace = () => campaignReady && !campaign.closed && router.currentName === 'workshop' && !sheet.active; // never over an open menu
 function presentNext() {
   if (modal.active || !presentPlace() || guide.active) return;
   const e = campaign.notes.take();
   if (e) present(e);
 }
 
-const LEVEL_ACCENT = { minor: '#4FC3F7', medium: '#FFD166', major: '#FFD166' };
+const LEVEL_ACCENT = { minor: COL.progress, medium: COL.gold, major: COL.gold };
 const goArgs = { contracts: { tab: 'offered' }, competitions: { eventId: 'C09' }, recruit: { focusSpecial: true } };
 
 function present(e) {
@@ -682,7 +705,7 @@ function present(e) {
       return major.show({
         title: e.title,
         subtitle: e.body,
-        accent: '#FFD166',
+        accent: COL.gold,
         drawFn: (ctx, t) => {
           const s = Math.min(1, t / 0.4);
           ctx.save();
@@ -694,22 +717,22 @@ function present(e) {
       });
     }
     case 'robotDone':
-      return major.show({ title: e.title, subtitle: e.body, accent: '#7CFFB2', onAck: () => router.go('result', { number: e.data.number, resumeOnExit: !!e.data.resume }) });
+      return major.show({ title: e.title, subtitle: e.body, accent: COL.good, onAck: () => router.go('result', { number: e.data.number, resumeOnExit: !!e.data.resume }) });
     case 'combo':
       return showComboDiscovered(e.data);
     case 'secret':
       return showSecretDiscovered(e);
     case 'rankUp':
       audio.play('levelUp');
-      return major.show({ title: e.title, subtitle: e.body, accent: '#FFD166' });
+      return major.show({ title: e.title, subtitle: e.body, accent: COL.gold });
     case 'researchMilestone':
-      return major.show({ title: e.title, subtitle: e.body, accent: '#4FC3F7' });
+      return major.show({ title: e.title, subtitle: e.body, accent: COL.progress });
     case 'sponsorEnded':
       return eventPopup.show({
         title: e.title,
         body: e.body,
         icon: e.icon,
-        accent: e.data?.result === 'met' ? '#7CFFB2' : '#FFD166',
+        accent: e.data?.result === 'met' ? COL.good : COL.gold,
         choices: e.data?.renewal ? [{ label: 'See the renewal (Finance)' }, { label: 'Later' }] : [],
         onChoose: (i) => i === 0 && e.data?.renewal && router.go('finance'),
       });
@@ -727,7 +750,7 @@ function showEvent(e) {
     title: e.title,
     body: fillText(def.text, inst.params),
     icon: e.icon,
-    accent: '#FFD166',
+    accent: COL.gold,
     choices: def.choices.map((c, i) => ({ label: c.label, sub: effectsText(inst.choices[i] ?? [], { staffName: inst.params.staff ?? '' }) || 'Nothing changes' })),
     onChoose: (i) => {
       campaign.answerEvent(inst.uid, i);
@@ -765,7 +788,7 @@ function drawToastStack(ctx) {
     y: t.y + t.h + 170,
     w: sr.w - 96,
     life: campaign.notes.toastSec,
-    accent: (e) => (e.icon === EVENT_ICONS.warning ? '#FF8A80' : LEVEL_ACCENT[e.level]),
+    accent: (e) => (e.icon === EVENT_ICONS.warning ? COL.bad : LEVEL_ACCENT[e.level]),
     drawIcon: (c, e, r) => (e.art ?? e.icon) && assets.drawContained(c, e.art ?? e.icon, r),
   });
 }
@@ -776,7 +799,7 @@ function showSecretDiscovered(e) {
   major.show({
     title: e.title,
     subtitle: e.body,
-    accent: '#B388FF',
+    accent: COL.purple,
     drawFn: (ctx, t) => {
       const s = Math.min(1, t / 0.35);
       const cx = W / 2;
@@ -802,7 +825,7 @@ function showComboDiscovered({ id, firstEver }) {
   major.show({
     title: 'New combo discovered!',
     subtitle: `${rule.name} — ${rewardText(rule, 0) || 'a special build'}. See the Combo Archive.`,
-    accent: '#FFD166',
+    accent: COL.gold,
     onShow: () => audio.play('levelUp'),
     drawFn: (ctx, t) => {
       const s = Math.min(1, t / 0.35);
@@ -922,6 +945,7 @@ if (debug.enabled) {
   window.__m14 = { ...window.__m13, combos: comboArchiveScreen, synergyArchive: campaign.synergyArchive, showComboDiscovered };
   window.__m15 = { ...window.__m14, bus, inbox: inboxScreen, eventPopup, modal, events: campaign.events, sponsors: campaign.sponsors, notes: campaign.notes, presentPlace, EVENTS_BY_ID };
   window.__m16 = { ...window.__m15, rumours: rumourScreen, secretDebug: secretDebugScreen, secrets: campaign.secrets, research: researchScreen, build: buildScreen, recruit: recruitScreen };
+  window.__m17b = { ...window.__m16, sheet, menus: menuHolder, bottomBar: workshopScreen.bottomBar, debug, guideTarget };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
   bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));

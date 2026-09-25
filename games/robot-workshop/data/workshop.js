@@ -27,8 +27,23 @@ export const SIZES = {
   staffH: 150,
   robotH: 118, // finished robot standing on the pedestal
   statusIcon: 60,
-  nameTag: 26, // font px
+  nameTag: 17, // font px in the world (Milestone 17b: the camera zooms it to ~44 on screen)
 };
+
+// Props (Milestone 17b): decoration only — no effect, no collision, never in the way (a prop on a cell that has a
+// facility, or on the doorway, is simply not drawn). h: height in world px; dx/dy nudge it on its cell.
+export const PROPS = [
+  { art: 'prop_07', col: 3, row: 0, h: 120 }, // blueprint board
+  { art: 'prop_10', col: 6, row: 0, h: 70, dy: -70 }, // wall clock
+  { art: 'prop_01', col: 0, row: 1, h: 95 }, // tool chest
+  { art: 'prop_04', col: 3, row: 1, h: 60 }, // cable spool
+  { art: 'prop_03', col: 7, row: 3, h: 85 }, // parts bins
+  { art: 'prop_02', col: 1, row: 3, h: 60 }, // rolling stool
+  { art: 'prop_06', col: 7, row: 8, h: 110 }, // spare limbs rack
+  { art: 'prop_11', col: 3, row: 9, h: 115 }, // drink machine
+  { art: 'prop_09', col: 0, row: 9, h: 100 }, // plant
+  { art: 'prop_12', col: 5, row: 9, h: 80 }, // shipping crates
+];
 
 // Worker routine timings (real seconds at 1×).
 export const ROUTINE = { idleSeconds: 2.5, workSeconds: 4, walkSpeed: 190 }; // walkSpeed: grid units per second

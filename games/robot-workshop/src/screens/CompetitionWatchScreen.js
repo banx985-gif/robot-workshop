@@ -2,12 +2,14 @@
 // (core/CompetitionSystem.js playback), with the player and rival markers, the live placing, callouts for
 // breakdowns and boosts, and the pilot's reaction. Nothing here can change the result — Skip (offered once the
 // event has been watched through once) jumps to the same result screen.
+import { THEME, font } from '../../../../core/Theme.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { playback } from '../../../../core/CompetitionSystem.js';
 import { COMPETITIONS_BY_ID, COMPETITION_ART } from '../../data/competitions.js';
 import { robotArtOf } from '../systems/robotVisual.js';
 import { panel, text, bar, hit } from '../ui/widgets.js';
 import { drawBackdrop, drawMarker, rivalOf, placeText, placeColor, PLAYER_COLOR } from '../ui/competitionDraw.js';
+const COL = THEME.color;
 
 const INTRO_SEC = 1.8; // "Ready…" before the start
 const SEGMENT_SEC = 9; // real seconds per segment at 1× (3 segments + intro ≈ 29 s, bible: 25–50 s)
@@ -52,13 +54,13 @@ export function createCompetitionWatchScreen({ renderer, layout, assets, campaig
     const n = result.segments.length;
     result.segments.forEach((s, i) => {
       if (s.dnf) return;
-      out.push({ t: i, text: `${i === n - 1 ? 'Final push' : i === 0 ? 'Start' : 'Mid-event challenge'}: ${s.name}`, color: '#E8EEF2', kind: 'segment' });
-      if (s.carryPct) out.push({ t: i + 0.06, text: `Still shaken from the breakdown (−${s.carryPct}%)`, color: '#FFB74D', kind: 'carry' });
-      if (s.boost) out.push({ t: i + 0.12, text: 'Boost! A great run', color: '#7CFFB2', kind: 'boost' });
-      if (i === n - 1 && s.stressPct > 0) out.push({ t: i + 0.2, text: `The pressure is on (−${s.stressPct.toFixed(1)}%)`, color: '#B39DDB', kind: 'stress' });
+      out.push({ t: i, text: `${i === n - 1 ? 'Final push' : i === 0 ? 'Start' : 'Mid-event challenge'}: ${s.name}`, color: COL.text, kind: 'segment' });
+      if (s.carryPct) out.push({ t: i + 0.06, text: `Still shaken from the breakdown (−${s.carryPct}%)`, color: COL.action, kind: 'carry' });
+      if (s.boost) out.push({ t: i + 0.12, text: 'Boost! A great run', color: COL.good, kind: 'boost' });
+      if (i === n - 1 && s.stressPct > 0) out.push({ t: i + 0.2, text: `The pressure is on (−${s.stressPct.toFixed(1)}%)`, color: COL.purple, kind: 'stress' });
       if (s.breakdown) {
         const words = { minor: `Minor breakdown! Quick repair (−${s.breakdown.lossPct}%)`, major: `Major breakdown! (−${s.breakdown.lossPct}%, and −8% next)`, catastrophic: 'Catastrophic breakdown — out of the event!' };
-        out.push({ t: i + s.breakdown.at, text: words[s.breakdown.severity], color: '#FF8A80', kind: 'breakdown' });
+        out.push({ t: i + s.breakdown.at, text: words[s.breakdown.severity], color: COL.bad, kind: 'breakdown' });
       }
     });
     return out.sort((a, b) => a.t - b.t);
@@ -172,7 +174,7 @@ export function createCompetitionWatchScreen({ renderer, layout, assets, campaig
     },
 
     render(ctx) {
-      ctx.fillStyle = '#101418';
+      ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       if (!result) return;
       const n = result.segments.length;
@@ -184,14 +186,14 @@ export function createCompetitionWatchScreen({ renderer, layout, assets, campaig
       panel(ctx, tr);
       text(ctx, ev.name, tr.x + 24, tr.y + 18, { size: 40, bold: true, maxWidth: tr.w - 240 });
       const segLabel = clock < INTRO_SEC ? 'Get ready…' : t >= n ? 'Finished!' : `Segment ${state.segment + 1} of ${n} · ${result.segments[state.segment].name}`;
-      text(ctx, segLabel, tr.x + 24, tr.y + 72, { size: 28, color: '#C9D3DD', maxWidth: tr.w - 240 });
-      bar(ctx, tr.x + 24, tr.y + 118, tr.w - 48, 14, t / n, '#4FC3F7');
+      text(ctx, segLabel, tr.x + 24, tr.y + 72, { size: 28, color: COL.textMuted, maxWidth: tr.w - 240 });
+      bar(ctx, tr.x + 24, tr.y + 118, tr.w - 48, 14, t / n, COL.progress);
       for (let i = 1; i < n; i++) {
-        ctx.fillStyle = '#101418';
+        ctx.fillStyle = COL.bg;
         ctx.fillRect(tr.x + 24 + ((tr.w - 48) * i) / n - 2, tr.y + 114, 4, 22);
       }
       const me = state.rows.find((r) => r.id === 'player');
-      text(ctx, me.stopped ? 'DNF' : `P${me.place}`, tr.x + tr.w - 24, tr.y + 58, { size: 72, bold: true, align: 'right', baseline: 'middle', color: me.stopped ? '#FF8A80' : placeColor(me.place) });
+      text(ctx, me.stopped ? 'DNF' : `P${me.place}`, tr.x + tr.w - 24, tr.y + 58, { size: 72, bold: true, align: 'right', baseline: 'middle', color: me.stopped ? COL.bad : placeColor(me.place) });
 
       // Scene: the backdrop, then the callout on top.
       const s = sceneRect();
@@ -201,19 +203,19 @@ export function createCompetitionWatchScreen({ renderer, layout, assets, campaig
       const words = intro ?? (t >= n ? (result.player.dnf ? 'Did not finish' : result.won ? 'WINNER!' : `Finished ${placeText(result.place)}`) : c?.text);
       if (words) {
         const big = intro || t >= n;
-        ctx.font = `bold ${big ? 64 : 34}px system-ui, sans-serif`;
+        ctx.font = font(big ? 64 : 34, true);
         const tw = Math.min(s.w - 60, ctx.measureText(words).width + 60);
         const bh = big ? 110 : 76;
         const by = big ? s.y + s.h * 0.2 : s.y + s.h - bh - 20; // the big banner sits high, clear of the end effect
-        panel(ctx, { x: s.x + (s.w - tw) / 2, y: by, w: tw, h: bh }, { fill: 'rgba(16,20,24,0.86)', stroke: big ? (t >= n ? placeColor(result.place, result.player.dnf) : '#FFD166') : c.color, lineWidth: 4, radius: 22 });
-        text(ctx, words, s.x + s.w / 2, by + bh / 2, { size: big ? 64 : 34, bold: true, align: 'center', baseline: 'middle', color: big ? '#FFFFFF' : c.color, maxWidth: tw - 40 });
+        panel(ctx, { x: s.x + (s.w - tw) / 2, y: by, w: tw, h: bh }, { fill: COL.panel, stroke: big ? (t >= n ? placeColor(result.place, result.player.dnf) : COL.gold) : c.color, lineWidth: 4, radius: 22 });
+        text(ctx, words, s.x + s.w / 2, by + bh / 2, { size: big ? 64 : 34, bold: true, align: 'center', baseline: 'middle', color: big ? COL.text : c.color, maxWidth: tw - 40 });
       }
 
       // Lanes: live order, markers, pace so far.
       const l = lanesRect();
       panel(ctx, l);
       text(ctx, 'Live standings', l.x + 24, l.y + 18, { size: 28, bold: true });
-      text(ctx, 'pace', l.x + l.w - 24, l.y + 22, { size: 24, color: '#9AA8B5', align: 'right' });
+      text(ctx, 'pace', l.x + l.w - 24, l.y + 22, { size: 24, color: COL.textMuted, align: 'right' });
       state.rows.forEach((r, i) => {
         const y = laneY(i);
         const isMe = r.id === 'player';
@@ -221,34 +223,34 @@ export function createCompetitionWatchScreen({ renderer, layout, assets, campaig
           ctx.fillStyle = 'rgba(124,255,178,0.08)';
           ctx.fillRect(l.x + 8, y - LANE_H / 2 + 4, l.w - 16, LANE_H - 8);
         }
-        text(ctx, r.stopped ? '–' : String(r.place), l.x + 50, y, { size: 38, bold: true, align: 'center', baseline: 'middle', color: isMe ? PLAYER_COLOR : '#9AA8B5' });
+        text(ctx, r.stopped ? '–' : String(r.place), l.x + 50, y, { size: 38, bold: true, align: 'center', baseline: 'middle', color: isMe ? PLAYER_COLOR : COL.textMuted });
         const x0 = markerX(0);
         const x1 = markerX(Math.max(...result.standings.map((z) => z.total)));
-        ctx.strokeStyle = '#2A3440';
+        ctx.strokeStyle = COL.line;
         ctx.lineWidth = 6;
         ctx.beginPath();
         ctx.moveTo(x0, y);
         ctx.lineTo(x1, y);
         ctx.stroke();
         const name = isMe ? `${result.setup.entrantName} · ${result.setup.pilotName}` : rivalOf(r.id, (id) => campaign.rivalShown(id)).name;
-        text(ctx, name, x0, y - LANE_H / 2 + 4, { size: 21, color: isMe ? PLAYER_COLOR : '#7F8C99', maxWidth: x1 - x0 - 60 });
+        text(ctx, name, x0, y - LANE_H / 2 + 4, { size: 21, color: isMe ? PLAYER_COLOR : COL.textMuted, maxWidth: x1 - x0 - 60 });
         drawMarker(ctx, assets, markerX(r.done), y + 16, 56, { player: isMe, rivalId: r.id, robotArt, dim: r.stopped, shown: (id) => campaign.rivalShown(id) });
         const pace = t > 0.02 ? r.done / t : 0;
-        text(ctx, pace ? pace.toFixed(1) : '—', l.x + l.w - 24, y, { size: 30, bold: true, align: 'right', baseline: 'middle', color: isMe ? PLAYER_COLOR : '#E8EEF2' });
+        text(ctx, pace ? pace.toFixed(1) : '—', l.x + l.w - 24, y, { size: 30, bold: true, align: 'right', baseline: 'middle', color: isMe ? PLAYER_COLOR : COL.text });
       });
 
       // Pilot reaction.
       const pr = pilotRect();
       panel(ctx, pr);
       if (pilot) assets.drawContained(ctx, pilot.art, { x: pr.x + 12, y: pr.y + 8, w: 110, h: pr.h - 16 });
-      text(ctx, `${result.setup.pilotName} (pilot)`, pr.x + 140, pr.y + 26, { size: 26, color: '#9AA8B5', maxWidth: pr.w - 160 });
+      text(ctx, `${result.setup.pilotName} (pilot)`, pr.x + 140, pr.y + 26, { size: 26, color: COL.textMuted, maxWidth: pr.w - 160 });
       text(ctx, `“${reaction(state)}”`, pr.x + 140, pr.y + 70, { size: 36, bold: true, maxWidth: pr.w - 160 });
 
       // Buttons.
-      drawButton(ctx, speedRect(), `Speed ${speed}×`, { disabled: finished, font: 'bold 32px system-ui, sans-serif' });
-      if (finished) drawButton(ctx, mainRect(), 'See result', { active: true, accent: '#7CFFB2', font: 'bold 38px system-ui, sans-serif' });
-      else if (canSkip()) drawButton(ctx, mainRect(), 'Skip to result', { font: 'bold 36px system-ui, sans-serif' });
-      else drawButton(ctx, mainRect(), 'Watch once to unlock Skip', { disabled: true, font: 'bold 30px system-ui, sans-serif' });
+      drawButton(ctx, speedRect(), `Speed ${speed}×`, { disabled: finished, font: font(32, true) });
+      if (finished) drawButton(ctx, mainRect(), 'See result', { active: true, accent: COL.good, font: font(38, true) });
+      else if (canSkip()) drawButton(ctx, mainRect(), 'Skip to result', { font: font(36, true) });
+      else drawButton(ctx, mainRect(), 'Watch once to unlock Skip', { disabled: true, font: font(30, true) });
     },
   };
   return screen;

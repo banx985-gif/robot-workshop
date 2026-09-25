@@ -14,6 +14,7 @@ const INPUT_ROUTES = {
   'input:drag': 'onDrag',
   'input:dragend': 'onDragEnd',
   'input:hold': 'onHold',
+  'input:wheel': 'onWheel',
 };
 
 export class ScreenRouter {
