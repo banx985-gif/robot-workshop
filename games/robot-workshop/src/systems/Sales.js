@@ -34,6 +34,7 @@ export class Sales {
       fit: r.fit,
       review: r.review,
       baseUnitValue: BASE_UNIT_VALUE[r.tier],
+      premiumDemandMult: r.premiumDemandMult ?? null, // Future Form (signature trait)
       reviews: [],
     };
   }
@@ -42,6 +43,7 @@ export class Sales {
   sales(product, monthIndex, variance = null) {
     const data = product.data;
     const pos = PRICE_POSITIONS[data.position];
+    const demandMult = data.position === 'premium' && data.premiumDemandMult ? data.premiumDemandMult : pos.demandMult;
     const fitFactor = 0.55 + data.fit / 200;
     let qualityFactor = 0.45 + data.quality / 120;
     if (pos.qualityBelow && data.quality < pos.qualityBelow) qualityFactor *= pos.penaltyMult;
@@ -51,7 +53,7 @@ export class Sales {
     const ageFactor = SALES_RULES.ageCurve[monthIndex] ?? 0;
     const novelty = product.novelty ?? data.novelty ?? 1; // data.novelty: products saved before Milestone 7
     const v = variance ?? this.rng.range(SALES_RULES.variance.min, SALES_RULES.variance.max);
-    const units = Math.max(0, Math.round(SALES_RULES.baseUnits * fitFactor * qualityFactor * repFactor * trendFactor * ageFactor * pos.demandMult * novelty * v * (1 + this.effects('salesUnitsPct') / 100)));
+    const units = Math.max(0, Math.round(SALES_RULES.baseUnits * fitFactor * qualityFactor * repFactor * trendFactor * ageFactor * demandMult * novelty * v * (1 + this.effects('salesUnitsPct') / 100)));
     const unitPrice = Math.round(data.baseUnitValue * pos.priceMult);
     return { units, unitPrice, revenue: units * unitPrice, demand };
   }

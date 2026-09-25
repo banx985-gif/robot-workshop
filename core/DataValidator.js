@@ -79,6 +79,39 @@ export class DataValidator {
     return ok;
   }
 
+  // A staff roster (people with roles, tiers, stats and traits — any game's). Checks: every id unique, known
+  // role and tier, every work stat present and within the tier's cap, traits exist, trait count fits the tier
+  // (traitSlots normal traits, plus exactly one signature trait when the tier has `signature`), art exists.
+  //   opts: { roles, tiers, traits, statKeys, artPath(person) → path }
+  // Returns the Set of ids.
+  staffRoster(label, list, { roles, tiers, traits, statKeys, artPath = null }) {
+    const ids = this.uniqueIds(label, list);
+    const roleSet = new Set(Object.keys(roles));
+    const tierSet = new Set(Object.keys(tiers));
+    const traitSet = new Set(Object.keys(traits));
+    for (const p of list) {
+      const o = `${label} ${p.id}`;
+      this.ref(o, 'role', p.role, roleSet);
+      const tier = this.ref(o, 'tier', p.tier, tierSet) ? tiers[p.tier] : null;
+      for (const k of statKeys) {
+        const v = p.stats?.[k];
+        if (!this.check(Number.isInteger(v) && v >= 1, `${o}: starting ${k} "${v}" is not a whole number of 1 or more`)) continue;
+        if (tier) this.check(v <= tier.statCap, `${o}: starting ${k} ${v} is over the ${p.tier} cap of ${tier.statCap}`);
+      }
+      for (const k of Object.keys(p.stats ?? {})) this.check(statKeys.includes(k), `${o}: unknown stat "${k}"`);
+      const own = p.traits ?? [];
+      for (const t of own) this.ref(o, 'trait', t, traitSet);
+      this.check(new Set(own).size === own.length, `${o}: a trait is listed twice`);
+      if (tier) {
+        const sigs = own.filter((t) => traits[t]?.signature).length;
+        this.check(sigs === (tier.signature ? 1 : 0), `${o}: ${tier.signature ? 'needs exactly one' : 'may not have a'} signature trait (has ${sigs})`);
+        this.check(own.length - sigs >= 1 && own.length - sigs <= tier.traitSlots, `${o}: ${own.length - sigs} normal traits, the ${p.tier} tier allows 1–${tier.traitSlots}`);
+      }
+      if (artPath) this.art(o, artPath(p));
+    }
+    return ids;
+  }
+
   // placeholder: true means "no art yet, drawn as a placeholder on purpose" — reported as a warning, not an error.
   art(owner, path, { placeholder = false } = {}) {
     this._art.push({ owner, path, placeholder });

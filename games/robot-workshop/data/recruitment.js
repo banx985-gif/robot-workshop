@@ -1,5 +1,6 @@
 // Recruitment (bible §16, §15.7, §39.1). Plain data for core/RecruitmentSystem.js and the candidate maker
-// (src/systems/Candidates.js). Legendary and secret staff are never in these pools (Milestones 11/17).
+// (src/systems/Candidates.js). Legendary and secret staff are never in these pools (their arrival events come
+// in Milestones 16–17). Named §15 staff join the pools once their unlock rule is met (data/staff.js).
 
 // §16.2 channels. roles: who the channel finds. weights: §16.3 tier chances (percent).
 //   eliteNeeds: elite only rolls once this rule holds (§16.2 Agency: "small elite chance after conditions").
@@ -66,6 +67,7 @@ export const RECRUIT_RULES = {
   techChipItem: 'techChipRefresh',
   reappearChance: 0.1, // M10 choice: a fired worker turns up on a new card 10% of the time (§39.1: they can reappear)
   specialDays: 56, // §15.7: a special arrival stays 56 game days
+  namedChance: 0.35, // M11 choice: when named §15 staff fit a card, 35% of cards are one of them
 };
 
 // Store stub items (the real store comes later). §16.4.

@@ -22,9 +22,13 @@ export function describeUnlock(rule) {
     case 'counter':
       return (COUNTERS[rule.counter] ?? `{n} × ${rule.counter}`).replace('{n}', rule.min);
     case 'competition':
-      return COMPETITION_EVENTS[rule.event] ?? rule.event;
+      return (COMPETITION_EVENTS[rule.event] ?? rule.event).replace('{n}', rule.min);
     case 'secret':
       return 'Secret';
+    case 'starter':
+      return 'Starter team';
+    case 'tutorial':
+      return rule.when === 'month1' ? 'Tutorial hire (Month 1)' : 'Tutorial hire (Local Trial)';
     case 'flag':
       return FLAG_NAMES[rule.flag] ?? rule.flag;
     case 'role':

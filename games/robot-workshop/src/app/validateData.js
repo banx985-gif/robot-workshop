@@ -6,8 +6,9 @@ import { COMPONENTS, SLOTS, STARTER_PARTS } from '../../data/components.js';
 import { VISUAL_FAMILIES, VISUALS } from '../../data/visuals.js';
 import { PHASES, PROJECT_TIERS } from '../../data/phases.js';
 import { ROBOT_STAT_KEYS, STAT_KEYS } from '../../data/stats.js';
-import { STAFF, ROLES, TIERS } from '../../data/staff.js';
-import { TRAITS } from '../../data/traits.js';
+import { STAFF, ROLES, TIERS, STARTER_IDS, CAREER_COUNTERS } from '../../data/staff.js';
+import { TRAITS, NORMAL_TRAITS, LATER_WORDS } from '../../data/traits.js';
+import { SIGNATURE_HOOKS } from '../systems/signatureHooks.js';
 import { RANKS } from '../../data/economy.js';
 import { UNLOCK_TYPES, RESEARCH_BRANCHES, RESEARCH_MAX_LEVEL, FACILITY_NAMES, COUNTERS, COMPETITION_EVENTS, FLAG_NAMES } from '../../data/unlocks.js';
 import { FACILITIES, FACILITY_ORDER, STATIONS, FALLBACK_STATIONS, EXPANSIONS, WORKSHOP_START, PROJECT_BAYS, BUILD_ART } from '../../data/facilities.js';
@@ -67,7 +68,7 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
         v.check(rule.event in COMPETITION_EVENTS, `${owner}: unknown competition "${rule.event}"`);
         break;
       case 'secret':
-        v.check(/^SEC-[A-Z]+-\d\d$/.test(rule.id), `${owner}: bad secret id "${rule.id}"`);
+        v.check(/^SEC-[A-Z]+-([A-Z]\d|\d\d)$/.test(rule.id), `${owner}: bad secret id "${rule.id}"`);
         break;
       case 'all':
         v.check(Array.isArray(rule.of) && rule.of.length > 1, `${owner}: "all" rule needs two or more parts`);
@@ -158,16 +159,49 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
     v.ref(`phase ${ph.id}`, 'role', ph.roleMatch, new Set(Object.keys(ROLES)));
   }
 
-  // --- staff (only the parts this milestone uses) ---
-  v.uniqueIds('staff', STAFF);
+  // --- staff (§15, Milestone 11): all 50, ids unique, stats within tier caps, traits exist, art exists ---
+  v.staffRoster('staff', STAFF, { roles: ROLES, tiers: TIERS, traits: TRAITS, statKeys: STAT_KEYS, artPath: (s) => `assets/images/staff/${s.art}.png` });
+  v.check(STAFF.length === 50, `staff: expected 50, found ${STAFF.length}`);
+  // Each role has 01–10; 01–08 are Standard/Rare/Elite, 09 Legendary, 10 Secret (§15.1–15.5).
+  for (const [roleId, r] of Object.entries(ROLES)) {
+    const ids = STAFF.filter((s) => s.role === roleId).map((s) => s.id);
+    v.check(ids.join() === Array.from({ length: 10 }, (_, i) => `${r.idPrefix}${String(i + 1).padStart(2, '0')}`).join(), `staff: ${r.name} ids should be ${r.idPrefix}01–${r.idPrefix}10 in order`);
+  }
+  const STAFF_UNLOCK_TYPES = ['starter', 'tutorial'];
+  const ROLE_ORDER = Object.keys(ROLES); // L1/S1 = engineer … L5/S5 = pilot (§29.1–29.2)
   for (const s of STAFF) {
     const o = `staff ${s.id}`;
-    v.ref(o, 'role', s.role, new Set(Object.keys(ROLES)));
-    if (v.ref(o, 'tier', s.tier, new Set(Object.keys(TIERS)))) {
-      for (const [k, val] of Object.entries(s.stats)) v.check(val <= TIERS[s.tier].statCap, `${o}: starting ${k} ${val} is over the ${s.tier} cap`);
-    }
-    for (const t of s.traits) v.ref(o, 'trait', t, new Set(Object.keys(TRAITS)));
+    const n = Number(s.id.slice(3));
+    v.check(s.art === `staff_${ROLES[s.role]?.artFolder}_${s.id.slice(3)}`, `${o}: art "${s.art}" does not match the roster id`);
+    v.check(n === 9 ? s.tier === 'legendary' : n === 10 ? s.tier === 'secret' : RECRUITABLE_TIERS.includes(s.tier), `${o}: tier ${s.tier} is wrong for number ${n}`);
+    v.check(Number.isInteger(s.startLevel) && s.startLevel >= 1 && s.startLevel <= 30, `${o}: bad starting level`);
+    v.check(Number.isInteger(s.salary) && s.salary > 0 && s.salary % 10 === 0, `${o}: bad salary ${s.salary}`);
+    v.check(typeof s.name === 'string' && s.name.length > 0, `${o}: no name`);
+    if (STAFF_UNLOCK_TYPES.includes(s.unlock?.type)) v.check(s.unlock.type === 'starter' || ['month1', 'localTrial'].includes(s.unlock.when), `${o}: bad tutorial rule`);
+    else checkUnlock(o, s.unlock);
+    for (const ch of s.channels ?? []) v.ref(o, 'channel', ch, new Set(CHANNELS.map((c) => c.id)));
+    // Legendary and secret staff stay locked: a secret rule, never a channel (§9.4, §16.3).
+    const secretIn = (rule) => (rule?.type === 'all' ? rule.of.some(secretIn) : rule?.type === 'secret');
+    if (!RECRUITABLE_TIERS.includes(s.tier)) {
+      v.check(secretIn(s.unlock) && !s.channels, `${o}: legendary/secret staff must be locked behind a secret (no channels)`);
+      v.check(s.unlock.id === `SEC-STAFF-${s.tier === 'legendary' ? 'L' : 'S'}${ROLE_ORDER.indexOf(s.role) + 1}` || s.unlock.of?.some((r) => r.id === `SEC-STAFF-S${ROLE_ORDER.indexOf(s.role) + 1}`), `${o}: wrong secret id`);
+    } else v.check(!secretIn(s.unlock), `${o}: only legendary/secret staff use secret rules`);
   }
+  v.check(STARTER_IDS.join() === 'ENG01,PRG01,MEC01', 'staff: starters must be ENG01, PRG01, MEC01 (§15.6)');
+  // Traits: the 20 of §9.8 plus 10 signatures, one per legendary/secret worker; every signature hook is written.
+  v.check(NORMAL_TRAITS.length === 20, `traits: expected the 20 of §9.8, found ${NORMAL_TRAITS.length}`);
+  for (const [id, t] of Object.entries(TRAITS)) {
+    const o = `trait ${id}`;
+    v.check(typeof t.name === 'string' && typeof t.description === 'string' && t.description.length > 10, `${o}: needs a name and a plain-English description`);
+    if (t.signature) {
+      v.check(t.signature.hook in SIGNATURE_HOOKS, `${o}: unknown signature hook "${t.signature.hook}"`);
+      v.check(STAFF.filter((s) => s.traits.includes(id)).length === 1, `${o}: a signature belongs to exactly one person`);
+    } else v.check(!!t.effects && Object.keys(t.effects).length > 0, `${o}: no effects`);
+    if (t.later) v.check(t.later in LATER_WORDS, `${o}: unknown "later" system`);
+  }
+  v.check(Object.values(TRAITS).filter((t) => t.signature).length === 10, 'traits: expected 10 signature traits');
+  for (const h of Object.values(SIGNATURE_HOOKS)) v.check(typeof h.point === 'string' && typeof h.apply === 'function', 'signature hooks: each needs a point and apply()');
+  v.check(CAREER_COUNTERS.length === 6 && new Set(CAREER_COUNTERS.map((c) => c.key)).size === 6, 'career counters: expected six');
 
   // --- market (§14.1–14.2) ---
   const segIds = v.uniqueIds('segments', SEGMENTS);

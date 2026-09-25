@@ -35,6 +35,8 @@ import { createBuildScreen } from './screens/BuildScreen.js';
 import { createResearchScreen } from './screens/ResearchScreen.js';
 import { createRecruitmentScreen } from './screens/RecruitmentScreen.js';
 import { createTrainingScreen } from './screens/TrainingScreen.js';
+import { createStaffDetailScreen } from './screens/StaffDetailScreen.js';
+import { createStaffDebugScreen } from './screens/StaffDebugScreen.js';
 import { RECRUIT_ART, PORTRAITS, PORTRAIT_FOLDER } from '../data/recruitment.js';
 import { TRAINING_ART } from '../data/training.js';
 import { RESEARCH_ART, FEATURES } from '../data/research.js';
@@ -67,7 +69,7 @@ const ASSETS = {
   // Effects and status icons.
   ...Object.fromEntries(Object.values(VFX_ART).map((k) => art('vfx', k))),
   ...Object.fromEntries(Object.values(STATUS_ART).map((k) => art('status', k))),
-  // Staff portraits: the named staff in data, plus every portrait candidates can use (Milestone 10); role and tier badges.
+  // Staff portraits: all 50 named staff (Milestone 11), plus every portrait candidates can use; role and tier badges.
   ...Object.fromEntries(STAFF.map((s) => [s.art, `assets/images/staff/${s.art}.png`])),
   ...Object.fromEntries(Object.values(PORTRAIT_FOLDER).flatMap((f) => Object.values(PORTRAITS).flat().map((n) => art('staff', `staff_${f}_${n}`)))),
   ...Object.fromEntries(Object.values(ROLES).map((r) => art('badges', r.badge))),
@@ -493,7 +495,7 @@ const guide = new GuideSystem({
   bus,
   targetRect: guideTarget,
   screen: () => router.currentName,
-  canShow: () => campaignReady && !major.active && !campaign.closed && !buildScreen?.confirm && !['boot', 'test', 'debugbuilder', 'help', 'components'].includes(router.currentName),
+  canShow: () => campaignReady && !major.active && !campaign.closed && !buildScreen?.confirm && !['boot', 'test', 'debugbuilder', 'help', 'components', 'staffdebug'].includes(router.currentName),
   pause: () => {
     if (campaign.clock.paused) return false;
     campaign.clock.pause();
@@ -527,6 +529,8 @@ const contractsScreen = createContractsScreen({ renderer, layout, assets, campai
 const buildScreen = createBuildScreen({ renderer, layout, assets, campaign, router, workshop: workshopScreen, hud });
 const recruitScreen = createRecruitmentScreen({ renderer, layout, assets, bus, campaign, router });
 const trainingScreen = createTrainingScreen({ renderer, layout, assets, bus, campaign, router });
+const staffDetailScreen = createStaffDetailScreen({ renderer, layout, assets, bus, campaign, router, workshop: workshopScreen });
+const staffDebugScreen = createStaffDebugScreen({ renderer, layout, assets, campaign, router });
 const researchScreen = createResearchScreen({ renderer, layout, assets, bus, campaign, router, debugEnabled: debug.enabled });
 // A throwaway run with the three starters on its own bus: the debug builder builds robots in it.
 const makeSandbox = () => {
@@ -637,9 +641,9 @@ bus.on('research:milestone', ({ milestone, fired }) => {
   major.show({ title: `${milestone.count} research topics done!`, subtitle: `${fired.map((a) => FEATURES[a.id]?.name ?? a.id).join(' + ')}: ${f?.note ?? ''}`, accent: '#4FC3F7' });
 });
 // Hiring and training (Milestone 10): a new face walks in; a finished course floats its gains over the worker.
-bus.on('staff:hired', ({ staff }) => {
+bus.on('staff:hired', ({ staff, debug: spawned }) => {
   audio.play('levelUp');
-  debug.log(`hired ${staff.name} (${staff.id})`);
+  debug.log(`${spawned ? 'debug-spawned' : 'hired'} ${staff.name} (${staff.id})`);
 });
 bus.on('training:complete', ({ staff, course, gains }) => {
   const txt = Object.entries(gains).map(([k, v]) => `${k.toUpperCase()} +${v}`).join(' ');
@@ -679,6 +683,7 @@ if (debug.enabled) {
   window.__m8 = { ...window.__m7b, build: buildScreen, facilities: campaign.facilities, FACILITIES };
   window.__m9 = { ...window.__m8, research: researchScreen, researchSystem: campaign.research, unlocks: campaign.unlocks };
   window.__m10 = { ...window.__m9, recruit: recruitScreen, training: trainingScreen, recruitment: campaign.recruitment, trainingSystem: campaign.training, roster: rosterScreen };
+  window.__m11 = { ...window.__m10, staffDetail: staffDetailScreen, staffDebug: staffDebugScreen, careers: campaign.careers, STAFF };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
   bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));
@@ -703,7 +708,9 @@ router
   .register('research', researchScreen)
   .register('recruit', recruitScreen)
   .register('training', trainingScreen)
+  .register('staffDetail', staffDetailScreen)
   .register('debugbuilder', debugBuilderScreen);
+if (debug.enabled) router.register('staffdebug', staffDebugScreen); // ?debug=1 only: spawn any of the 50
 router.go('boot');
 loop.start();
 

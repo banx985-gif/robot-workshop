@@ -1,7 +1,8 @@
 // Staff roster: one card per worker with portrait, role, level, the 5 work stats,
 // Energy/Morale, traits and what they're doing right now.
-// Tap a card → back to the workshop with that worker selected. Card buttons: Train (opens Training with them
-// picked) and Fire (tap twice). The header opens Hiring (a "!" when a special candidate is waiting) and Training.
+// Tap a card → that worker's detail screen (traits and career record, Milestone 11). Card buttons: Train (opens
+// Training with them picked) and Fire (tap twice). The header opens Hiring (a "!" when a special candidate is
+// waiting) and Training. Debug builds add "Staff (debug)": spawn any of the 50 (src/screens/StaffDebugScreen.js).
 import { ScrollList } from '../../../../core/ui/ScrollList.js';
 import { drawStaffCard, staffCardButtonAt, STAFF_CARD_HEIGHT } from '../../../../core/ui/StaffCard.js';
 import { drawButton, hitRect } from '../../../../core/ui/Button.js';
@@ -58,6 +59,11 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
     return { x: sr.x + 24, y: sr.y + sr.h - 120, w: 460, h: 96 };
   }
 
+  function staffDebugRect() {
+    const sr = layout.safeRect;
+    return { x: sr.x + sr.w - 24 - 460, y: sr.y + sr.h - 120, w: 460, h: 96 };
+  }
+
   function viewFor(s) {
     const need = campaign.staff.xpNeeded(s.level);
     return {
@@ -71,7 +77,7 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
         { label: 'Energy', value: s.energy, max: 100, color: '#7CFFB2' },
         { label: 'Morale', value: s.morale, max: 100, color: '#FFB74D' },
       ],
-      chips: s.traits.map((t) => ({ label: TRAITS[t]?.name ?? t, detail: TRAITS[t]?.description })),
+      chips: s.traits.map((t) => ({ label: (TRAITS[t]?.signature ? '★ ' : '') + (TRAITS[t]?.name ?? t), detail: TRAITS[t]?.description })),
       icons: Object.keys(STATUS_ICONS)
         .filter((k) => s.status[k])
         .map((k) => STATUS_ICONS[k]),
@@ -113,6 +119,7 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
 
     onTap(p) {
       if (topBar.handleTap(p)) return;
+      if (debug.enabled && hitRect(p, staffDebugRect())) return router.go('staffdebug');
       if (debug.enabled && hitRect(p, resetButtonRect())) {
         campaign.newGame();
         campaign.save();
@@ -148,7 +155,7 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
         }
         return;
       }
-      router.go('workshop', { selectId: hit.item.id });
+      router.go('staffDetail', { staffId: hit.item.id });
     },
 
     onDragStart(p) {
@@ -191,7 +198,10 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
         ctx.textBaseline = 'middle';
         ctx.fillText(message.text, r.x + r.w / 2, r.y + r.h / 2, r.w - 30);
       }
-      if (debug.enabled) drawButton(ctx, resetButtonRect(), 'New game (debug)', { accent: '#FF5A5A' });
+      if (debug.enabled) {
+        drawButton(ctx, resetButtonRect(), 'New game (debug)', { accent: '#FF5A5A' });
+        drawButton(ctx, staffDebugRect(), 'Staff (debug)', { accent: '#FF5A5A' });
+      }
     },
   };
   for (const e of ['campaign:ready', 'staff:hired', 'staff:fired']) bus.on(e, () => list.setItems(campaign.staff.staff));

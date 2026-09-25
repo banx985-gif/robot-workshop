@@ -10,6 +10,9 @@
 //   Quality    = §10.11 exactly;  review = Quality ÷ 10 ± seeded 0.35 (§10.11)
 // Facility bonuses (Milestone 8) come from effects(key) — the shared facility effect query — never from
 // facility ids: station progress / work-stat bonuses, stat-gain %, and flat stats (data/facilities.js).
+// Traits (Milestone 11, data/traits.js): worker traits change that worker's score; team traits count once per
+// team (core/StaffSystem groupEffect); signature traits run through src/systems/signatureHooks.js.
+// job.data.contributors lists everyone who has worked a day on the robot (career records, finish signatures).
 import { PURPOSES } from '../../data/purposes.js';
 import { COMPONENTS, SLOTS } from '../../data/components.js';
 import { PHASES, PROJECT_TIERS, BUDGET_FOCUS } from '../../data/phases.js';
@@ -112,6 +115,8 @@ export class RobotBuildSystem {
         faultsFixed: 0,
         nextFaultId: 1,
         breakthroughs: [], // stub log: { phase, day, chance, hit }
+        faultsByPhase: {}, // faults found per phase (Clean Code)
+        contributors: [], // staff ids who have worked on it
       },
     });
   }
@@ -149,6 +154,42 @@ export class RobotBuildSystem {
     return 1 + this.effects(`stationStatPct.${statKey}`) / 100;
   }
 
+  // --- the team and its traits ----------------------------------------------------
+  team(job) {
+    return job.slots.map((id) => id && this.staff.get(id)).filter(Boolean);
+  }
+
+  // Everyone still here who worked on it, plus whoever is on it now.
+  crew(job) {
+    const ids = new Set([...(job.data.contributors ?? []), ...job.slots.filter(Boolean)]);
+    return [...ids].map((id) => this.staff.get(id)).filter(Boolean);
+  }
+
+  teamPct(job, key) {
+    return this.staff.groupEffect(this.team(job), key);
+  }
+
+  // One worker's own trait multiplier in this phase (Specialist) and what teammates give them (Team Player).
+  traitWorkerMultiplier(job, phase, s) {
+    const role = this.staff.traitEffect(s, s.role === phase.roleMatch ? 'roleMatchPct' : 'offRolePct');
+    let given = 0;
+    for (const o of this.team(job)) if (o !== s) given += this.staff.traitEffect(o, 'teamStatPct');
+    return (1 + role / 100) * (1 + given / 100);
+  }
+
+  // All-Rounder: stats outside the worker's main one count more.
+  traitStatMultiplier(s, statKey) {
+    const pct = this.staff.traitEffect(s, 'offPrimaryPct');
+    return pct && this.staff.roles[s.role]?.primaryStat !== statKey ? 1 + pct / 100 : 1;
+  }
+
+  // Mentor: XP bonus for a worker from a higher-level teammate (the best one counts).
+  mentorPct(job, s) {
+    let best = 0;
+    for (const o of this.team(job)) if (o !== s && o.level > s.level) best = Math.max(best, this.staff.traitEffect(o, 'mentorXpPct'));
+    return best;
+  }
+
   // --- live numbers ---------------------------------------------------------
   currentStats(job) {
     const base = this.baseStats(job.data.components);
@@ -162,7 +203,9 @@ export class RobotBuildSystem {
 
   faultChance(job, phase, teamScore) {
     const d = job.data;
-    const avgCx = d.totalCx / SLOTS.length;
+    const cx = { job, cx: d.totalCx };
+    this.staff.runSignatures(this.team(job), 'faultChance', cx); // Impossible Tolerances
+    const avgCx = cx.cx / SLOTS.length;
     let chance = R.faultBaseChance + this.partFaultChance(d.components);
     chance *= 1 + (R.faultComplexityPct / 100) * (avgCx - 1);
     const deficit = Math.max(0, R.faultDeficit.expectedScore - teamScore) / R.faultDeficit.expectedScore;
@@ -189,21 +232,33 @@ export class RobotBuildSystem {
       now: () => this.now(),
 
       // Facilities: the stage's station speeds progress; the workbench boosts a work stat (§18.2).
-      progressModifier: (job, phase) => this.progressMultiplier(phase),
-      statModifier: (job, phase, s, k) => this.statMultiplier(k),
+      // Perfectionist: every stage takes longer (+6% time = progress ÷ 1.06).
+      progressModifier: (job, phase) => this.progressMultiplier(phase) / (1 + this.teamPct(job, 'phaseTimePct') / 100),
+      statModifier: (job, phase, s, k) => this.statMultiplier(k) * this.traitStatMultiplier(s, k),
 
       // §9.7: a worker whose role matches the phase → +8% for the whole team.
-      workerModifier: (job, phase) => {
+      workerModifier: (job, phase, s) => {
         const match = job.slots.some((id) => id && this.staff.get(id)?.role === phase.roleMatch);
-        return match ? 1 + R.roleMatchBonusPct / 100 : 1;
+        return (match ? 1 + R.roleMatchBonusPct / 100 : 1) * this.traitWorkerMultiplier(job, phase, s);
       },
 
       onDay: (job, phase, { score }) => {
+        const d = job.data;
+        d.contributors ||= [];
+        for (const id of job.slots) {
+          if (!id || d.contributors.includes(id)) continue;
+          d.contributors.push(id);
+          this.bus?.emit('robot:joined', { job, staffId: id }); // career record: projects worked on
+        }
         if (!phase.faults) return;
         if (this.rng.chance(this.faultChance(job, phase, score))) {
-          const d = job.data;
+          const roll = { job, phase, allow: true };
+          this.staff.runSignatures(this.team(job), 'faultRoll', roll); // Clean Code
+          if (!roll.allow) return;
           d.faults.push({ id: d.nextFaultId++, phase: phase.id, day: job.day });
           d.faultsFound++;
+          d.faultsByPhase ||= {};
+          d.faultsByPhase[phase.id] = (d.faultsByPhase[phase.id] ?? 0) + 1;
           this.bus?.emit('robot:fault', { job, phase });
         }
       },
@@ -211,7 +266,7 @@ export class RobotBuildSystem {
       // Breakthrough stub: roll once at 60% of each phase and log it. Effects come later.
       onCheckpoint: (job, phase, frac) => {
         if (frac !== R.breakthroughCheckAt) return;
-        const chance = Math.min(R.breakthroughCap, R.breakthroughBaseChance);
+        const chance = Math.min(R.breakthroughCap, R.breakthroughBaseChance * (1 + this.teamPct(job, 'breakthroughPct') / 100)); // Inventive
         const hit = this.rng.chance(chance);
         job.data.breakthroughs.push({ phase: phase.id, day: job.day, chance, hit });
         this.bus?.emit('robot:breakthroughRoll', { job, phase, hit });
@@ -219,11 +274,13 @@ export class RobotBuildSystem {
 
       onPhaseComplete: (job, phase, summary) => {
         const d = job.data;
-        const q = 1 + this.focusOf(job).qualityGainPct / 100;
+        const team = this.team(job);
+        const q = (1 + this.focusOf(job).qualityGainPct / 100) * (1 + this.staff.groupEffect(team, 'qualityGainPct') / 100); // Perfectionist
+        const traitGain = this.staff.groupEffectMap(team, 'gainPct'); // Reliability Nut, Speed Freak, Market Sense
         const avg = summary.avgScore;
-        for (const [k, share] of Object.entries(phase.gains)) d.gains[k] += Math.round(avg * share * R.gainScale * q * this.gainMultiplier(k));
+        for (const [k, share] of Object.entries(phase.gains)) d.gains[k] += Math.round(avg * share * R.gainScale * q * this.gainMultiplier(k) * (1 + (traitGain[k] ?? 0) / 100));
         if (phase.innovationShare) d.innovation = round1(d.innovation + avg * phase.innovationShare * q);
-        if (phase.setsFit) d.fit = Math.min(100, Math.round(avg * R.fitScale));
+        if (phase.setsFit) d.fit = Math.min(100, Math.round(avg * R.fitScale * (1 + this.staff.groupEffect(team, 'fitPct') / 100)));
         d.qualityBonus = round1(d.qualityBonus + Math.min(R.phaseQualityBonus.maxPerPhase, avg * R.phaseQualityBonus.perScore) * q);
 
         if (phase.removesFaults && d.faults.length) {
@@ -232,10 +289,23 @@ export class RobotBuildSystem {
           d.faults = d.faults.filter(() => !this.rng.chance(p));
           d.faultsFixed += before - d.faults.length;
         }
+        // Built Once: a stage that always fixes one more fault.
+        this.staff.runSignatures(team, 'phaseComplete', {
+          job,
+          phase,
+          fixFault: () => {
+            if (!d.faults.length) return;
+            d.faults.shift();
+            d.faultsFixed++;
+          },
+        });
 
         // XP for everyone who worked this phase (§9.3 "project phase contribution").
+        // Mentor: lower-level teammates earn more.
         for (const [id, w] of Object.entries(summary.workers)) {
-          this.staff.addXp(id, Math.round(R.phaseXp.base + w.avgScore * R.phaseXp.perScore));
+          const s = this.staff.get(id);
+          const mentor = s ? 1 + this.mentorPct(job, s) / 100 : 1;
+          this.staff.addXp(id, Math.round((R.phaseXp.base + w.avgScore * R.phaseXp.perScore) * mentor));
         }
       },
 
@@ -263,8 +333,12 @@ export class RobotBuildSystem {
     const d = job.data;
     const purpose = PURPOSES[d.purpose];
     const stats = this.currentStats(job);
+    // Signature traits of everyone who worked on it (Icon Maker, Ghost Logic, Unbreakable, Future Form).
+    const extra = {};
+    const sig = { job, stats, innovation: 0, result: extra };
+    const signatures = this.staff.runSignatures(this.crew(job), 'finish', sig);
     const weighted = this.weightedScore(d.purpose, stats);
-    const innovation = round1(d.innovation + this.partInnovation(d.components));
+    const innovation = round1(d.innovation + this.partInnovation(d.components) + sig.innovation);
     const match = this.purposeMatch(d.purpose, stats);
     const fit = Math.min(100, Math.round(d.fit * match));
     const quality = round1(clamp(weighted / 6.5 + innovation * 0.2 + d.qualityBonus - d.faults.length * R.faultQualityPenalty, 0, 100));
@@ -291,6 +365,8 @@ export class RobotBuildSystem {
       faultsFound: d.faultsFound,
       faultsFixed: d.faultsFixed,
       breakthroughs: d.breakthroughs.filter((b) => b.hit).length,
+      signatures, // signature traits that changed this robot
+      ...extra, // e.g. premiumDemandMult (Future Form)
     };
   }
 }

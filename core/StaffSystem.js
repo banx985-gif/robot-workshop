@@ -12,6 +12,12 @@
 //   planActivity(staff) → 'working' | 'resting' | other   optional: decides each worker's day (other: no Energy change)
 //   energyLossMultiplier(staff) → number                   optional: extra multiplier on working Energy loss
 //   restModifier(staff) → { energyMult, morale }           optional: resting bonuses (e.g. a break room)
+//   signatureHooks: { hookName: { point, apply(ctx, params, staff) } }   optional: what each signature trait does
+//
+// Signature traits (the one-of-a-kind rule a legendary/secret worker brings, e.g. "software faults can't
+// exceed 1 per project") are plain data on the trait: signature: { hook: 'phaseFaultCap', params: { … } }.
+// The game writes each named hook once, at a named moment (point). runSignatures(team, point, ctx) runs the
+// ones on a team at that moment. A hook whose system isn't built yet simply has no caller.
 import { StaffModel } from './StaffModel.js';
 
 export const DEFAULT_RULES = {
@@ -33,9 +39,11 @@ export const DEFAULT_RULES = {
 //   xpGainPct      +% XP gained
 //   energyLossPct  +/-% Energy lost while working
 //   moraleFloor    Morale can't drop below this
+// Any other key is the game's own: it reads it with traitEffect / groupEffect (numbers) or the *Map versions
+// (sets of numbers such as { REL: 10 }).
 
 export class StaffSystem {
-  constructor({ rng, bus = null, statKeys, roles = {}, tiers = {}, traits = {}, rules = {}, planActivity = null, energyLossMultiplier = null, restModifier = null }) {
+  constructor({ rng, bus = null, statKeys, roles = {}, tiers = {}, traits = {}, rules = {}, planActivity = null, energyLossMultiplier = null, restModifier = null, signatureHooks = {} }) {
     this.rng = rng;
     this.bus = bus;
     this.statKeys = statKeys;
@@ -46,6 +54,7 @@ export class StaffSystem {
     this.planActivity = planActivity;
     this.energyLossMultiplier = energyLossMultiplier;
     this.restModifier = restModifier;
+    this.signatureHooks = signatureHooks;
     this.staff = [];
   }
 
@@ -83,8 +92,67 @@ export class StaffSystem {
   // --- derived values ------------------------------------------------------
   traitEffect(staff, key) {
     let total = 0;
-    for (const t of staff.traits) total += this.traits[t]?.effects?.[key] ?? 0;
+    for (const t of staff.traits) {
+      const v = this.traits[t]?.effects?.[key];
+      if (typeof v === 'number') total += v;
+      else if (v === true) total = total || 1;
+    }
     return total;
+  }
+
+  // A trait effect that is a set of numbers (e.g. gainPct: { REL: 10 }) for one worker.
+  traitEffectMap(staff, key) {
+    return sumMaps(staff.traits.map((t) => this.traits[t]?.effects?.[key]));
+  }
+
+  // --- traits on a group (a project team, a shift…): each trait counts once, however many have it ---
+  groupTraits(list) {
+    const out = new Map(); // traitId → first worker who has it
+    for (const s of list) for (const t of s?.traits ?? []) if (!out.has(t)) out.set(t, s);
+    return out;
+  }
+
+  groupEffect(list, key) {
+    let total = 0;
+    for (const t of this.groupTraits(list).keys()) {
+      const v = this.traits[t]?.effects?.[key];
+      if (typeof v === 'number') total += v;
+      else if (v === true) total = total || 1;
+    }
+    return total;
+  }
+
+  groupEffectMap(list, key) {
+    return sumMaps([...this.groupTraits(list).keys()].map((t) => this.traits[t]?.effects?.[key]));
+  }
+
+  // --- signature traits ---------------------------------------------------------
+  isSignature(traitId) {
+    return !!this.traits[traitId]?.signature;
+  }
+
+  signatureOf(staff) {
+    return staff.traits.find((t) => this.isSignature(t)) ?? null;
+  }
+
+  // Signatures on a group whose hook runs at this point: [{ staff, traitId, hook, params }].
+  signaturesAt(list, point) {
+    const out = [];
+    for (const [t, s] of this.groupTraits(list)) {
+      const sig = this.traits[t]?.signature;
+      if (sig && this.signatureHooks[sig.hook]?.point === point) out.push({ staff: s, traitId: t, hook: sig.hook, params: sig.params ?? {} });
+    }
+    return out;
+  }
+
+  // Run every signature on the group at this point. ctx is the game's own object the hooks read and change.
+  // Returns the trait ids that ran.
+  runSignatures(list, point, ctx) {
+    const ran = [];
+    for (const x of this.signaturesAt(list, point)) {
+      if (this.signatureHooks[x.hook].apply(ctx, x.params, x.staff) !== false) ran.push(x.traitId);
+    }
+    return ran;
   }
 
   statCap(staff) {
@@ -191,6 +259,16 @@ export class StaffSystem {
     if (!canInspire) s.status.inspired = false;
     else if (rollInspired && !s.status.inspired) s.status.inspired = this.rng.chance(r.inspired.dailyChance);
   }
+}
+
+// { a: 1 } + { a: 2, b: 3 } → { a: 3, b: 3 }. Skips anything that isn't an object.
+function sumMaps(list) {
+  const out = {};
+  for (const m of list) {
+    if (!m || typeof m !== 'object') continue;
+    for (const [k, v] of Object.entries(m)) out[k] = (out[k] ?? 0) + v;
+  }
+  return out;
 }
 
 function clamp(v, lo, hi) {

@@ -69,6 +69,16 @@ export class StaffModel {
     return this.traits.includes(id);
   }
 
+  // Their signature trait (legendary/secret staff carry one), from the game's trait data; null if none.
+  signatureTrait(traitDefs) {
+    return this.traits.find((t) => traitDefs[t]?.signature) ?? null;
+  }
+
+  // Normal traits only (the ones that fill trait slots).
+  normalTraits(traitDefs) {
+    return this.traits.filter((t) => !traitDefs[t]?.signature);
+  }
+
   // How well they work today. Bible §9.2:
   //   0.70 + Energy/250 + Morale/500, clamped to 0.65 .. 1.30
   workMultiplier({ base = 0.7, energyDiv = 250, moraleDiv = 500, min = 0.65, max = 1.3 } = {}) {

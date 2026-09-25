@@ -1,6 +1,6 @@
 // One Robot Workshop run: seeded RNG, calendar, staff, robot projects, history, money, products,
 // reputation, market, contracts, the workshop layout (facilities + expansions), research, hiring, training,
-// and saving/loading.
+// career records (Milestone 11) and saving/loading.
 // Random numbers: the main stream drives staff, projects and sales; the market and the contracts each
 // have their own seeded stream, so contract offers never change how a robot build rolls.
 // Everything that must come back identical after a reload lives here.
@@ -24,10 +24,13 @@ import { RecruitmentSystem } from '../../../../core/RecruitmentSystem.js';
 import { TrainingSystem } from '../../../../core/TrainingSystem.js';
 import { StoreStub } from '../../../../core/StoreStub.js';
 import { StaffModel } from '../../../../core/StaffModel.js';
+import { CareerRecords } from '../../../../core/CareerRecords.js';
 import { CHANNELS, RECRUIT_RULES, STORE_ITEMS, TUTORIAL_HIRES } from '../../data/recruitment.js';
 import { COURSES, TRAINING_SLOTS, TRAINING_DURATION_EFFECTS, TRAINING_RULES } from '../../data/training.js';
 import { candidateMaker, namedCandidate, signingFee } from '../systems/Candidates.js';
-import { STAFF, ROLES, TIERS, STARTER_IDS, EMPLOYEE_CAP } from '../../data/staff.js';
+import { STAFF, STAFF_BY_ID, ROLES, TIERS, STARTER_IDS, EMPLOYEE_CAP, RECRUITABLE_TIERS, NOT_IN_POOL, CAREER_COUNTERS } from '../../data/staff.js';
+import { AI_HEAVY } from '../../data/unlocks.js';
+import { SIGNATURE_HOOKS } from '../systems/signatureHooks.js';
 import { TRAITS } from '../../data/traits.js';
 import { STAT_KEYS } from '../../data/stats.js';
 import { PHASES, BUDGET_FOCUS } from '../../data/phases.js';
@@ -80,6 +83,8 @@ export const SAVE_MIGRATIONS = {
   6: (record) => ({ ...record, data: { ...record.data, research: null, unlocks: null } }),
   // v7 (Milestone 9) had no hiring or training: null = a fresh candidate board, nobody training (Campaign.loadData).
   7: (record) => ({ ...record, data: { ...record.data, recruitment: null, training: null } }),
+  // v8 (Milestone 10) had no career records: null = rebuild them from the roster and the robot history (Campaign.loadData).
+  8: (record) => ({ ...record, data: { ...record.data, careers: null } }),
 };
 
 // Things research unlock actions name ("part:CH02", "facility:F07"…): for these, the research part of their
@@ -120,7 +125,10 @@ export class Campaign {
       planActivity: (s) => (this.training?.trainingOf(s.id) ? 'training' : s.assigned ? 'working' : 'resting'),
       energyLossMultiplier: (s) => 1 + (this.focusFor(s)?.energyDrainPct ?? 0) / 100,
       restModifier: () => ({ energyMult: 1 + fx('restEnergyPct') / 100, morale: fx('restMorale') }), // Break Table, Charging Dock
+      signatureHooks: SIGNATURE_HOOKS, // what each legendary/secret signature trait does
     });
+    // Career record per worker (kept after they leave): projects, robots, zero-fault builds, events, training.
+    this.careers = new CareerRecords({ bus, counters: CAREER_COUNTERS.map((c) => c.key) });
     this.history = new JobHistory({ bus });
     this.projects = new ProjectSystem({
       bus,
@@ -174,7 +182,10 @@ export class Campaign {
       reappearChance: RECRUIT_RULES.reappearChance,
       freeManualPerYear: RECRUIT_RULES.freeManualPerYear,
       hooks: {
-        makeCandidate: candidateMaker(() => this.takenLooks()),
+        makeCandidate: candidateMaker(
+          () => this.takenLooks(),
+          (ch, tier) => this.namedPool(ch, tier),
+        ),
         // §16.2: Agency's small elite chance only after its condition.
         tierWeights: (ch) => (ch.eliteNeeds && !this.ruleMet(ch.eliteNeeds) ? { ...ch.weights, elite: 0 } : ch.weights),
       },
@@ -200,7 +211,10 @@ export class Campaign {
         pay: (c, s) => this.economy.add(c.currency, -c.cost, `Training: ${c.name} (${s.name})`, 'training'),
         durationPct: (c, s) => fx(s.role === 'pilot' ? TRAINING_DURATION_EFFECTS.pilot : TRAINING_DURATION_EFFECTS.other),
         now: () => ({ day: this.clock.totalDays, year: this.clock.year }),
-        onComplete: (s, c) => this.staff.addXp(s, c.days * TRAINING_RULES.xpPerDay),
+        onComplete: (s, c) => {
+          this.staff.addXp(s, c.days * TRAINING_RULES.xpPerDay);
+          this.careers.bump(s.id, 'training');
+        },
       },
     });
     for (const e of ['training:start', 'training:complete', 'training:cancel']) bus.on(e, () => this.assignments.refresh());
@@ -252,7 +266,9 @@ export class Campaign {
       },
     });
     // A robot built for a contract is checked against it as soon as it is finished.
+    bus.on('robot:joined', ({ staffId }) => this.careers.bump(staffId, 'projects'));
     bus.on('project:complete', ({ job, record }) => {
+      this._careerFinish(job, record);
       this.projectRp(record);
       if (job.data.contractId) this.deliverRecord(job.data.contractId, record.number);
     });
@@ -335,7 +351,8 @@ export class Campaign {
     const c = OPERATING_COST;
     const staff = this.projects.teamOf(job).reduce((t, s) => t + this.salaryFor(s), 0);
     const base = c.base + job.data.buildCost / c.componentCostDivisor;
-    return Math.round((base + staff / c.salaryDivisor + this.fx('runningCostPerDay')) * c.focusMultiplier[job.data.budgetFocus]);
+    const frugal = 1 + this.robots.teamPct(job, 'runningCostPct') / 100; // Frugal
+    return Math.round((base + staff / c.salaryDivisor + this.fx('runningCostPerDay')) * c.focusMultiplier[job.data.budgetFocus] * frugal);
   }
 
   // What the parts bill comes to today, after Parts Racks / Storage Crates.
@@ -359,7 +376,7 @@ export class Campaign {
     const product = this.products.launch({ name: rec.name, launchedAt: this.clock.now(), data });
     rec.launchedProductId = product.id;
     this.addReview(product, 0);
-    this.reputation.add(rec.result.quality * REPUTATION_RULES.launchPerQuality, `Launch: ${rec.name}`);
+    this.reputation.add(Math.round(rec.result.quality * REPUTATION_RULES.launchPerQuality * this.celebrityMult()), `Launch: ${rec.name}`);
     if (!this.flags.firstLaunch) {
       this.flags.firstLaunch = true;
       this.economy.add('techChips', TECH_CHIP_REWARDS.firstLaunch, 'First commercial launch', 'reward');
@@ -404,10 +421,29 @@ export class Campaign {
         return this.research.doneCount >= rule.min;
       case 'feature':
         return this.feature(rule.id);
+      case 'counter':
+        return this.counter(rule.counter) >= rule.min;
       case 'all':
         return rule.of.every((r) => this.ruleMet(r, subject));
       default:
-        return false; // competitions, counters, secrets: later milestones
+        return false; // competitions, secrets: later milestones (the rules are stored already)
+    }
+  }
+
+  // Run counters for unlock rules. Only the ones built so far count; the rest stay at 0 until their milestone.
+  counter(name) {
+    const recs = this.history.records;
+    switch (name) {
+      case 'projectsCompleted':
+        return this.history.count;
+      case 'commercialLaunches':
+        return recs.filter((r) => r.launchedProductId).length;
+      case 'zeroFaultProjects':
+        return recs.filter((r) => r.result && r.result.faults === 0).length;
+      case 'aiHeavyProjects':
+        return recs.filter((r) => (COMPONENTS[r.result?.components?.[AI_HEAVY.slot]]?.cx ?? 0) >= AI_HEAVY.minCx).length;
+      default:
+        return 0; // researchPrototypes, distinctPurposesCompleted: later milestones
     }
   }
 
@@ -655,9 +691,87 @@ export class Campaign {
       }),
     );
     if (fee) this.economy.add('credits', -fee, `Signing fee: ${c.name}`, 'hiring');
+    this.careers.join(s, this.clock.totalDays); // a returning worker picks up their old record
     this.assignments.refresh();
     this.bus.emit('staff:hired', { staff: s, fee });
     return { ok: true, staff: s, fee };
+  }
+
+  // Named §15 staff who could be on a card from this channel at this tier right now: unlock rule met (debug
+  // "unlock all" counts), the channel fits them, and they aren't already here, on the board or in the pool of
+  // people who left. Legendary and secret staff are never here (§9.4); starters and tutorial hires arrive their own way.
+  namedPool(channel, tier) {
+    const onBoard = new Set(this.recruitment.cards.map((c) => c.staffId).filter(Boolean));
+    const gone = new Set(this.recruitment.former.map((f) => f.staffId).filter(Boolean));
+    return STAFF.filter(
+      (d) =>
+        d.tier === tier &&
+        RECRUITABLE_TIERS.includes(d.tier) &&
+        !NOT_IN_POOL.includes(d.unlock.type) &&
+        (d.channels ? d.channels.includes(channel.id) : channel.roles.includes(d.role)) &&
+        !this.staff.get(d.id) &&
+        !onBoard.has(d.id) &&
+        !gone.has(d.id) &&
+        this.unlockMet(d.unlock),
+    );
+  }
+
+  // Debug override (?debug=1): put any of the 50 straight onto the team — free, ignores the staff cap and every
+  // lock, including legendary and secret staff. Returns { ok, staff, reason }.
+  debugSpawnStaff(staffId) {
+    const d = STAFF_BY_ID[staffId];
+    if (!d) return { ok: false, reason: 'Unknown staff id' };
+    if (this.staff.get(staffId)) return { ok: false, reason: 'Already on the team' };
+    this.recruitment.board = this.recruitment.board.filter((c) => c.staffId !== staffId);
+    if (this.recruitment.special?.staffId === staffId) this.recruitment.special = null;
+    this.recruitment.former = this.recruitment.former.filter((f) => f.staffId !== staffId);
+    const s = this.staff.add(StaffModel.fromDefinition(d, STAFF_RULES));
+    this.careers.join(s, this.clock.totalDays);
+    this.assignments.refresh();
+    this.bus.emit('staff:hired', { staff: s, fee: 0, debug: true });
+    return { ok: true, staff: s };
+  }
+
+  // Celebrity: +% reputation from launches and contracts while a Celebrity works here.
+  celebrityMult() {
+    return 1 + this.staff.groupEffect(this.staff.staff, 'reputationPct') / 100;
+  }
+
+  // Career records when a robot is finished: everyone who worked on it.
+  _careerFinish(job, record) {
+    const ids = new Set([...(job.data.contributors ?? []), ...(record?.team ?? []).map((t) => t.id)]);
+    for (const id of ids) {
+      this.careers.bump(id, 'robots');
+      if (record?.result?.faults === 0) this.careers.bump(id, 'zeroFault');
+    }
+  }
+
+  // Years/months with the company (all stints), for the detail screen.
+  careerTime(id) {
+    const days = this.careers.daysEmployed(id, this.clock.totalDays);
+    const months = Math.floor(days / CALENDAR.daysPerMonth);
+    return { days, years: Math.floor(months / CALENDAR.monthsPerYear), months: months % CALENDAR.monthsPerYear };
+  }
+
+  // Saves from before Milestone 11: a record for everyone on the team (hire day from their signing-fee ledger
+  // line, else the start), with the robots they finished taken from the history.
+  _rebuildCareers() {
+    this.careers.reset();
+    for (const s of this.staff.staff) {
+      const line = this.economy.ledger.findLast?.((l) => l.reason === `Signing fee: ${s.name}`);
+      this.careers.join(s, line?.day ?? 0);
+    }
+    for (const rec of this.history.records) {
+      for (const t of rec.team ?? []) {
+        this.careers.bump(t.id, 'projects');
+        this.careers.bump(t.id, 'robots');
+        if (rec.result?.faults === 0) this.careers.bump(t.id, 'zeroFault');
+      }
+    }
+    for (const job of this.projects.jobs) for (const id of new Set(job.slots.filter(Boolean))) {
+      this.careers.bump(id, 'projects');
+      (job.data.contributors ||= []).push(id);
+    }
   }
 
   fireBlock(id) {
@@ -676,7 +790,8 @@ export class Campaign {
     if (q >= 0) this.research.assign(q, null);
     this.training.cancel(id);
     const s = this.staff.remove(id);
-    const named = STAFF.some((d) => d.id === s.id);
+    this.careers.leave(s.id, this.clock.totalDays); // the record stays (secrets and records read it later)
+    const named = !!STAFF_BY_ID[s.id];
     this.recruitment.release({ personId: s.id, staffId: named ? s.id : undefined, name: s.name, role: s.role, tier: s.tier, level: s.level, stats: { ...s.stats }, salary: s.salary, traits: [...s.traits], art: s.art });
     this.assignments.refresh();
     this.bus.emit('staff:fired', { staff: s });
@@ -747,7 +862,7 @@ export class Campaign {
     const paid = Math.round(c.payout * (1 + this.fx('contractPayoutPct') / 100)); // Reception Desk
     c.result.paid = paid;
     this.economy.add('credits', paid, `Contract: ${c.title}`, 'contract');
-    this.reputation.add(c.reputation, `Contract: ${c.title}`);
+    this.reputation.add(Math.round(c.reputation * this.celebrityMult()), `Contract: ${c.title}`);
     if (this.contractRng.chance(c.specialChance)) {
       this.economy.add('techChips', CONTRACT_RULES.special.techChips, `Contract bonus: ${c.title}`, 'reward');
       c.result.special = true;
@@ -821,7 +936,9 @@ export class Campaign {
     this.clock.load({ year: 1, month: 1, day: 1, totalDays: 0, dayProgress: 0, speed: CALENDAR.speeds[0] });
     this.startLayout();
     this.staff.load([]);
-    for (const id of STARTER_IDS) this.staff.addFromDefinition(STAFF.find((s) => s.id === id));
+    for (const id of STARTER_IDS) this.staff.addFromDefinition(STAFF_BY_ID[id]);
+    this.careers.reset();
+    for (const s of this.staff.staff) this.careers.join(s, 0);
     this.projects.load({ nextId: 1, jobs: [] });
     this.history.load({ count: 0, records: [] });
     this.assignments.refresh();
@@ -862,6 +979,7 @@ export class Campaign {
       unlocks: this.unlocks.serialize(),
       recruitment: this.recruitment.serialize(),
       training: this.training.serialize(),
+      careers: this.careers.serialize(),
       guide: this.guideState ?? null,
       flags: { ...this.flags },
     };
@@ -894,6 +1012,7 @@ export class Campaign {
     if (!data.research) for (const rec of this.history.records) this.projectRp(rec); // saves from before Milestone 9
     if (!this.recruitment.load(data.recruitment)) this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'start'); // saves from before Milestone 10
     this.training.load(data.training);
+    if (!this.careers.load(data.careers)) this._rebuildCareers(); // saves from before Milestone 11
     this.applyFeatures();
     this.guideState = data.guide ?? null;
     this.assignments.refresh();

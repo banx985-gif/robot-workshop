@@ -32,6 +32,11 @@ export const FACILITY_NAMES = {
 export const COUNTERS = {
   researchPrototypes: '{n} Research Prototypes', // {n} = the rule's min
   distinctPurposesCompleted: '{n} different purposes completed',
+  // Staff unlocks (§15, Milestone 11).
+  projectsCompleted: 'Complete {n} projects',
+  commercialLaunches: 'Launch {n} commercial models',
+  aiHeavyProjects: 'Complete {n} AI-heavy projects',
+  zeroFaultProjects: 'Finish {n} projects with zero faults',
 };
 
 export const COMPETITION_EVENTS = {
@@ -39,7 +44,13 @@ export const COMPETITION_EVENTS = {
   regionalCup: 'Regional Cup',
   nationalCup: 'National Cup',
   worldTier: 'World-tier access',
+  localTrial: 'After the Local Trial',
+  wins: 'Win {n} competitions', // { type: 'competition', event: 'wins', min }
 };
+
+// M11 choice: an "AI-heavy" project (PRG06 Noor Syn's unlock) is a robot whose AI / Sensors part is
+// complexity 3 or more (Lidar Array and up).
+export const AI_HEAVY = { slot: 'ai', minCx: 3 };
 
 // Run flags an unlock can wait for (Campaign.flags).
 export const FLAG_NAMES = {
