@@ -1,5 +1,5 @@
 // Inbox (Milestone 15): every message the game has sent, newest first — events, milestone moments, sponsors, rank-ups,
-// research, contracts. Tap one to reopen it in the event pop-up. A question still waiting for an answer can be
+// research, contracts. Tap one to reopen it in the event pop-up. Rumours opens the Rumour Archive (secrets, M16). A question still waiting for an answer can be
 // answered from here (it then leaves the pop-up queue).
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton, hitRect } from '../../../../core/ui/Button.js';
@@ -42,6 +42,11 @@ export function createInboxScreen({ renderer, layout, assets, campaign, router, 
     return { x: h.x + h.w - 290, y: h.y + 6, w: 290, h: h.h - 12 };
   }
 
+  function rumoursRect() {
+    const h = headRect();
+    return { x: h.x + h.w - 290 - 16 - 220, y: h.y + 6, w: 220, h: h.h - 12 };
+  }
+
   const rowRect = (i) => ({ x: 0, y: i * (ROW_H + GAP), w: listRect().w, h: ROW_H });
 
   const screen = {
@@ -53,6 +58,7 @@ export function createInboxScreen({ renderer, layout, assets, campaign, router, 
     },
     onTap(p) {
       if (topBar.handleTap(p)) return;
+      if (hitRect(p, rumoursRect())) return router.go('rumours', { back: 'inbox' });
       if (hitRect(p, readAllRect())) {
         campaign.notes.markAllRead();
         return;
@@ -77,7 +83,8 @@ export function createInboxScreen({ renderer, layout, assets, campaign, router, 
       const notes = campaign.notes;
       const hr = headRect();
       text(ctx, 'Inbox', hr.x + 4, hr.y + hr.h / 2, { size: 48, bold: true, baseline: 'middle' });
-      text(ctx, `${notes.inbox.length} messages · ${notes.unread} new${notes.pending ? ` · ${notes.pending} waiting` : ''}`, hr.x + 180, hr.y + hr.h / 2, { size: 28, color: '#9AA8B5', baseline: 'middle', maxWidth: hr.w - 180 - 310 });
+      text(ctx, `${notes.inbox.length} messages · ${notes.unread} new${notes.pending ? ` · ${notes.pending} waiting` : ''}`, hr.x + 180, hr.y + hr.h / 2, { size: 28, color: '#9AA8B5', baseline: 'middle', maxWidth: hr.w - 180 - 310 - 236 });
+      drawButton(ctx, rumoursRect(), 'Rumours', { accent: '#B388FF', font: 'bold 28px system-ui, sans-serif' });
       drawButton(ctx, readAllRect(), 'Mark all read', { font: 'bold 28px system-ui, sans-serif', disabled: !notes.unread });
 
       const list = notes.inbox;

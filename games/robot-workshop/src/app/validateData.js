@@ -32,6 +32,8 @@ import { RESEARCH_NODES, RESEARCH_BRANCH_ORDER, RESEARCH_BRANCH_INFO, RESEARCH_M
 
 import { EVENTS, MILESTONE_EVENTS, REPEATABLE_EVENTS, EVENT_CAPS, EVENT_ICONS, EVENT_CONDITIONS, NOTIFY_RULES } from '../../data/events.js';
 import { SPONSORS, SPONSOR_RULES } from '../../data/sponsors.js';
+import { SECRETS, SECRET_TRIGGERS, SECRET_REWARD_TYPES, SECRET_RULES, SECRET_ART } from '../../data/secrets.js';
+import { SECRET_OPS } from '../../../../core/SecretEngine.js';
 
 const SLOT_COUNTS ={ chassis: 10, mobility: 8, ai: 8, tool: 8, power: 8, special: 8 }; // §11
 const ROBOT_ART = (key) => `assets/images/robots/${key}.png`;
@@ -588,7 +590,7 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
       for (const c of e.choices ?? []) checkEffects(`${o} ${c.id}`, c.effects);
     } else v.check(!e.choices, `${o}: only choice events have choices`);
   }
-  v.check(REPEATABLE_EVENTS.at(-1)?.secret && REPEATABLE_EVENTS.at(-1).trigger?.type === 'secret', 'events: the mysterious anonymous message stays behind a secret rule until Milestones 16–17');
+  v.check(REPEATABLE_EVENTS.at(-1)?.secret && REPEATABLE_EVENTS.at(-1).trigger?.type === 'secret', 'events: the mysterious anonymous message is only fired by a secret rule (M16 hook; real rule in M17)');
   for (const e of MILESTONE_EVENTS) v.art(`event ${e.id}`, `assets/images/events/${e.art}.png`);
   v.uniqueIds('sponsors', SPONSORS);
   v.check(SPONSORS.length === 6 && SPONSOR_RULES.dealMonths === 6 && SPONSOR_RULES.unlock.rank === 'C', 'sponsors: six sponsors, 6-month deals, open at Rank C (§23)');
@@ -601,6 +603,28 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
     v.check(!!(s.art || s.icon) && !!s.benefitText && !!s.obligationText, `${o}: needs art or an icon and its words`);
     v.art(o, s.art ? `assets/images/npc/${s.art}.png` : `assets/images/ui/${s.icon}.png`);
   }
+
+  // --- §28 secret rules (Milestone 16: the 3 engine test rules; the 34 real ones arrive in Milestone 17) ---
+  v.uniqueIds('secrets', SECRETS);
+  v.check(SECRETS.length === 3 && SECRETS.every((s) => s.test), 'secrets: Milestone 16 holds only the 3 engine test rules');
+  v.check(SECRET_RULES.easing.countFactor === 0.5 && SECRET_RULES.easing.thresholdPct === 15 && SECRET_RULES.arrivalDays.repeat === 84 && SECRET_RULES.arrivalDays.first === 56, 'secrets: repeat easing differs from §30.4a (½ counts, −15% thresholds, 84-day window)');
+  const checkCond = (o, c) => {
+    if (c.all || c.any) return (c.all ?? c.any).forEach((x) => checkCond(o, x));
+    v.check(SECRET_OPS.includes(c.op), `${o}: unknown operator "${c.op}"`);
+    v.check(/^(run|account|event)./.test(c.fact ?? ''), `${o}: fact "${c.fact}" must be run.*, account.* or event.*`);
+    v.check(!c.kind || ['count', 'threshold', 'fixed'].includes(c.kind), `${o}: kind must be count / threshold / fixed`);
+    if (c.op === 'countOf') v.check(Array.isArray(c.where) && c.where.every((w) => SECRET_OPS.includes(w.op) && w.field), `${o}: countOf needs where: [{ field, op, value }]`);
+  };
+  for (const s of SECRETS) {
+    const o = `secret ${s.id}`;
+    v.check(s.triggerEvents?.length > 0 && s.triggerEvents.every((e) => e in SECRET_TRIGGERS), `${o}: needs trigger events from SECRET_TRIGGERS`);
+    v.check(!!s.oncePerRun !== !!s.oncePerAccount, `${o}: exactly one of oncePerRun / oncePerAccount`);
+    v.check(s.requiresAll?.length > 0, `${o}: needs requiresAll`);
+    for (const c of [...(s.requiresAll ?? []), ...(s.requiresAny ?? []), ...(s.forbids ?? [])]) checkCond(o, c);
+    v.check(s.clueStages?.length === 2, `${o}: needs the two clue stages of §28.1`);
+    v.check((s.rewardActions ?? []).every((a) => SECRET_REWARD_TYPES.includes(a.type) && (a.type !== 'currency' || a.id)), `${o}: unknown reward action (currency needs an id)`);
+  }
+  for (const k of Object.values(SECRET_ART)) v.check(typeof k === 'string', 'secret art: bad key');
 
   // --- every image the game loads ---
   for (const [key, path] of Object.entries(manifest)) v.art(`image "${key}"`, path, { placeholder: placeholders.includes(key) });

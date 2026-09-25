@@ -45,6 +45,9 @@ import { createRankingsScreen } from './screens/RankingsScreen.js';
 import { createTrophyScreen } from './screens/TrophyScreen.js';
 import { createComboArchiveScreen } from './screens/ComboArchiveScreen.js';
 import { createInboxScreen } from './screens/InboxScreen.js';
+import { createRumourArchiveScreen } from './screens/RumourArchiveScreen.js';
+import { createSecretDebugScreen } from './screens/SecretDebugScreen.js';
+import { SECRET_ART } from '../data/secrets.js';
 import { createEventPopup } from './ui/EventPopup.js';
 import { drawToasts } from '../../../core/ui/Toast.js';
 import { wireMessages, effectsText, fillText } from './app/Messages.js';
@@ -134,6 +137,8 @@ const ASSETS = {
   ...Object.fromEntries(MILESTONE_EVENTS.map((e) => art('events', e.art))),
   ...Object.fromEntries(Object.values(EVENT_ICONS).map((k) => art(k.startsWith('reward_') ? 'rewards' : 'ui', k))),
   ...Object.fromEntries(SPONSORS.map((s) => (s.art ? art('npc', s.art) : art('ui', s.icon)))),
+  // Secrets (Milestone 16): the ??? marker, the discovery effect and the records icon.
+  ...Object.fromEntries([art('ui', SECRET_ART.marker), art('vfx', SECRET_ART.discover), art('ui', SECRET_ART.records)]),
   // Deliberately missing file: proves the placeholder fallback.
   placeholderTest: 'assets/m0-missing-test.png',
 };
@@ -560,7 +565,7 @@ const guide = new GuideSystem({
   targetRect: guideTarget,
   screen: () => router.currentName,
   // A pop-up waiting on the workshop goes first; the guide steps back until it has been read.
-  canShow: () => campaignReady && !modal.active && !(campaign.notes.pending && presentPlace()) && !campaign.closed && !buildScreen?.confirm && !['boot', 'test', 'debugbuilder', 'help', 'components', 'staffdebug'].includes(router.currentName),
+  canShow: () => campaignReady && !modal.active && !(campaign.notes.pending && presentPlace()) && !campaign.closed && !buildScreen?.confirm && !['boot', 'test', 'debugbuilder', 'help', 'components', 'staffdebug', 'secretdebug'].includes(router.currentName),
   pause: () => {
     if (campaign.clock.paused) return false;
     campaign.clock.pause();
@@ -609,6 +614,10 @@ const competitionsScreen = createCompetitionListScreen({ renderer, layout, asset
 const rankingsScreen = createRankingsScreen({ renderer, layout, assets, campaign, router });
 const trophyScreen = createTrophyScreen({ renderer, layout, assets, campaign, router });
 const comboArchiveScreen = createComboArchiveScreen({ renderer, layout, assets, campaign, router });
+const rumourScreen = createRumourArchiveScreen({ renderer, layout, assets, campaign, router, debugEnabled: debug.enabled });
+const secretDebugScreen = createSecretDebugScreen({ renderer, layout, campaign, router });
+bus.on('secret:unlocked', ({ rule, eased, actions }) => debug.log(`secret ${rule.id}${eased ? ' (eased)' : ''}: ${actions.map((a) => a.type).join(', ')}`));
+bus.on('secret:clue', ({ rule, stage }) => debug.log(`clue ${rule.id} → stage ${stage}`));
 const inboxScreen = createInboxScreen({ renderer, layout, assets, campaign, router, goProject, hud, openEntry });
 bus.on('event:fired', ({ instance, def }) => debug.log(`event ${def.id} (${def.kind}) day ${instance.day}`));
 bus.on('sponsor:signed', ({ def }) => debug.log(`sponsor signed: ${def.name}`));
@@ -686,6 +695,8 @@ function present(e) {
       return major.show({ title: e.title, subtitle: e.body, accent: '#7CFFB2', onAck: () => router.go('result', { number: e.data.number, resumeOnExit: !!e.data.resume }) });
     case 'combo':
       return showComboDiscovered(e.data);
+    case 'secret':
+      return showSecretDiscovered(e);
     case 'rankUp':
       audio.play('levelUp');
       return major.show({ title: e.title, subtitle: e.body, accent: '#FFD166' });
@@ -754,6 +765,29 @@ function drawToastStack(ctx) {
     life: campaign.notes.toastSec,
     accent: (e) => (e.icon === EVENT_ICONS.warning ? '#FF8A80' : LEVEL_ACCENT[e.level]),
     drawIcon: (c, e, r) => (e.art ?? e.icon) && assets.drawContained(c, e.art ?? e.icon, r),
+  });
+}
+
+// "Secret discovered!" (Milestone 16): the secret-discovery effect behind the ??? marker. Tap → the Rumour Archive.
+function showSecretDiscovered(e) {
+  audio.play('levelUp');
+  major.show({
+    title: e.title,
+    subtitle: e.body,
+    accent: '#B388FF',
+    drawFn: (ctx, t) => {
+      const s = Math.min(1, t / 0.35);
+      const cx = W / 2;
+      const cy = H / 2 - 260;
+      ctx.save();
+      ctx.globalAlpha = s * (vfx.reducedFlashes ? 0.5 : 0.9);
+      const g = 640 + (vfx.reducedFlashes ? 0 : Math.sin(t * 3) * 30);
+      assets.drawContained(ctx, SECRET_ART.discover, { x: cx - g / 2, y: cy - g / 2, w: g, h: g });
+      ctx.globalAlpha = s;
+      assets.drawContained(ctx, SECRET_ART.marker, { x: cx - 160, y: cy - 160 + (1 - s) * 50, w: 320, h: 320 });
+      ctx.restore();
+    },
+    onAck: () => router.go('rumours', { back: 'workshop' }),
   });
 }
 
@@ -885,6 +919,7 @@ if (debug.enabled) {
   window.__m13 = { ...window.__m12, rankings: rankingsScreen, trophiesScreen: trophyScreen, rankingSystem: campaign.rankings, trophyCase: campaign.trophies, rivalSystem: campaign.rivals };
   window.__m14 = { ...window.__m13, combos: comboArchiveScreen, synergyArchive: campaign.synergyArchive, showComboDiscovered };
   window.__m15 = { ...window.__m14, bus, inbox: inboxScreen, eventPopup, modal, events: campaign.events, sponsors: campaign.sponsors, notes: campaign.notes, presentPlace, EVENTS_BY_ID };
+  window.__m16 = { ...window.__m15, rumours: rumourScreen, secretDebug: secretDebugScreen, secrets: campaign.secrets };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
   bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));
@@ -918,8 +953,9 @@ router
   .register('trophies', trophyScreen)
   .register('combos', comboArchiveScreen)
   .register('inbox', inboxScreen)
+  .register('rumours', rumourScreen)
   .register('debugbuilder', debugBuilderScreen);
-if (debug.enabled) router.register('staffdebug', staffDebugScreen); // ?debug=1 only: spawn any of the 50
+if (debug.enabled) router.register('staffdebug', staffDebugScreen).register('secretdebug', secretDebugScreen); // ?debug=1 only // ?debug=1 only: spawn any of the 50
 router.go('boot');
 loop.start();
 

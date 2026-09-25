@@ -2,7 +2,7 @@
 // (core/NotificationSystem.js), and fires the illustrated milestone events (data/events.js) at their moments.
 // No drawing here: main.js shows a queued pop-up from its kind + data, so the queue can be saved and reloaded.
 //   kinds: 'event' (a text event, data.uid), 'milestone' (data.uid), 'robotDone' (data.number), 'combo' (data.id),
-//          'rankUp' (data.rank), 'researchMilestone', 'sponsorEnded', and plain notes (no pop-up).
+//          'rankUp' (data.rank), 'researchMilestone', 'sponsorEnded', 'secret' (data.id), and plain notes (no pop-up).
 import { EVENTS_BY_ID, EVENT_ICONS } from '../../data/events.js';
 import { SPONSORS_BY_ID } from '../../data/sponsors.js';
 import { SYNERGIES_BY_ID } from '../../data/synergies.js';
@@ -11,6 +11,7 @@ import { FEATURES, RESEARCH_ART } from '../../data/research.js';
 import { COMPETITION_ART } from '../../data/competitions.js';
 import { TUTORIAL_HIRES } from '../../data/recruitment.js';
 import { rewardText } from '../systems/Synergies.js';
+import { SECRET_ART } from '../../data/secrets.js';
 
 const MODIFIER_WORDS = {
   materialCostPct: 'Parts',
@@ -171,6 +172,17 @@ export function wireMessages({ bus, campaign, ready = () => true }) {
   bus.on('contract:failed', ({ contract, reason }) => ready() && post({ kind: 'note', level: 'medium', title: `Contract failed: ${contract.title}`, body: reason === 'deadline' ? 'The deadline passed.' : 'It was cancelled.', icon: EVENT_ICONS.warning }));
   bus.on('contract:success', ({ contract }) => ready() && post({ kind: 'note', level: 'minor', title: `Contract done: ${contract.title}`, body: `${contract.customer} paid ${(contract.result?.paid ?? contract.payout).toLocaleString('en-US')} credits.`, icon: EVENT_ICONS.customer, toast: false }));
   bus.on('staff:hired', ({ staff, debug }) => ready() && !debug && post({ kind: 'note', level: 'minor', title: `${staff.name} joined the team`, body: 'Say hello in the workshop.', icon: staff.art, toast: false }));
+
+  // --- secrets (Milestone 16): a discovery is a big moment; a new clue stage is a small rumour note ---
+  bus.on('secret:unlocked', ({ rule, eased }) => {
+    if (!ready()) return;
+    post({ kind: 'secret', level: 'major', title: `Secret discovered: ${rule.name}`, body: `${eased ? 'Found again (an easier path this time). ' : ''}Its exact conditions are now in the Rumour Archive.`, icon: SECRET_ART.marker, data: { id: rule.id }, popup: true });
+  });
+  bus.on('secret:clue', ({ rule, stage, missing }) => {
+    if (!ready()) return;
+    const clue = rule.clueStages?.[stage - 1]?.text ?? 'A rumour…';
+    post({ kind: 'note', level: 'minor', title: stage >= 2 ? 'A clue' : 'A rumour', body: stage >= 2 && missing?.length ? `${clue} (Missing: ${missing.join(', ')})` : clue, icon: SECRET_ART.marker, data: { secretId: rule.id, stage } });
+  });
 
   // --- sponsors ---
   bus.on('sponsor:signed', ({ def, deal }) => post({ kind: 'note', level: 'medium', title: `Deal signed: ${def.name}`, body: `${def.benefitText}. Six months — ${def.obligationText.toLowerCase()} to keep it going.`, icon: sponsorIcon(def), data: { sponsorId: def.id, renewals: deal.renewals }, toast: false }));

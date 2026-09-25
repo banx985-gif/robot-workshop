@@ -40,6 +40,9 @@ import { SponsorSystem } from '../../../../core/SponsorSystem.js';
 import { NotificationSystem } from '../../../../core/NotificationSystem.js';
 import { EVENTS, EVENTS_BY_ID, EVENT_CAPS, EVENT_RULES, NOTIFY_RULES } from '../../data/events.js';
 import { SPONSORS, SPONSOR_RULES } from '../../data/sponsors.js';
+import { SecretEngine } from '../../../../core/SecretEngine.js';
+import { SECRETS, SECRETS_BY_ID, SECRET_RULES, SECRET_TRIGGERS } from '../../data/secrets.js';
+import { createSecretFacts, runAccountFacts } from '../systems/secretFacts.js';
 import { SYNERGIES_BY_ID } from '../../data/synergies.js';
 import { COMPETITIONS, COMPETITIONS_BY_ID, COMPETITION_RULES, TROPHIES, RANKING_POINTS } from '../../data/competitions.js';
 import { RIVALS, RIVAL_RULES } from '../../data/rivals.js';
@@ -113,6 +116,8 @@ export const SAVE_MIGRATIONS = {
   11: (record) => ({ ...record, data: { ...record.data, synergies: null } }),
   // v12 (Milestone 14) had no events, sponsors or inbox: null = start them fresh from the day the save is loaded.
   12: (record) => ({ ...record, data: { ...record.data, events: null, sponsors: null, notifications: null } }),
+  // v13 (Milestone 15) had no secret engine: null = no clues or secrets yet in this run.
+  13: (record) => ({ ...record, data: { ...record.data, secrets: null } }),
 };
 
 // Things research unlock actions name ("part:CH02", "facility:F07"…): for these, the research part of their
@@ -360,6 +365,48 @@ export class Campaign {
       this.flags.closed = true;
       this.clock.pause();
     });
+
+    // Secrets (Milestone 16, §28): the shared engine, the robot facts, and rewards through the unlock-action runner.
+    // Wired last, so each trigger event is checked after the rest of the game has handled it (the month's sales are
+    // in, the finished robot is in the history…). The account half of the engine lives in the account save.
+    this.secrets = new SecretEngine({
+      bus,
+      rules: SECRETS,
+      facts: createSecretFacts(this),
+      runner: this.unlocks,
+      ngPlus: () => this.ngPlusRuns,
+      currencyTypes: SECRET_RULES.currencyTypes,
+      easing: SECRET_RULES.easing,
+      now: () => ({ day: this.clock.totalDays, year: this.clock.year, runId: this.campaignId }),
+    });
+    this.unlocks.handlers = {
+      ...this.unlocks.handlers,
+      currency: (a) => this._secretCurrency(a),
+      event: (a) => this.events.fire(a.id, this.clock.totalDays, { secret: a.secret }), // e.g. EV20, the mysterious message
+    };
+    for (const [ev, busEvent] of Object.entries(SECRET_TRIGGERS)) bus.on(busEvent, (payload) => this.checkSecrets(ev, payload));
+  }
+
+  // --- secrets (§28) ---
+  // A trigger event: only the rules indexed under it are checked (core/SecretEngine).
+  checkSecrets(ev, payload = {}) {
+    if (!this.campaignId) return [];
+    this.syncSecretFacts();
+    return this.secrets.notify(ev, payload ?? {});
+  }
+
+  // This run's share of the "across all runs" facts (set, not added, so an older save can't double count).
+  syncSecretFacts() {
+    if (!this.campaignId) return;
+    for (const [k, v] of Object.entries(runAccountFacts(this))) this.secrets.setRunFact(k, v, this.campaignId);
+  }
+
+  _secretCurrency(a) {
+    const rule = SECRETS_BY_ID[a.secret];
+    const why = `Secret: ${rule?.name ?? a.secret}`;
+    if (a.currency === 'rp') this.research.addRp(a.amount, why, this.clock.totalDays);
+    else if (a.currency === 'techChips') this.economy.add('techChips', a.amount, why, 'reward');
+    else if (a.currency === 'prestigeTokens') this.flags.prestigeTokensEarned = (this.flags.prestigeTokensEarned ?? 0) + a.amount; // paid out with NG+
   }
 
   get closed() {
@@ -523,8 +570,10 @@ export class Campaign {
         return this.contracts.done.filter((c) => c.status === 'success' && (!rule.purpose || c.purpose === rule.purpose)).length >= rule.min;
       case 'all':
         return rule.of.every((r) => this.ruleMet(r, subject));
+      case 'secret':
+        return this.secrets.unlockedInRun(rule.id); // the real §29 rules arrive in Milestone 17
       default:
-        return false; // secrets: later milestones (the rules are stored already)
+        return false;
     }
   }
 
@@ -1194,6 +1243,8 @@ export class Campaign {
         return this.facilities.placed.length >= rule.min;
       case 'competitionsOpen':
         return this.openCompetitions.length >= rule.min;
+      case 'secret':
+        return false; // secret events (EV20) are only ever fired by a secret rule's reward
       case 'sponsorOfferable':
         return !this.sponsors.offers.length && this.sponsors.offerable(this.clock.totalDays).length > 0;
       case 'rpEarned':
@@ -1441,6 +1492,7 @@ export class Campaign {
     this.rankings.reset();
     this.trophies.reset();
     this.synergyArchive.resetRun(); // the account half stays
+    this.secrets.resetRun(); // clues and unlocks start again; the account history stays (repeat easing)
     this.recruitment.reset();
     this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'start');
     this.applyFeatures();
@@ -1477,6 +1529,7 @@ export class Campaign {
       events: this.events.serialize(),
       sponsors: this.sponsors.serialize(),
       notifications: this.notes.serialize(),
+      secrets: this.secrets.serializeRun(),
       guide: this.guideState ?? null,
       flags: { ...this.flags },
     };
@@ -1520,6 +1573,7 @@ export class Campaign {
     this.events.load(data.events, this.clock.totalDays); // null before Milestone 15: events start from today
     this.sponsors.load(data.sponsors);
     this.notes.load(data.notifications);
+    this.secrets.loadRun(data.secrets); // null before Milestone 16
     this.applyFeatures();
     this.guideState = data.guide ?? null;
     this.assignments.refresh();
@@ -1529,7 +1583,8 @@ export class Campaign {
   async save() {
     if (!this.saveManager) return null;
     try {
-      if (this.accountManager) await this.accountManager.save({ synergies: this.synergyArchive.serializeAccount() });
+      this.syncSecretFacts();
+      if (this.accountManager) await this.accountManager.save({ synergies: this.synergyArchive.serializeAccount(), secrets: this.secrets.serializeAccount() });
       const rec = await this.saveManager.save(this.serialize());
       this.lastSaveError = null;
       return rec;
@@ -1545,6 +1600,7 @@ export class Campaign {
     try {
       const account = await this.accountManager?.load();
       this.synergyArchive.loadAccount(account?.synergies);
+      this.secrets.loadAccount(account?.secrets); // secret history + facts across runs
     } catch (err) {
       console.error('[Campaign] could not load the account record', err);
     }
