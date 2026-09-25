@@ -22,6 +22,7 @@ const CONTRACT_H = 250;
 
 export function createRobotBuilderScreen({ renderer, layout, assets, campaign, router, debugEnabled = false }) {
   const W = renderer.width;
+  const onResearch = (id) => campaign.research.busyIds.includes(id); // §19: can't be on a project too
   const state = { purposeId: 'helper', components: { ...STARTER_PARTS }, focus: 'balanced', teamIds: [], inspect: null, contractId: null };
   let resumeOnExit = false;
 
@@ -139,7 +140,8 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       state.purposeId = c ? c.purpose : campaign.openPurposes.includes(state.purposeId) ? state.purposeId : 'helper';
       state.components = c ? { ...c.suggested } : { ...STARTER_PARTS };
       state.focus = 'balanced';
-      state.teamIds = campaign.staff.staff.map((s) => s.id).slice(0, PROJECT_RULES.teamSlots); // everyone on by default
+      // Everyone not on research is on the team by default.
+      state.teamIds = campaign.staff.staff.filter((s) => !onResearch(s.id)).map((s) => s.id).slice(0, PROJECT_RULES.teamSlots);
       state.inspect = null;
       scroll.scrollY = 0;
     },
@@ -190,7 +192,7 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
         }
       }
       campaign.staff.staff.forEach((s, i) => {
-        if (!hit(c, rowRect(i))) return;
+        if (!hit(c, rowRect(i)) || onResearch(s.id)) return;
         if (state.teamIds.includes(s.id)) state.teamIds = state.teamIds.filter((x) => x !== s.id);
         else if (state.teamIds.length < PROJECT_RULES.teamSlots) state.teamIds.push(s.id);
       });
@@ -278,7 +280,7 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       text(ctx, `Team (${state.teamIds.length}/${PROJECT_RULES.teamSlots}) — tap to add or remove`, 4, y.team, { size: 30, bold: true, maxWidth: w });
       campaign.staff.staff.forEach((s, i) => {
         const on = state.teamIds.includes(s.id);
-        staffRow(ctx, assets, rowRect(i), s, { roleName: ROLES[s.role].name, on, tag: on ? 'On team ✓' : 'Tap to add' });
+        staffRow(ctx, assets, rowRect(i), s, { roleName: ROLES[s.role].name, on, tag: onResearch(s.id) ? 'On research' : on ? 'On team ✓' : 'Tap to add' });
       });
 
       // Summary

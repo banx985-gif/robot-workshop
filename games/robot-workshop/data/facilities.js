@@ -1,5 +1,5 @@
-// Workshop facilities F01–F15 (bible §18.2), expansions (§18.1) and project bays (§18.3). Plain data only.
-// F16–F35 arrive in later milestones.
+// Workshop facilities F01–F15 plus the Server Rack F33 (bible §18.2), expansions (§18.1) and project bays (§18.3).
+// Plain data only. The other facilities (F16–F32, F34–F35) arrive in later milestones.
 //
 // w × h: footprint in grid cells (rotating swaps them and mirrors the picture).
 // effects: summed over every owned copy by core/FacilitySystem.js, and read by the game systems:
@@ -14,7 +14,7 @@
 //   restMorale            + Morale per resting day
 //   displaySlots          finished robots on show (each earns reputation, see DISPLAY_RULES)
 //   projectBays           physical project bays (see PROJECT_BAYS)
-//   researchQueues        research queues (the queue itself opens in Milestone 9)
+//   researchQueues        research queues this facility can open (the rules are RESEARCH_QUEUES in data/research.js)
 //   runningCostPerDay     added to each project's daily running cost (§20.5; advanced facilities, later)
 // maxCount: how many copies count towards the bonus (a second desk gives another work spot, not a second bonus).
 // cap: limit on that facility's total (Parts Racks: -3% each, three stack to -7%).
@@ -145,7 +145,7 @@ export const FACILITIES = {
     w: 2,
     h: 1,
     effects: [{ key: 'researchQueues', value: 1, maxCount: 1 }],
-    blurb: 'Opens 1 research queue (research arrives soon).',
+    blurb: 'Opens a research queue: spend RP on new parts.',
     unlock: { type: 'flag', flag: 'firstRp' },
     art: 'facility_11_research_desk',
   },
@@ -204,6 +204,19 @@ export const FACILITIES = {
   },
 };
 
+// F33 (Milestone 9): the second research queue. Built at Rank A; the queue itself needs Rank A too.
+FACILITIES.F33 = {
+  id: 'F33',
+  name: 'Server Rack',
+  cost: 6000,
+  w: 2,
+  h: 1,
+  effects: [{ key: 'researchQueues', value: 1, maxCount: 1 }],
+  blurb: 'Opens a second research queue at Rank A.',
+  unlock: { type: 'rank', rank: 'A' },
+  art: 'facility_33_server_rack',
+};
+
 export const FACILITY_ORDER = Object.keys(FACILITIES);
 
 // Where staff work in each stage (§8.2): the stage's own station if the workshop has one, else a workbench,
@@ -214,6 +227,7 @@ export const STATIONS = {
   software: ['F04'],
   assembly: ['F05'],
   testing: ['F08'],
+  research: ['F11'], // a worker on a research queue sits at the Research Desk
 };
 export const FALLBACK_STATIONS = ['F01', 'F05'];
 

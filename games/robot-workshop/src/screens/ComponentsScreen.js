@@ -1,11 +1,11 @@
 // Parts catalogue (minimal): browse all 50 parts by slot. Open parts show normally; locked parts are
-// greyed out with a padlock and the rule that opens them (research etc. arrive from Milestone 9).
+// greyed out with a padlock and the rule that opens them (what is still missing is shown in gold).
 // params.back: screen to return to (default 'builder').
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton, drawPadlock } from '../../../../core/ui/Button.js';
 import { SLOTS, partsInSlot } from '../../data/components.js';
 import { ROBOT_STAT_KEYS } from '../../data/stats.js';
-import { isOpenNow, describeUnlock } from '../systems/unlockRules.js';
+import { describeUnlock, missingParts } from '../systems/unlockRules.js';
 import { panel, text, contained, hit, fmt } from '../ui/widgets.js';
 
 const HEADER_H = 130;
@@ -80,7 +80,8 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
 
       SLOTS.forEach((s, i) => {
         const list = partsInSlot(s.id);
-        const open = list.filter((c) => isOpenNow(c.unlock)).length;
+        const openSet = campaign.openParts;
+        const open = list.filter((c) => openSet.has(c.id)).length;
         drawButton(ctx, tabRect(i), `${s.name} ${open}/${list.length}`, { selected: s.id === slotId, font: 'bold 28px system-ui, sans-serif' });
       });
 
@@ -93,7 +94,7 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
   };
 
   function drawPart(ctx, c, r) {
-    const open = isOpenNow(c.unlock);
+    const open = campaign.partOpen(c.id);
     panel(ctx, r, { fill: open ? 'rgba(26,32,40,0.96)' : 'rgba(20,24,30,0.96)', stroke: open ? '#7CFFB2' : '#2A323C' });
     ctx.save();
     if (!open) ctx.globalAlpha = 0.38; // greyed out
@@ -109,7 +110,7 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
     const stats = ROBOT_STAT_KEYS.filter((k) => c.stats[k]).map((k) => `${k} ${c.stats[k] > 0 ? '+' : ''}${c.stats[k]}`);
     if (c.inn) stats.push(`INN +${c.inn}`);
     text(ctx, stats.join('  '), x, r.y + 102, { size: 28, bold: true, color: open ? '#7CFFB2' : '#6E8A7C', maxWidth: mw });
-    text(ctx, open ? 'Open — ready to use' : `Locked — ${describeUnlock(c.unlock)}`, x, r.y + 146, { size: 26, bold: true, color: open ? '#7CFFB2' : '#FFD166', maxWidth: mw });
+    text(ctx, open ? 'Open — ready to use' : `Locked — needs ${missingParts(c.unlock, (r) => campaign.unlockMet(r, { type: 'part', id: c.id })).join(' + ') || describeUnlock(c.unlock)}`, x, r.y + 146, { size: 26, bold: true, color: open ? '#7CFFB2' : '#FFD166', maxWidth: mw });
   }
 
   return screen;

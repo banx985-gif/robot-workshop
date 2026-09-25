@@ -4,6 +4,7 @@
 // facilities' floor shadows are drawn once into a cached layer and redrawn only when the layout changes (§40.1).
 // Staff on the robot project take turns at the station for the stage they are working (Engineering Desk in
 // Engineering, and so on), or a workbench if there is none: home spot → station → work a few seconds → home spot.
+// Staff on a research queue work at the Research Desk the same way.
 // Staff not on the project rest at a Break Table or Charging Dock if there is a free seat, else at their home spot.
 // Drag pans; tap selects a worker or a facility. The Build screen (BuildScreen.js) reuses this view.
 import { Camera } from '../../../../core/Camera.js';
@@ -23,6 +24,7 @@ import { describeUnlock } from '../systems/unlockRules.js';
 import { ROOM, LAYOUT, SIZES, ROUTINE, ROOM_ART } from '../../data/workshop.js';
 import { VFX_ART, STATUS_ART, STATUS_ORDER, FLOAT_COLORS } from '../../data/feedback.js';
 import { createTopBar } from '../ui/TopBar.js';
+import { RESEARCH_ART } from '../../data/research.js';
 
 const TASK_LABELS = {
   home: 'At home spot',
@@ -119,6 +121,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
   const primaryStation = (phaseId) => candidates(phaseId)[0] ?? null;
 
   function phaseIdOf(a) {
+    if (campaign.research.queueOfWorker(a.staffId) >= 0) return 'research'; // STATIONS.research: the Research Desk
     const job = campaign.assignments.jobOf(a.staffId);
     return job ? PHASES[job.phaseIndex]?.id : null;
   }
@@ -337,6 +340,9 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
   }
 
   function taskLabel(a) {
+    const q = campaign.research.queueOfWorker(a.staffId);
+    const node = q >= 0 ? campaign.research.node(campaign.research.queues[q].nodeId) : null;
+    if (node && a.task === 'working') return `Researching ${node.name}`;
     if (a.task === 'working' && a.station) return `Working at the ${defOf(a.station).name}`;
     if (a.task === 'toStation' && a.station) return `Walking to the ${defOf(a.station).name}`;
     if (a.task === 'waiting' && a.station) return `Waiting for the ${defOf(a.station).name}`;
@@ -385,7 +391,9 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
         const who = agents.filter((a) => a.restAt?.view === item).map((a) => a.name.split(' ')[0]);
         lines.push(who.length ? `Resting here: ${who.join(', ')}` : 'Free seats for resting staff');
       } else lines.push('Free');
-      return { title: d.name, subtitle: `Facility · ${item.fp.w}×${item.fp.h} tiles`, lines, accent: '#4FC3F7', buttons: [{ id: 'build', label: 'Build mode' }] };
+      const buttons = [{ id: 'build', label: 'Build mode' }];
+      if (d.effects.some((e) => e.key === 'researchQueues')) buttons.unshift({ id: 'research', label: 'Research' });
+      return { title: d.name, subtitle: `Facility · ${item.fp.w}×${item.fp.h} tiles`, lines, accent: '#4FC3F7', buttons };
     }
     return { title: '?' };
   }
@@ -862,6 +870,37 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     return { x: sr.x + sr.w - 28 - w, y: bottom - h, w, h };
   }
 
+  // Research shortcut, left of Build: shows once the company has earned RP (or owns a Research Desk).
+  function researchShown() {
+    return campaign.research.rpEarned > 0 || campaign.facilities.has('F11');
+  }
+
+  function researchButtonRect() {
+    if (!researchShown()) return null;
+    const b = buildButtonRect();
+    const w = 300;
+    return { x: b.x - 20 - w, y: b.y, w, h: b.h };
+  }
+
+  function drawResearchButton(ctx) {
+    const r = researchButtonRect();
+    if (!r) return;
+    const res = campaign.research;
+    const busy = res.queues.findIndex((q, i) => q.nodeId && res.queueOpen(i));
+    const ready = busy < 0 && res.nodes.some((n) => res.canStart(0, n.id).ok);
+    drawButton(ctx, r, '', { accent: '#4FC3F7', badge: ready ? '!' : null });
+    assets.drawContained(ctx, RESEARCH_ART.icon, { x: r.x + 12, y: r.y + 14, w: 84, h: 84 });
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 36px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Research', r.x + 104, r.y + 40, r.w - 116);
+    ctx.font = 'bold 26px system-ui, sans-serif';
+    ctx.fillStyle = '#4FC3F7';
+    const sub = busy >= 0 ? `${Math.floor(res.fraction(res.queues[busy].nodeId) * 100)}% · ${res.rp} RP` : `${res.rp} RP`;
+    ctx.fillText(sub, r.x + 104, r.y + 80, r.w - 116);
+  }
+
   function drawBuildButton(ctx) {
     const r = buildButtonRect();
     drawButton(ctx, r, '', { accent: '#FFB74D' });
@@ -902,6 +941,23 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     const p = weldPoint(st);
     vfx.sprite('world', STATUS_ART.breakthrough, p.x, p.y - 90, { size: 96, life: 2.2, rise: 40, hold: 0.6 });
     vfx.text('world', 'Breakthrough!', p.x, p.y - 150, { color: '#FFD166', size: 34, life: 2 });
+  });
+
+  // Research: a glow at the Research Desk when a topic starts; a blueprint pop and a note when one finishes.
+  const deskPoint = () => {
+    const st = primaryStation('research');
+    return st ? weldPoint(st) : null;
+  };
+  bus.on('research:start', () => {
+    const p = deskPoint();
+    if (p) vfx.sprite('world', RESEARCH_ART.glow, p.x, p.y - 20, { size: 150, life: 1.2, from: 0.5, to: 1, hold: 0.2 });
+  });
+  bus.on('research:complete', ({ node }) => {
+    const p = deskPoint();
+    if (!p) return;
+    vfx.sprite('world', RESEARCH_ART.glow, p.x, p.y - 20, { size: 200, life: 1.4, from: 0.4, to: 1.1, hold: 0.3 });
+    vfx.sprite('world', RESEARCH_ART.blueprint, p.x, p.y - 40, { size: 150, life: 1.3, rise: 40, delay: 0.2 });
+    vfx.text('world', `${node.name} done!`, p.x, p.y - 140, { color: FLOAT_COLORS.research, size: 34, life: 2.2 });
   });
 
   bus.on('staff:levelup', ({ staff, level }) => {
@@ -999,6 +1055,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
       return hit?.kind === 'facility' ? hit : null;
     },
     buildButtonRect,
+    researchButtonRect,
     stripRect,
 
     // Build screen hooks.
@@ -1118,10 +1175,16 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
         const b = card.buttonAt(p);
         if (b === 'roster') router.go('roster', { focusId: card.item.staffId });
         if (b === 'build') router.go('build', { selectUid: card.item.uid });
+        if (b === 'research') router.go('research');
         return; // taps on the card stay on the card
       }
       if (hitRect(p, buildButtonRect())) {
         router.go('build');
+        return;
+      }
+      const rb = researchButtonRect();
+      if (rb && hitRect(p, rb)) {
+        router.go('research');
         return;
       }
       const w = camera.screenToWorld(p.x, p.y);
@@ -1132,7 +1195,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
 
     onDragStart(p) {
       const start = { x: p.startX, y: p.startY };
-      if (dragId !== null || card.contains(start) || topBar.contains(start) || hitRect(start, stripRect()) || hitRect(start, buildButtonRect())) return;
+      if (dragId !== null || card.contains(start) || topBar.contains(start) || hitRect(start, stripRect()) || hitRect(start, buildButtonRect()) || hitRect(start, researchButtonRect() ?? { x: 0, y: 0, w: -1, h: -1 })) return;
       dragId = p.id;
       camera.beginDrag(p.startX, p.startY);
       camera.dragTo(p.x, p.y);
@@ -1191,6 +1254,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
       topBar.render(ctx);
       drawStrip(ctx);
       drawBuildButton(ctx);
+      drawResearchButton(ctx);
       card.render(ctx);
     },
   };

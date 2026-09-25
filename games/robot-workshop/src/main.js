@@ -32,6 +32,8 @@ import { createClosureScreen } from './screens/ClosureScreen.js';
 import { createComponentsScreen } from './screens/ComponentsScreen.js';
 import { createContractsScreen } from './screens/ContractsScreen.js';
 import { createBuildScreen } from './screens/BuildScreen.js';
+import { createResearchScreen } from './screens/ResearchScreen.js';
+import { RESEARCH_ART, FEATURES } from '../data/research.js';
 import { FACILITIES, BUILD_ART } from '../data/facilities.js';
 import { RANK_NOTES } from '../data/economy.js';
 import { FIRST_CONTRACT_ART } from '../data/contracts.js';
@@ -85,6 +87,10 @@ const ASSETS = {
   [FIRST_CONTRACT_ART]: `assets/images/events/${FIRST_CONTRACT_ART}.png`,
   ui_icon_29: 'assets/images/ui/ui_icon_29.png',
   reward_01: 'assets/images/rewards/reward_01.png',
+  // Research (Milestone 9): icon and RP token (the glow and blueprint effects are in VFX art).
+  [RESEARCH_ART.icon]: `assets/images/ui/${RESEARCH_ART.icon}.png`,
+  [RESEARCH_ART.rp]: `assets/images/rewards/${RESEARCH_ART.rp}.png`,
+  [RESEARCH_ART.glow]: `assets/images/vfx/${RESEARCH_ART.glow}.png`,
   // Deliberately missing file: proves the placeholder fallback.
   placeholderTest: 'assets/m0-missing-test.png',
 };
@@ -501,11 +507,16 @@ bus.on('campaign:ready', () => {
     guide.reset();
     if (campaign.history.count || campaign.projects.jobs.length) guide.state.done.push(...GUIDE_INTRO_STEPS);
   } else guide.load(saved);
+  // Research arrived in Milestone 9: an older run that has been back-paid RP counts as having earned it.
+  if (campaign.research.rpEarned > 0 && !guide.state.events.includes('research:rp')) guide.state.events.push('research:rp');
   campaign.guideState = guide.serialize();
 });
+// The Research Desk card is far down the Build catalogue: bring it into view for its guide step.
+bus.on('screen:change', ({ to }) => to === 'build' && guide.current?.id === 'S21' && buildScreen.scrollToCard('F11'));
 const helpScreen = createHelpScreen({ renderer, layout, assets, router, guide });
 const contractsScreen = createContractsScreen({ renderer, layout, assets, campaign, router, goProject, hud });
 const buildScreen = createBuildScreen({ renderer, layout, assets, campaign, router, workshop: workshopScreen, hud });
+const researchScreen = createResearchScreen({ renderer, layout, assets, bus, campaign, router, debugEnabled: debug.enabled });
 // A throwaway run with the three starters on its own bus: the debug builder builds robots in it.
 const makeSandbox = () => {
   const c = new Campaign({ bus: new EventBus() });
@@ -596,6 +607,24 @@ bus.on('reputation:rankUp', ({ rank }) => {
   major.show({ title: `Company Rank ${rank.id}!`, subtitle: RANK_NOTES[rank.id] ?? 'Your workshop is growing.', accent: '#FFD166' });
 });
 // Money for building shows in the ledger; a sale floats its refund.
+// Research (Milestone 9): RP float up in cyan; a finished topic is a medium moment (sound + note in the workshop);
+// the first RP ever and a business milestone get a short message.
+bus.on('research:rp', ({ amount, first }) => {
+  if (amount <= 0 || !campaignReady) return;
+  floatNumber(`+${amount} RP`, FLOAT_COLORS.research, RESEARCH_ART.rp, 0.5);
+  if (first) debug.log('first Research Points earned');
+});
+bus.on('research:complete', ({ node, fired }) => {
+  audio.play('phaseDone');
+  campaign.save().catch(() => {});
+  debug.log(`research ${node.id} done: ${fired.map((a) => a.type + ' ' + a.id).join(', ')}`);
+  if (router.currentName !== 'workshop' && router.currentName !== 'research') floatNumber(`${node.name} researched!`, FLOAT_COLORS.research, RESEARCH_ART.icon, 0.5);
+});
+bus.on('research:milestone', ({ milestone, fired }) => {
+  if (!campaignReady || !fired.length) return;
+  const f = FEATURES[fired.at(-1).id];
+  major.show({ title: `${milestone.count} research topics done!`, subtitle: `${fired.map((a) => FEATURES[a.id]?.name ?? a.id).join(' + ')}: ${f?.note ?? ''}`, accent: '#4FC3F7' });
+});
 bus.on('facility:sold', ({ refund }) => floatNumber(`+${refund.toLocaleString('en-US')}`, FLOAT_COLORS.credits, 'ui_icon_01_money', 0.24));
 bus.on('project:phase', ({ job, phase }) => debug.log(`${job.name}: ${phase.name} done`));
 bus.on('robot:fault', ({ job }) => debug.log(`${job.name}: fault (${job.data.faults.length} open)`));
@@ -626,6 +655,10 @@ if (debug.enabled) {
   window.__m7 = { ...window.__m6, contracts: contractsScreen, SEGMENTS };
   window.__m7b = { ...window.__m7, guide, coach, guideTarget, help: helpScreen };
   window.__m8 = { ...window.__m7b, build: buildScreen, facilities: campaign.facilities, FACILITIES };
+  window.__m9 = { ...window.__m8, research: researchScreen, researchSystem: campaign.research, unlocks: campaign.unlocks };
+  const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
+  window.__m9.firedCount = firedCount;
+  bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));
   bus.on('facility:layout', () => debug.log(`layout v${campaign.facilities.version}: ${campaign.facilities.placed.length} facilities`));
 }
 
@@ -644,6 +677,7 @@ router
   .register('contracts', contractsScreen)
   .register('help', helpScreen)
   .register('build', buildScreen)
+  .register('research', researchScreen)
   .register('debugbuilder', debugBuilderScreen);
 router.go('boot');
 loop.start();

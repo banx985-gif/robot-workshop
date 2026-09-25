@@ -1,9 +1,12 @@
 // Words and allowed values for unlock rules (parts §11, purposes, facilities §18.2). Plain data.
-// Parts and purposes open through research from Milestone 9; facilities check their rules from Milestone 8.
+// Everything is checked by Campaign.unlockMet() (Milestone 9: research counts for real).
+//   { type: 'research', branch, level }  that research node is done (for a part or facility a node names in its
+//                                        unlock actions, that action must have fired — see data/research.js)
+//   { type: 'researchCount', min }       that many visible research nodes done in total
 //   { type: 'flag', flag }  a first-time milestone of the run (first launch, first contract…)
 //   { type: 'role', role }  the company employs someone in that role (e.g. its first Designer)
 
-export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'all'];
+export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'researchCount', 'all'];
 
 export const RESEARCH_BRANCHES = {
   mechanical: 'Mechanical Research',
@@ -16,7 +19,14 @@ export const RESEARCH_BRANCHES = {
 export const RESEARCH_MAX_LEVEL = 6;
 
 // Facilities referenced by part unlock rules that are not in data/facilities.js yet (F16–F35 come later).
-export const FACILITY_NAMES = { F21: 'Materials Lab' };
+export const FACILITY_NAMES = {
+  F18: 'AI Lab',
+  F21: 'Materials Lab',
+  F22: 'Power Lab',
+  F23: 'Sensor Lab',
+  F24: 'Drive Test Bench',
+  F26: 'Wind Tunnel',
+};
 
 export const COUNTERS = {
   researchPrototypes: '{n} Research Prototypes', // {n} = the rule's min

@@ -5,6 +5,7 @@
 //   v.uniqueIds('components', list);                 every item has an id, none repeat
 //   v.ref('component CH06', 'facility', 'F21', ids);  a referenced id exists in a known set
 //   v.check(ok, 'message');                          any other rule
+//   v.noCycles('research', nodes);                   prerequisites (x.requires) have no loops
 //   v.art('component CH01', 'path/to.png');          queue an image path to check
 //   await v.checkArt();                              fetches every queued path (missing → error)
 //   v.report() → { ok, errors, warnings, counts }
@@ -52,6 +53,30 @@ export class DataValidator {
   ref(owner, kind, id, known) {
     this.counts.refs++;
     return this.check(known.has(id), `${owner}: unknown ${kind} "${id}"`);
+  }
+
+  // A tree or graph of prerequisites must have no loops (A needs B needs … needs A) and no unknown ids.
+  // depsOf(item) → ids it needs. Returns true when there are no loops.
+  noCycles(label, items, idOf = (x) => x.id, depsOf = (x) => x.requires ?? []) {
+    const byId = new Map(items.map((x) => [idOf(x), x]));
+    const state = new Map(); // id → 1 visiting, 2 done
+    let ok = true;
+    const visit = (id, path) => {
+      if (state.get(id) === 2) return;
+      if (state.get(id) === 1) {
+        ok = false;
+        this.error(`${label}: loop ${[...path.slice(path.indexOf(id)), id].join(' → ')}`);
+        return;
+      }
+      state.set(id, 1);
+      for (const d of depsOf(byId.get(id))) {
+        if (this.ref(`${label} ${id}`, 'prerequisite', d, byId)) visit(d, [...path, id]);
+      }
+      state.set(id, 2);
+    };
+    for (const id of byId.keys()) visit(id, []);
+    this.counts.checks++;
+    return ok;
   }
 
   // placeholder: true means "no art yet, drawn as a placeholder on purpose" — reported as a warning, not an error.

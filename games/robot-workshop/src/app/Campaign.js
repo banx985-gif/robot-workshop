@@ -1,5 +1,5 @@
 // One Robot Workshop run: seeded RNG, calendar, staff, robot projects, history, money, products,
-// reputation, market, contracts, the workshop layout (facilities + expansions), and saving/loading.
+// reputation, market, contracts, the workshop layout (facilities + expansions), research, and saving/loading.
 // Random numbers: the main stream drives staff, projects and sales; the market and the contracts each
 // have their own seeded stream, so contract offers never change how a robot build rolls.
 // Everything that must come back identical after a reload lives here.
@@ -17,6 +17,8 @@ import { writeReview } from '../../../../core/ReviewText.js';
 import { ReputationSystem } from '../../../../core/ReputationSystem.js';
 import { FacilitySystem } from '../../../../core/FacilitySystem.js';
 import { rankAtLeast, valueForRank } from '../../../../core/CompanyRank.js';
+import { ResearchSystem } from '../../../../core/ResearchSystem.js';
+import { UnlockRunner } from '../../../../core/UnlockActions.js';
 import { STAFF, ROLES, TIERS, STARTER_IDS, EMPLOYEE_CAP } from '../../data/staff.js';
 import { TRAITS } from '../../data/traits.js';
 import { STAT_KEYS } from '../../data/stats.js';
@@ -30,6 +32,7 @@ import { CALENDAR, SPEED_UNLOCKS, STAFF_RULES, PROJECT_RULES, CAMPAIGN_SEED } fr
 import { CURRENCIES, STARTING_MONEY, DEBT_RULES, SALARY_RULES, OPERATING_COST, TECH_CHIP_REWARDS, RANKS, REPUTATION_RULES } from '../../data/economy.js';
 import { PRODUCT_SLOT_STEPS, SALES_RULES } from '../../data/market.js';
 import { FACILITIES, EXPANSIONS, WORKSHOP_START, PROJECT_BAYS, DISPLAY_RULES, LOCKED_LATER } from '../../data/facilities.js';
+import { RESEARCH_NODES, RESEARCH_MILESTONES, RESEARCH_QUEUES, RESEARCH_RULES, RESEARCH_BRANCH_INFO, RP_SOURCES, NG_PLUS_RESEARCH, researchNodeId } from '../../data/research.js';
 import { describeUnlock } from '../systems/unlockRules.js';
 import { RobotBuildSystem } from '../systems/RobotBuildSystem.js';
 import { Sales } from '../systems/Sales.js';
@@ -65,7 +68,14 @@ export const SAVE_MIGRATIONS = {
   4: (record) => ({ ...record, data: { ...record.data, guide: null } }),
   // v5 (Milestone 7b) had a fixed room: null = start from the starting layout (bench, pedestal, Assembly Bay).
   5: (record) => ({ ...record, data: { ...record.data, workshop: null } }),
+  // v6 (Milestone 8) had no research: null = start it fresh, with RP back-paid for robots already built (Campaign.loadData).
+  6: (record) => ({ ...record, data: { ...record.data, research: null, unlocks: null } }),
 };
+
+// Things research unlock actions name ("part:CH02", "facility:F07"…): for these, the research part of their
+// unlock rule is met only by that action having fired (see data/research.js).
+const PROMISED = new Set(RESEARCH_NODES.flatMap((n) => n.actions.map((a) => `${a.type}:${a.id}`)));
+const QUEUE_RULES = new Set(RESEARCH_QUEUES.map((q) => q.rule));
 
 export class Campaign {
   constructor({ bus, saveManager = null }) {
@@ -113,7 +123,45 @@ export class Campaign {
         checkpoints: [PROJECT_RULES.breakthroughCheckAt],
       },
     });
-    this.assignments = new AssignmentSystem({ staff: this.staff, getJobs: () => this.projects.jobs, bus });
+    // Research (§19): a worker on a research queue can't be on a project, and the other way round.
+    this.unlocks = new UnlockRunner({ bus });
+    this.research = new ResearchSystem({
+      bus,
+      nodes: RESEARCH_NODES,
+      milestones: RESEARCH_MILESTONES,
+      queues: RESEARCH_QUEUES,
+      runner: this.unlocks,
+      staff: this.staff,
+      rules: RESEARCH_RULES,
+      hooks: {
+        // Queue rules are never opened by debug "unlock all"; node conditions are.
+        conditionMet: (rule) => (QUEUE_RULES.has(rule) ? this.ruleMet(rule) : this.unlockMet(rule)),
+        workerStat: (s, node) => s.stats[RESEARCH_BRANCH_INFO[node.branch].stat] ?? 0,
+        bonusPerDay: () => fx('researchPerDay'),
+        speedPct: () => fx('researchSpeedPct') + this.ngPlusRuns * NG_PLUS_RESEARCH.speedPctPerRun,
+        costPct: () => this.ngPlusRuns * NG_PLUS_RESEARCH.costPctPerRun,
+        busyElsewhere: (id) => {
+          const job = this.assignments.jobOf(id);
+          return job ? `On ${job.name}` : null;
+        },
+        onComplete: (node, { staffId }) => staffId && this.staff.addXp(staffId, node.cost * RESEARCH_RULES.xpPerRp),
+      },
+    });
+    this.assignments = new AssignmentSystem({
+      staff: this.staff,
+      getJobs: () => this.projects.jobs,
+      bus,
+      busyElsewhere: (id) => (this.research.busyIds.includes(id) ? 'On research' : null),
+      otherBusyIds: () => this.research.busyIds,
+    });
+    for (const e of ['research:start', 'research:assign', 'research:stop', 'research:complete']) bus.on(e, () => this.assignments.refresh());
+    bus.on('research:rp', ({ amount }) => amount > 0 && (this.flags.firstRp = true)); // opens the Research Desk (F11, §18.2)
+    bus.on('unlock:fired', () => this.applyFeatures());
+    bus.on('facility:placed', ({ item }) => item.def === RESEARCH_QUEUES[0].rule.id && bus.emit('research:desk', { item }));
+    bus.on('facility:sold', () => {
+      this.research.closeLockedQueues(); // e.g. the Research Desk was sold: its queue stops, progress kept
+      this.assignments.refresh();
+    });
     this.projects.assignments = this.assignments;
     this.robots = new RobotBuildSystem({ rng: this.rng, staff: this.staff, traits: TRAITS, bus, now: () => this.clock.now(), effects: fx });
     this.projects.hooks = this.robots.hooks();
@@ -154,6 +202,7 @@ export class Campaign {
     });
     // A robot built for a contract is checked against it as soon as it is finished.
     bus.on('project:complete', ({ job, record }) => {
+      this.projectRp(record);
       if (job.data.contractId) this.deliverRecord(job.data.contractId, record.number);
     });
     this.flags = {};
@@ -178,6 +227,7 @@ export class Campaign {
       this.economy.add('credits', -this.operatingCostPerDay(job), `Running cost: ${job.name}`, 'projectDaily');
     }
     this.projects.dailyTick();
+    this.research.dailyTick();
     this.staff.dailyTick();
     this._pushStreaks();
     this.contracts.dailyTick(this.clock.totalDays); // deadlines
@@ -273,9 +323,14 @@ export class Campaign {
     (product.data.reviews ||= []).push({ month, text });
   }
 
-  // --- facility unlock rules (§18.2) ---
-  unlockMet(rule) {
-    if (this.flags.debugUnlockAll) return true;
+  // --- unlock rules (data/unlocks.js) ---
+  // subject: what the rule belongs to ({ type: 'part', id }). For things a research node promises, the research
+  // part of the rule is met by that node's unlock action having fired. Debug "unlock all" opens everything here.
+  unlockMet(rule, subject = null) {
+    return !!this.flags.debugUnlockAll || this.ruleMet(rule, subject);
+  }
+
+  ruleMet(rule, subject = null) {
     switch (rule?.type) {
       case 'start':
         return true;
@@ -287,15 +342,20 @@ export class Campaign {
         return this.staff.staff.some((s) => s.role === rule.role);
       case 'facility':
         return this.facilities.has(rule.id);
+      case 'research':
+        if (subject && PROMISED.has(`${subject.type}:${subject.id}`)) return this.unlocks.has(subject.type, subject.id);
+        return this.research.isDone(researchNodeId(rule.branch, rule.level));
+      case 'researchCount':
+        return this.research.doneCount >= rule.min;
       case 'all':
-        return rule.of.every((r) => this.unlockMet(r));
+        return rule.of.every((r) => this.ruleMet(r, subject));
       default:
-        return false; // research, competitions, counters, secrets: later milestones
+        return false; // competitions, counters, secrets: later milestones
     }
   }
 
   facilityUnlocked(defId) {
-    return this.unlockMet(FACILITIES[defId]?.unlock);
+    return this.unlockMet(FACILITIES[defId]?.unlock, { type: 'facility', id: defId });
   }
 
   // §39.1 employee cap at the company's rank.
@@ -391,17 +451,55 @@ export class Campaign {
     }
   }
 
-  // --- what is open (research arrives in Milestone 9; debug can open everything) ---
-  isOpen(rule) {
-    return rule?.type === 'start' || !!this.flags.debugUnlockAll;
+  // --- what is open (research, rank…; debug can open everything) ---
+  get openPurposes() {
+    return PURPOSE_ORDER.filter((id) => this.unlockMet(PURPOSES[id].unlock));
   }
 
-  get openPurposes() {
-    return PURPOSE_ORDER.filter((id) => this.isOpen(PURPOSES[id].unlock));
+  partOpen(id, { ignoreDebug = false } = {}) {
+    const c = COMPONENTS[id];
+    if (!c) return false;
+    return (!ignoreDebug && !!this.flags.debugUnlockAll) || this.ruleMet(c.unlock, { type: 'part', id });
   }
 
   get openParts() {
-    return new Set(Object.values(COMPONENTS).filter((c) => this.isOpen(c.unlock)).map((c) => c.id));
+    return new Set(Object.keys(COMPONENTS).filter((id) => this.partOpen(id)));
+  }
+
+  // --- research (§19) ---
+  get ngPlusRuns() {
+    return Math.min(NG_PLUS_RESEARCH.maxRuns, this.flags.ngPlusRuns ?? 0); // NG+ arrives later (§30.5 stored now)
+  }
+
+  feature(id) {
+    return this.unlocks.has('feature', id);
+  }
+
+  // Research features that change other systems (§19.6), re-applied after every unlock and every load.
+  applyFeatures() {
+    this.products.noveltyPenalty = this.feature('successorPenalty') ? SALES_RULES.noveltyPenaltyResearched : SALES_RULES.noveltyPenalty;
+    if (this.feature('trendForecast') !== this.market.lookahead) this.market.setLookahead(this.feature('trendForecast'));
+  }
+
+  // §19.7: a finished robot earns 10 + complexity × 2, plus 10 for each part used for the first time.
+  projectRp(record) {
+    const r = record?.result;
+    if (!r) return;
+    const day = this.clock.totalDays;
+    this.research.addRp(RP_SOURCES.project.base + (r.totalCx ?? 0) * RP_SOURCES.project.perComplexity, `Robot finished: ${record.name}`, day);
+    const firsts = Object.values(r.components ?? {}).filter((id) => this.research.firstTime('part', id));
+    if (firsts.length) this.research.addRp(firsts.length * RP_SOURCES.firstPartUse, `First use: ${firsts.map((id) => COMPONENTS[id]?.name ?? id).join(', ')}`, day);
+  }
+
+  // Start research on queue i with a worker. Returns { ok, reason }.
+  startResearch(i, nodeId, staffId) {
+    if (!staffId) return { ok: false, reason: 'Pick who will research it' };
+    return this.research.start(i, nodeId, staffId);
+  }
+
+  // Debug: finish a node now through the normal completion path (its actions and milestones fire once).
+  debugCompleteResearch(nodeId) {
+    return this.research.complete(nodeId);
   }
 
   setDebugUnlockAll(on) {
@@ -453,6 +551,7 @@ export class Campaign {
       this.economy.add('techChips', CONTRACT_RULES.special.techChips, `Contract bonus: ${c.title}`, 'reward');
       c.result.special = true;
     }
+    this.research.addRp(RP_SOURCES.contract[c.tier] ?? RP_SOURCES.contract.starter, `Contract: ${c.title}`, this.clock.totalDays);
     this.flags.firstContractDone = true;
     if (c.setsFlag) this.flags[c.setsFlag] = true;
   }
@@ -529,6 +628,9 @@ export class Campaign {
     this.economy.add('techChips', STARTING_MONEY.techChips, 'Welcome grant', 'start');
     this.market.start();
     this.contracts.reset();
+    this.unlocks.reset();
+    this.research.reset();
+    this.applyFeatures();
     this.contracts.monthStart(this.contractContext(), 0);
     this.paySalaries(); // day 1 of month 1
     this.bus.emit('campaign:ready', { fresh: true });
@@ -550,6 +652,8 @@ export class Campaign {
       products: this.products.serialize(),
       contracts: this.contracts.serialize(),
       workshop: this.facilities.serialize(),
+      research: this.research.serialize(),
+      unlocks: this.unlocks.serialize(),
       guide: this.guideState ?? null,
       flags: { ...this.flags },
     };
@@ -575,6 +679,10 @@ export class Campaign {
     this.contracts.load(data.contracts);
     if (data.workshop) this.facilities.load(data.workshop);
     else this.startLayout(); // saves from before Milestone 8
+    this.unlocks.load(data.unlocks);
+    this.research.load(data.research);
+    if (!data.research) for (const rec of this.history.records) this.projectRp(rec); // saves from before Milestone 9
+    this.applyFeatures();
     this.guideState = data.guide ?? null;
     this.assignments.refresh();
     this.bus.emit('campaign:ready', { fresh: false });

@@ -1,4 +1,4 @@
-// First-time guide steps (Milestone 7b; building and expansions added in Milestone 8; the full tutorial, bible §26, comes in Milestone 26 and builds on this).
+// First-time guide steps (Milestone 7b; building and expansions added in Milestone 8; research in Milestone 9; the full tutorial, bible §26, comes in Milestone 26 and builds on this).
 // Plain data for core/GuideSystem.js. Short, friendly words — no walls of text.
 // target names are resolved to screen spots by src/ui/guideTargets.js.
 // trigger: after = previous step done; event = has happened at least once; screen = only shows there.
@@ -198,6 +198,78 @@ export const GUIDE_STEPS = [
     advance: { event: 'facility:expansion' },
     block: false,
     restartAt: 'S18',
+  },
+  // Research (Milestone 9): the first RP → build a Research Desk → start the first research.
+  {
+    id: 'S20',
+    title: 'Research Points!',
+    text: 'Finished robots earn Research Points (RP). Spend them on new parts — first you need a Research Desk. Tap Build.',
+    target: 'buildButton',
+    trigger: { after: 'S16', event: 'research:rp', screen: ['workshop'] },
+    advance: { tap: true },
+    block: true,
+    skipIf: 'research:desk', // already built one on their own
+  },
+  {
+    id: 'S21',
+    title: 'The Research Desk',
+    text: 'Tap the Research Desk.',
+    target: 'researchDeskCard',
+    trigger: { after: 'S20', screen: ['build'] },
+    advance: { tap: true },
+    block: true,
+    skipIf: 'research:desk',
+  },
+  {
+    id: 'S22',
+    title: 'Place it',
+    text: 'Drag it to a green spot, then tap Place. A worker will sit here to research.',
+    target: 'placeButton',
+    trigger: { after: 'S21', screen: ['build'] },
+    advance: { event: 'research:desk' },
+    block: false,
+    restartAt: 'S21',
+    skipIf: 'research:desk',
+  },
+  {
+    id: 'S23',
+    title: 'Start researching',
+    text: 'Your Research Desk is ready. Tap Research.',
+    target: 'researchButton',
+    trigger: { after: 'S22', screen: ['workshop'] },
+    advance: { tap: true },
+    block: true,
+    skipIf: 'research:start',
+  },
+  {
+    id: 'S24',
+    title: 'Pick a topic',
+    text: 'Each topic costs RP and unlocks new parts. Mobility 1 also opens Delivery robots! Tap Research… on a topic.',
+    target: 'researchPick',
+    trigger: { after: 'S23', screen: ['research'] },
+    advance: { event: 'research:picker' },
+    block: true,
+    skipIf: 'research:start',
+  },
+  {
+    id: 'S25',
+    title: 'Who researches it?',
+    text: 'The best worker for it is picked for you. They leave the robot team until it is done. Tap Start.',
+    target: 'researchStart',
+    trigger: { after: 'S24', screen: ['research'] },
+    advance: { event: 'research:start' },
+    block: false,
+    restartAt: 'S24',
+    skipIf: 'research:start',
+  },
+  {
+    id: 'S26',
+    title: 'Research done!',
+    text: 'Its new parts are ready in the robot builder. Keep finishing robots and contracts to earn more RP.',
+    target: 'researchButton',
+    trigger: { after: 'S25', event: 'research:complete', screen: ['workshop'] },
+    advance: { next: true },
+    block: true,
   },
 ];
 

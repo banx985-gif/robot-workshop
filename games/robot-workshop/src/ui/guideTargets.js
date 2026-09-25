@@ -55,6 +55,11 @@ export function createGuideTargets({ router, campaign }) {
     placeButton: () => (on('build') && cur().mode === 'place' && !cur().confirm ? cur().actionRect(2) : null),
     expansionsTab: () => (on('build') && cur().mode === 'catalogue' && !cur().confirm ? cur().tabRect(1) : null),
     buyExpansion1: () => (on('build') && !cur().confirm ? cur().buyRectOf('X1') : null),
+    // Research (Milestone 9)
+    researchDeskCard: () => (on('build') && !cur().confirm ? cur().cardRectOf('F11') : null),
+    researchButton: () => (on('workshop') && !cur().card.isOpen ? cur().researchButtonRect() : null),
+    researchPick: () => (on('research') ? cur().pickTargetRect('MO-R1') : null), // the guide suggests Mobility 1 (opens Delivery)
+    researchStart: () => (on('research') ? cur().startButtonRect() : null),
   };
 
   return (name) => {

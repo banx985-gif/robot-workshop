@@ -17,6 +17,7 @@ import { SEGMENTS, PURPOSE_SEGMENTS, MARKET_RULES } from '../../data/segments.js
 import { CONTRACT_RULES, SIGNATURE_CONTRACTS } from '../../data/contracts.js';
 import { PRODUCT_SLOT_STEPS } from '../../data/market.js';
 import { CALENDAR } from '../../data/balance.js';
+import { RESEARCH_NODES, RESEARCH_BRANCH_ORDER, RESEARCH_BRANCH_INFO, RESEARCH_MILESTONES, RESEARCH_QUEUES, FEATURES, RP_SOURCES, researchNodeId } from '../../data/research.js';
 
 const SLOT_COUNTS = { chassis: 10, mobility: 8, ai: 8, tool: 8, power: 8, special: 8 }; // §11
 const ROBOT_ART = (key) => `assets/images/robots/${key}.png`;
@@ -27,6 +28,7 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   const v = new DataValidator();
   const statSet = new Set(ROBOT_STAT_KEYS);
   const rankSet = new Set(RANKS.map((r) => r.id));
+  const WORK_STAT_KEYS = new Set(STAT_KEYS);
 
   // --- unlock rules ---
   const checkUnlock = (owner, rule) => {
@@ -44,6 +46,9 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
         break;
       case 'role':
         v.ref(owner, 'role', rule.role, new Set(Object.keys(ROLES)));
+        break;
+      case 'researchCount':
+        v.check(Number.isInteger(rule.min) && rule.min >= 1 && rule.min <= 36, `${owner}: research count ${rule.min} out of range`);
         break;
       case 'rank':
         v.ref(owner, 'rank', rule.rank, rankSet);
@@ -189,11 +194,12 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
     v.check(s.difficulty > 0 && s.difficulty < 1, `${o}: difficulty must be below 1 (so it is always possible)`);
   }
 
-  // --- facilities (§18.2: F01–F15 in Milestone 8), expansions (§18.1), bays (§18.3), staff caps (§39.1) ---
-  const EFFECT_KEYS = /^(progressPct\.(concept|engineering|software|assembly|testing)|stationStatPct\.(eng|des|prg|fab|tst)|gainPct\.[A-Z]{3}|robotStat\.[A-Z]{3}|commercialStat\.[A-Z]{3}|materialCostPct|contractPayoutPct|restEnergyPct|restMorale|displaySlots|projectBays|researchQueues|runningCostPerDay|salesUnitsPct)$/;
+  // --- facilities (§18.2: F01–F15 in Milestone 8, F33 in Milestone 9), expansions (§18.1), bays (§18.3), staff caps (§39.1) ---
+  const EFFECT_KEYS = /^(progressPct\.(concept|engineering|software|assembly|testing)|stationStatPct\.(eng|des|prg|fab|tst)|gainPct\.[A-Z]{3}|robotStat\.[A-Z]{3}|commercialStat\.[A-Z]{3}|materialCostPct|contractPayoutPct|restEnergyPct|restMorale|displaySlots|projectBays|researchQueues|researchPerDay|researchSpeedPct|runningCostPerDay|salesUnitsPct)$/;
   v.keysMatchIds('facilities', FACILITIES);
   const facIds = v.uniqueIds('facilities', Object.values(FACILITIES));
-  v.check(FACILITY_ORDER.length === 15 && FACILITY_ORDER.every((id, i) => id === `F${String(i + 1).padStart(2, '0')}`), 'facilities: expected F01–F15 in order');
+  const EXPECTED_FACILITIES = [...Array.from({ length: 15 }, (_, i) => `F${String(i + 1).padStart(2, '0')}`), 'F33'];
+  v.check(FACILITY_ORDER.join() === EXPECTED_FACILITIES.join(), 'facilities: expected F01–F15 and F33 in order');
   v.uniqueIds('facility art', Object.values(FACILITIES), (f) => f.art);
   for (const f of Object.values(FACILITIES)) {
     const o = `facility ${f.id}`;
@@ -212,7 +218,7 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
     if (f.floor) v.art(`${o} floor`, `assets/images/env/${f.floor}.png`);
   }
   for (const [phase, ids] of Object.entries(STATIONS)) {
-    v.ref('stations', 'phase', phase, new Set(PHASES.map((p) => p.id)));
+    v.ref('stations', 'phase', phase, new Set([...PHASES.map((p) => p.id), 'research']));
     for (const id of ids) v.ref(`stations (${phase})`, 'facility', id, facIds);
   }
   for (const id of FALLBACK_STATIONS) v.ref('fallback stations', 'facility', id, facIds);
@@ -237,6 +243,62 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   for (const id of PROJECT_BAYS.second.needsAny) v.check(/^F(19|20)$/.test(id), `project bays: ${id} should be F19 or F20`);
   for (const r of RANKS) v.check(Number.isInteger(EMPLOYEE_CAP[r.id]), `employee cap: no value for Rank ${r.id}`);
   for (const k of Object.values(BUILD_ART)) v.check(typeof k === 'string', 'build art: bad key');
+
+  // --- research (§19): 36 visible nodes, six branches of six, no loops, every promise backed by data ---
+  const BIBLE_RP = {
+    mechanical: [80, 140, 220, 320, 480, 700],
+    mobility: [80, 140, 220, 320, 480, 750],
+    ai: [80, 140, 220, 340, 520, 780],
+    power: [80, 140, 220, 340, 520, 820],
+    tool: [70, 130, 210, 310, 450, 680],
+    special: [70, 130, 210, 300, 460, 700],
+  };
+  v.uniqueIds('research nodes', RESEARCH_NODES);
+  v.check(RESEARCH_NODES.length === 36, `research: expected 36 visible nodes, found ${RESEARCH_NODES.length}`);
+  v.check(RESEARCH_BRANCH_ORDER.length === 6 && RESEARCH_BRANCH_ORDER.every((b) => b in RESEARCH_BRANCH_INFO), 'research: expected six branches');
+  v.noCycles('research', RESEARCH_NODES);
+  const promised = new Map(); // "part:CH02" → node id
+  for (const n of RESEARCH_NODES) {
+    const o = `research ${n.id}`;
+    v.check(n.id === researchNodeId(n.branch, n.level), `${o}: id does not match branch/level`);
+    v.check(BIBLE_RP[n.branch]?.[n.level - 1] === n.cost, `${o}: cost ${n.cost} RP differs from bible §19 (${BIBLE_RP[n.branch]?.[n.level - 1]})`);
+    v.check(typeof n.name === 'string' && n.name.length > 0, `${o}: no name`);
+    v.check(WORK_STAT_KEYS.has(RESEARCH_BRANCH_INFO[n.branch]?.stat), `${o}: branch has no researcher stat`);
+    if (n.condition) checkUnlock(o, n.condition);
+    v.check(Array.isArray(n.actions) && n.actions.length > 0, `${o}: unlocks nothing`);
+    for (const a of n.actions) {
+      const key = `${a.type}:${a.id}`;
+      v.check(!promised.has(key), `${o}: ${key} is also unlocked by ${promised.get(key)}`);
+      promised.set(key, n.id);
+      const hasRule = (rule) => (rule?.type === 'all' ? rule.of.some(hasRule) : rule?.type === 'research' && rule.branch === n.branch && rule.level === n.level);
+      if (a.type === 'part') {
+        if (v.ref(o, 'part', a.id, partIds)) v.check(hasRule(COMPONENTS[a.id].unlock), `${o}: part ${a.id}'s unlock rule does not name ${RESEARCH_BRANCHES[n.branch]} ${n.level}`);
+      } else if (a.type === 'facility') {
+        v.check(a.id in FACILITIES || a.id in FACILITY_NAMES, `${o}: unknown facility "${a.id}"`);
+        if (FACILITIES[a.id]) v.check(hasRule(FACILITIES[a.id].unlock), `${o}: facility ${a.id}'s unlock rule does not name this research`);
+      } else if (a.type === 'feature') v.check(a.id in FEATURES, `${o}: unknown feature "${a.id}"`);
+      else v.error(`${o}: unknown unlock action "${a.type}"`);
+    }
+  }
+  // Every normal part/facility whose rule names research must be promised by that node (CH08 and CH09 are
+  // separate later projects in the bible, §19.1 / §11.1).
+  const LATER_PROJECTS = new Set(['CH08', 'CH09']);
+  const researchIn = (rule) => (rule?.type === 'all' ? rule.of.flatMap(researchIn) : rule?.type === 'research' ? [rule] : []);
+  for (const c of parts) {
+    for (const r of researchIn(c.unlock)) {
+      if (LATER_PROJECTS.has(c.id)) continue;
+      v.check(promised.get(`part:${c.id}`) === researchNodeId(r.branch, r.level), `component ${c.id}: no research node unlocks it (${RESEARCH_BRANCHES[r.branch]} ${r.level})`);
+    }
+  }
+  for (const f of Object.values(FACILITIES)) for (const r of researchIn(f.unlock)) v.check(promised.get(`facility:${f.id}`) === researchNodeId(r.branch, r.level), `facility ${f.id}: no research node unlocks it`);
+  RESEARCH_MILESTONES.forEach((m, i) => {
+    v.check(i === 0 || m.count > RESEARCH_MILESTONES[i - 1].count, 'research milestones: counts must go up');
+    for (const a of m.actions) v.check(a.type === 'feature' && a.id in FEATURES, `research milestone ${m.count}: unknown feature "${a.id}"`);
+  });
+  v.check(RESEARCH_MILESTONES.map((m) => m.count).join() === '2,8,18,36', 'research milestones: §19.6 asks for 2 / 8 / 18 / 36');
+  v.check(RESEARCH_QUEUES.length === 2, 'research: expected two queues (the second off until Server Rack + Rank A)');
+  RESEARCH_QUEUES.forEach((q) => checkUnlock(`research queue ${q.id}`, q.rule));
+  for (const [t, rp] of Object.entries(RP_SOURCES.contract)) v.check(rp >= 10 && rp <= 80, `RP sources: contract ${t} gives ${rp} (bible: 10–80)`);
 
   // --- every image the game loads ---
   for (const [key, path] of Object.entries(manifest)) v.art(`image "${key}"`, path, { placeholder: placeholders.includes(key) });

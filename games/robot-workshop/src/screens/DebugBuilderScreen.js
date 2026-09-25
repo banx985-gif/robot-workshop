@@ -9,7 +9,6 @@ import { COMPONENTS, SLOTS, STARTER_PARTS, partsInSlot } from '../../data/compon
 import { PROJECT_TIERS, BUDGET_FOCUS, BUDGET_ORDER } from '../../data/phases.js';
 import { ROBOT_STATS, ROBOT_STAT_KEYS } from '../../data/stats.js';
 import { VISUALS } from '../../data/visuals.js';
-import { isOpenNow } from '../systems/unlockRules.js';
 import { panel, text, contained, statBars, hit, fmt } from '../ui/widgets.js';
 
 const HEADER_H = 130;
@@ -150,7 +149,7 @@ export function createDebugBuilderScreen({ renderer, layout, assets, campaign, r
           const on = c.id === part.id;
           panel(ctx, r, { fill: on ? 'rgba(79,195,247,0.25)' : 'rgba(26,32,40,0.96)', stroke: on ? '#4FC3F7' : '#35414F', lineWidth: on ? 5 : 2, radius: 14 });
           contained(ctx, assets, c.art, { x: r.x + 6, y: r.y + 6, w: r.w - 12, h: r.h - 12 });
-          if (!isOpenNow(c.unlock)) drawPadlock(ctx, r.x + r.w - 24, r.y + r.h - 18, 18, '#FFD166');
+          if (!campaign.partOpen(c.id, { ignoreDebug: true })) drawPadlock(ctx, r.x + r.w - 24, r.y + r.h - 18, 18, '#FFD166');
         });
       });
 

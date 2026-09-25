@@ -180,7 +180,7 @@ export function createProjectResultScreen({ renderer, layout, assets, campaign, 
     const novelty = campaign.products.noveltyFor(data);
     const f = campaign.sales.forecast(data, novelty);
     if (rec.contract && !rec.contract.ok) text(ctx, `Missed its contract: ${rec.contract.failures.join(', ')}`, 290, y + 34, { size: 22, color: '#FF8A80', maxWidth: w - 310 });
-    text(ctx, `Sells to ${segName(data.segment)} (demand ${campaign.market.demand(data.segment)}). ` + PRICE_POSITIONS[position].note + (novelty < 1 ? ' Same build as before: −15% sales.' : ''), 24, y + 184, { size: 25, color: novelty < 1 ? '#FFB74D' : '#9AA8B5', maxWidth: w - 48 });
+    text(ctx, `Sells to ${segName(data.segment)} (demand ${campaign.market.demand(data.segment)}). ` + PRICE_POSITIONS[position].note + (novelty < 1 ? ` Same build as before: −${Math.round((1 - novelty) * 100)}% sales.` : ''), 24, y + 184, { size: 25, color: novelty < 1 ? '#FFB74D' : '#9AA8B5', maxWidth: w - 48 });
     text(ctx, `About ${f.firstMonth.units} sold in month 1 at ${fmt(f.firstMonth.unitPrice)} each · ≈${fmt(f.revenue)} over 6 months`, 24, y + 222, {
       size: 28,
       bold: true,

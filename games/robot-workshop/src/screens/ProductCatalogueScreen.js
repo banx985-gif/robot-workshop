@@ -154,6 +154,13 @@ export function createProductCatalogueScreen({ renderer, layout, assets, campaig
     const ny = 72 + 4 * 58 + 8;
     text(ctx, news.length ? news.slice(0, 2).join('   ') : 'No big trends this month.', 24, ny, { size: 24, color: news.length ? '#FFD166' : '#9AA8B5', maxWidth: w - 48 });
     if (news.length > 2) text(ctx, news.slice(2).join('   '), 24, ny + 34, { size: 24, color: '#FFD166', maxWidth: w - 48 });
+    // Research reward (§19.6, 8 topics): next month's trend, a month early.
+    if (campaign.feature('trendForecast')) {
+      const t = m.nextTrend;
+      const shift = t ? Object.values(t.shifts)[0] : 0;
+      const line = t ? `${shift > 0 ? '▲' : '▼'} ${Object.keys(t.shifts).map((id) => SEG_NAME[id]).join(' & ')} ${shift > 0 ? 'rising' : 'falling'} for ${t.months} month${t.months === 1 ? '' : 's'}` : 'no new trend expected';
+      text(ctx, `Forecast for next month: ${line}`, 24, ny + 68, { size: 24, bold: true, color: '#4FC3F7', maxWidth: w - 48 });
+    }
   }
 
   function drawProduct(ctx, p, i) {

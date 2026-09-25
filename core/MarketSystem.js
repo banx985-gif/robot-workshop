@@ -11,6 +11,8 @@
 //   }
 // Demand this month = base (random walk inside min–max) + active trend shifts.
 // Uses its own seeded Rng so market rolls never change other random results.
+// Forecast: setLookahead(true) decides each trend one month early, so nextTrend can be shown in advance
+// (with it off, trends are decided on the month they start, as before).
 // Emits 'market:month' ({ demand, trends, started }) after each roll.
 export class MarketSystem {
   constructor({ rng, segments, rules = {}, bus = null, historyMonths = 24 }) {
@@ -29,6 +31,14 @@ export class MarketSystem {
     this.history = []; // last N months: { month, demand: {...} }
     this.nextTrendId = 1;
     this.month = 0; // how many rolls so far
+    this.lookahead = false;
+    this.nextTrend = undefined; // lookahead: next month's trend (null = none coming; undefined = not decided yet)
+  }
+
+  setLookahead(on) {
+    this.lookahead = !!on;
+    if (this.lookahead && this.nextTrend === undefined && Object.keys(this.base).length) this.nextTrend = this._rollTrend();
+    if (!this.lookahead) this.nextTrend = undefined;
   }
 
   demand(segmentId) {
@@ -60,22 +70,38 @@ export class MarketSystem {
     for (const t of this.trends) t.monthsLeft--;
     this.trends = this.trends.filter((t) => t.monthsLeft > 0);
     let started = null;
-    if (this.rng.chance(r.trendChance)) started = this._startTrend();
+    if (this.lookahead) {
+      if (this.nextTrend) {
+        started = { ...this.nextTrend, startedMonth: this.month + 1 };
+        this.trends.push(started);
+      }
+      this.nextTrend = this._rollTrend();
+    } else if (this.rng.chance(r.trendChance)) started = this._startTrend();
     this._settle(started);
   }
 
   _startTrend() {
+    const t = this._makeTrend(new Set(this.trends.flatMap((t) => Object.keys(t.shifts))));
+    if (t) this.trends.push(t);
+    return t;
+  }
+
+  // Lookahead: roll next month's trend now, avoiding segments whose trend will still be running then.
+  _rollTrend() {
+    if (!this.rng.chance(this.rules.trendChance)) return null;
+    const t = this._makeTrend(new Set(this.trends.filter((t) => t.monthsLeft > 1).flatMap((t) => Object.keys(t.shifts))));
+    return t;
+  }
+
+  _makeTrend(busy) {
     const r = this.rules;
-    const busy = new Set(this.trends.flatMap((t) => Object.keys(t.shifts)));
     const free = this.segments.filter((s) => !busy.has(s.id));
     const count = Math.min(free.length, this.rng.int(r.trendSegments[0], r.trendSegments[1]));
     if (!count) return null;
     const shifts = {};
     for (const s of this.rng.shuffle(free).slice(0, count)) shifts[s.id] = this.rng.chance(0.5) ? r.trendShift : -r.trendShift;
     const months = this.rng.int(r.trendMonths[0], r.trendMonths[1]);
-    const t = { id: this.nextTrendId++, shifts, months, monthsLeft: months, startedMonth: this.month + 1 };
-    this.trends.push(t);
-    return t;
+    return { id: this.nextTrendId++, shifts, months, monthsLeft: months, startedMonth: this.month + 1 };
   }
 
   _settle(started) {
@@ -111,6 +137,8 @@ export class MarketSystem {
       history: JSON.parse(JSON.stringify(this.history)),
       nextTrendId: this.nextTrendId,
       month: this.month,
+      lookahead: this.lookahead,
+      nextTrend: this.nextTrend === undefined ? undefined : JSON.parse(JSON.stringify(this.nextTrend)),
     };
   }
 
@@ -125,6 +153,8 @@ export class MarketSystem {
     this.history = JSON.parse(JSON.stringify(s.history ?? []));
     this.nextTrendId = s.nextTrendId ?? 1;
     this.month = s.month ?? 0;
+    this.lookahead = !!s.lookahead;
+    this.nextTrend = s.nextTrend === undefined ? undefined : JSON.parse(JSON.stringify(s.nextTrend));
     return true;
   }
 }

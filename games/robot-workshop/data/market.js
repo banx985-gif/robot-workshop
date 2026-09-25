@@ -26,6 +26,7 @@ export const SALES_RULES = {
   variance: { min: 0.9, max: 1.1 },
   reputationCap: 12000,
   noveltyPenalty: 0.85, // same purpose + the exact same six parts as an earlier product: -15%
+  noveltyPenaltyResearched: 0.92, // §19.6: after 18 research topics the successor penalty drops to -8%
   reviewMonths: [0, 3], // §14.5 customer feedback at launch and at month 3
 };
 

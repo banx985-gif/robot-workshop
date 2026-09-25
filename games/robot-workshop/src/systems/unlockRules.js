@@ -1,12 +1,7 @@
-// Reading unlock rules (data/unlocks.js). Parts and purposes: only 'start' content is open in normal play
-// until research arrives (Milestone 9). Facilities are checked for real by Campaign.unlockMet().
+// Reading unlock rules (data/unlocks.js) as plain words. Whether a rule is met is Campaign.unlockMet().
 import { RESEARCH_BRANCHES, FACILITY_NAMES, COUNTERS, COMPETITION_EVENTS, FLAG_NAMES } from '../../data/unlocks.js';
 import { FACILITIES } from '../../data/facilities.js';
 import { ROLES } from '../../data/staff.js';
-
-export function isOpenNow(rule) {
-  return rule?.type === 'start';
-}
 
 // Plain words for a rule, e.g. "Mechanical Research 3" or "Materials Lab + Mechanical Research 5".
 export function describeUnlock(rule) {
@@ -15,6 +10,8 @@ export function describeUnlock(rule) {
       return 'Available from the start';
     case 'research':
       return `${RESEARCH_BRANCHES[rule.branch] ?? rule.branch} ${rule.level}`;
+    case 'researchCount':
+      return `${rule.min} research topics done`;
     case 'facility':
       return FACILITIES[rule.id]?.name ?? FACILITY_NAMES[rule.id] ?? rule.id;
     case 'rank':
@@ -34,4 +31,10 @@ export function describeUnlock(rule) {
     default:
       return 'Unknown';
   }
+}
+
+// The parts of a rule that are not met yet, in words (e.g. "Company Rank D"). met(rule) → bool.
+export function missingParts(rule, met) {
+  if (rule?.type === 'all') return rule.of.flatMap((r) => missingParts(r, met));
+  return met(rule) ? [] : [describeUnlock(rule)];
 }

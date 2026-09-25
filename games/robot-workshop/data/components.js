@@ -3,7 +3,7 @@
 //   stats = changes to the seven robot stats ("all stats +18" is written out for all seven)
 //   inn   = Innovation added to the robot;  faultPct = extra daily fault chance in % points (CH09 "base fault +3%")
 //   tags  = simple labels for later rules (synergies, Milestone 14)
-//   unlock = how the part opens, as data. Only 'start' parts are open until research arrives (Milestone 9).
+//   unlock = how the part opens, as data (research from Milestone 9; CH07 = ME6 + Rank B, matching both §11.1 and §19.1).
 //     { type: 'start' } | { type: 'research', branch, level } | { type: 'facility', id } | { type: 'rank', rank }
 //     { type: 'counter', counter, min } | { type: 'competition', event } | { type: 'secret', id } | { type: 'all', of: [rules] }
 
@@ -31,7 +31,7 @@ const ROWS = {
     ['CH04', 'Aero Chassis', 1800, 4, { SPD: 30, CTL: 14, APL: 8, END: -5 }, research('mechanical', 3), ['aero', 'speed']],
     ['CH05', 'Rugged Chassis', 2600, 4, { END: 32, REL: 28, PWR: 10 }, research('mechanical', 4), ['rugged']],
     ['CH06', 'Precision Chassis', 3800, 5, { CTL: 32, REL: 22, APL: 18 }, all({ type: 'facility', id: 'F21' }, research('mechanical', 5)), ['precision']],
-    ['CH07', 'Modular Chassis', 5500, 6, { INT: 12, CTL: 20, END: 20, REL: 20 }, { type: 'rank', rank: 'B' }, ['modular']],
+    ['CH07', 'Modular Chassis', 5500, 6, { INT: 12, CTL: 20, END: 20, REL: 20 }, all(research('mechanical', 6), { type: 'rank', rank: 'B' }), ['modular']],
     ['CH08', 'Titanium Chassis', 8000, 7, { PWR: 35, END: 38, REL: 35, SPD: 8 }, all(research('mechanical', 6), { type: 'competition', event: 'worldTier' }), ['titanium', 'heavy']],
     ['CH09', 'Experimental Chassis', 12000, 8, every(18), all({ type: 'counter', counter: 'researchPrototypes', min: 5 }, research('ai', 5)), ['experimental'], { inn: 8, faultPct: 3 }],
     ['CH10', '??? Prestige Chassis', 20000, 10, every(35), secret('SEC-COMP-01'), ['prestige', 'secret'], { inn: 15 }],
