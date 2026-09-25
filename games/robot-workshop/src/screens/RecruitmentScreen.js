@@ -1,6 +1,7 @@
 // Hiring (bible §16): the candidate board (3 cards + a special-arrival card), free and Tech Chip refreshes,
 // and the five channels (paid refreshes). Candidate cards reuse core/ui/StaffCard.js. Opened from the roster.
 // The game pauses while this screen is open.
+import { SECRET_ART } from '../../data/secrets.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawStaffCard, staffCardButtonAt, STAFF_CARD_HEIGHT } from '../../../../core/ui/StaffCard.js';
 import { drawButton, drawPadlock, hitRect } from '../../../../core/ui/Button.js';
@@ -173,6 +174,14 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
       drawButton(ctx, infoButton(1), `Refresh · ${tc.cost} Tech Chips`, { disabled: !!campaign.refreshBlock('techChips'), font: 'bold 30px system-ui, sans-serif', accent: '#B39DDB' });
 
       rec.cards.forEach((c, i) => {
+        // Legendary / secret arrivals (M17): the legendary aura behind their card.
+        if (['legendary', 'secret'].includes(c.tier)) {
+          const cr = cardRect(i);
+          ctx.save();
+          ctx.globalAlpha = 0.55;
+          assets.drawContained(ctx, SECRET_ART.aura, { x: cr.x - 30, y: cr.y - 30, w: 320, h: cr.h + 60 });
+          ctx.restore();
+        }
         drawStaffCard(ctx, cardRect(i), viewFor(c), assets, { highlight: !!c.special, accent: GOLD });
         if (c.special) text(ctx, `★ ${c.special.note ?? 'Special arrival'}`, cardRect(i).x + 262, cardRect(i).y + cardRect(i).h - 24, { size: 26, bold: true, color: GOLD, baseline: 'bottom', maxWidth: cardRect(i).w - 290 });
       });

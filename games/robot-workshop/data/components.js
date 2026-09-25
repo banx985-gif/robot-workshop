@@ -64,7 +64,7 @@ const ROWS = {
     ['TO05', 'Construction Tool', 3200, 5, { PWR: 40, END: 18, REL: 8 }, research('tool', 4), ['construction', 'heavy']],
     ['TO06', 'Survey Package', 4100, 5, { INT: 30, END: 12, APL: 8 }, research('tool', 5), ['survey']],
     ['TO07', 'Sport/Arena Attachment', 6000, 7, { SPD: 15, PWR: 22, CTL: 28 }, all(research('tool', 6), { type: 'competition', event: 'regionalCup' }), ['arena']],
-    ['TO08', 'Experimental Multi-Tool', 9000, 8, { PWR: 30, CTL: 30, INT: 30 }, { type: 'counter', counter: 'distinctPurposesCompleted', min: 10 }, ['experimental'], { inn: 7 }],
+    ['TO08', 'Experimental Multi-Tool', 9000, 8, { PWR: 30, CTL: 30, INT: 30 }, secret('SEC-BEH-06'), ['experimental'], { inn: 7 }], // One of Everything (all 10 purposes)
   ],
   power: [
     ['PO01', 'Basic Battery', 250, 1, { END: 12, REL: 8 }, START, ['battery', 'starter']],

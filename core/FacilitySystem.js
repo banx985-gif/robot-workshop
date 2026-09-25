@@ -5,7 +5,10 @@
 //             effects are summed over every owned copy: maxCount = how many copies count (default all),
 //             cap = limit on this facility's total for that key (e.g. racks: -3 each, cap -7).
 //   area:     { cols, rows } — the usable floor at the start (from 0,0)
-//   zones:    [{ id, col, row, w, h, requires: [zoneIds] }] — expansion areas, locked until opened
+//   zones:    [{ id, col, row, w, h, requires: [zoneIds], entrance? }] — expansion areas, locked until opened.
+//             A zone with its own entrance is a separate room (e.g. a basement reached by stairs): once opened, what
+//             is built there counts as reachable from that entrance. Workers still walk the main room only.
+//   zoneShown(zone) → false keeps a zone off the floor entirely until it is opened (a secret room)
 //   entrance: { col, row } — where people come in; always kept clear, and everything must be reachable from it
 //   keepClear:[{ col, row }] — more cells that may never be built on
 //   sellRefundPct: share of the build price paid back on selling (default 50)
@@ -29,13 +32,14 @@ const REASONS = {
 };
 
 export class FacilitySystem {
-  constructor({ bus = null, defs, area, zones = [], entrance, keepClear = [], sellRefundPct = 50, reasons = {} }) {
+  constructor({ bus = null, defs, area, zones = [], entrance, keepClear = [], sellRefundPct = 50, reasons = {}, zoneShown = () => true }) {
+    this.zoneShown = zoneShown;
     this.bus = bus;
     this.defs = defs;
     this.area = area;
     this.zones = zones;
     this.entrance = entrance;
-    this.keepClear = [entrance, ...keepClear];
+    this.keepClear = [entrance, ...zones.filter((z) => z.entrance).map((z) => z.entrance), ...keepClear];
     this.sellRefundPct = sellRefundPct;
     this.reasons = { ...REASONS, ...reasons };
     // The whole floor that can ever exist (base + every zone).
@@ -60,10 +64,10 @@ export class FacilitySystem {
     return this.owned.has(zoneId);
   }
 
-  // Every zone this one needs is open (so it could be bought, rules permitting).
+  // Every zone this one needs is open and the zone may be shown (so it could be bought, rules permitting).
   zoneReady(zoneId) {
     const z = this.zone(zoneId);
-    return !!z && !this.owned.has(zoneId) && (z.requires ?? []).every((r) => this.owned.has(r));
+    return !!z && !this.owned.has(zoneId) && (z.requires ?? []).every((r) => this.owned.has(r)) && this.zoneShown(z) !== false;
   }
 
   // Locked zones that sit next to the open floor (shown as "for sale" areas).
@@ -155,7 +159,7 @@ export class FacilitySystem {
     }
     const cand = { uid: -1, def: defId, col, row, rot };
     this._mark(occ, cand, -2); // -2 = the candidate
-    const reached = this._reach(occ);
+    const reached = this._reach(occ, this.entrances);
     const items = this.placed.filter((p) => p.uid !== ignoreUid).concat(cand);
     for (const it of items) {
       if (!this._accessible(it, reached)) return this._no('blocked', this.defs[it.def].name);
@@ -305,13 +309,21 @@ export class FacilitySystem {
     for (let r = item.row; r < item.row + h; r++) for (let c = item.col; c < item.col + w; c++) if (c >= 0 && r >= 0 && c < this.cols && r < this.rows) occ[r * this.cols + c] = value;
   }
 
-  // Flood fill of free cells from the entrance.
-  _reach(occ) {
+  // The main entrance plus the entrance of every opened separate room.
+  get entrances() {
+    return [this.entrance, ...this.zones.filter((z) => z.entrance && this.owned.has(z.id)).map((z) => z.entrance)];
+  }
+
+  // Flood fill of free cells from the entrances (default: the main one — where workers walk).
+  _reach(occ, starts = [this.entrance]) {
     const seen = new Uint8Array(this.cols * this.rows);
-    const e = this.entrance;
-    if (occ[e.row * this.cols + e.col] !== 0) return seen;
-    const stack = [e.row * this.cols + e.col];
-    seen[stack[0]] = 1;
+    const stack = [];
+    for (const e of starts) {
+      const i0 = e.row * this.cols + e.col;
+      if (occ[i0] !== 0 || seen[i0]) continue;
+      seen[i0] = 1;
+      stack.push(i0);
+    }
     while (stack.length) {
       const i = stack.pop();
       const c = i % this.cols;

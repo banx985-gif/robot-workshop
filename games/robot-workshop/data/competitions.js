@@ -205,7 +205,7 @@ export const COMPETITIONS = [
     beatYear: 16,
     entry: 10000,
     rewards: { credits: 60000, rep: 0, prestigeTokens: 2, trophy: 'eliteMasters' },
-    unlock: all({ type: 'secret', id: 'SEC-COMPETITION-01' }, { type: 'flag', flag: 'ngPlus' }), // secret invite + NG+
+    unlock: { type: 'secret', id: 'SEC-COMPETITION-01' }, // the Lunar Invitation (its rule needs the Year 16 ending: postgame or NG+)
     secret: true,
     field: [['R07', 8], ['R06', 4], ['R04', 1], ['R05', -3], ['R02', -7]],
     rankWeight: 5,
@@ -225,7 +225,7 @@ export const COMPETITIONS = [
     beatYear: 16,
     entry: 15000,
     rewards: { credits: 100000, rep: 0, prestigeTokens: 4, trophy: 'prestigeCrown' },
-    unlock: { type: 'secret', id: 'SEC-COMPETITION-03' },
+    unlock: all({ type: 'accountFlag', flag: 'blackCircuit' }, rank('A')), // SEC-COMPETITION-03 invitation + the 3-token stake, for good once Rank A
     secret: true,
     field: [['R08', 10], ['R07', 5], ['R05', 1], ['R04', -3], ['R02', -6]],
     rankWeight: 5,

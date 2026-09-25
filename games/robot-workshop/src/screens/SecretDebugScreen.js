@@ -1,6 +1,7 @@
 // Debug "why not?" inspector (?debug=1, Milestone 16): pick any secret rule and see every condition — the fact it
 // reads, its live value, the value needed (and the eased value on a repeat), true / false — plus how often the
 // engine has checked it on its trigger events. "Eased view" shows the §30.4a numbers even on a first run.
+// Also the debug New Game+ level setter and the "ending reached" switch (until Milestones 19–20 build them).
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { SECRETS } from '../../data/secrets.js';
@@ -25,10 +26,12 @@ export function createSecretDebugScreen({ renderer, layout, campaign, router }) 
     const h = headRect();
     return { x: h.x + h.w - 250, y: h.y, w: 250, h: 86 };
   };
-  const ruleRect = (i) => {
+  // Second row: ‹ rule › · NG+ − n + · Ending on/off
+  const rowBtn = (k) => {
     const h = headRect();
-    const w = (h.w - (SECRETS.length - 1) * 12) / SECRETS.length;
-    return { x: h.x + i * (w + 12), y: h.y + 104, w, h: 86 };
+    const xs = [0, 110, 330, 440, 520, 640, 780];
+    const ws = [96, 210, 96, 70, 96, 130, 250];
+    return { x: h.x + xs[k], y: h.y + 104, w: ws[k], h: 86 };
   };
   function bodyRect() {
     const sr = layout.safeRect;
@@ -56,7 +59,11 @@ export function createSecretDebugScreen({ renderer, layout, campaign, router }) 
     onTap(p) {
       if (hit(p, backRect())) return router.go('rumours');
       if (hit(p, easedRect())) forceEased = !forceEased;
-      SECRETS.forEach((_, i) => hit(p, ruleRect(i)) && (pick = i));
+      if (hit(p, rowBtn(0))) pick = (pick + SECRETS.length - 1) % SECRETS.length;
+      if (hit(p, rowBtn(2))) pick = (pick + 1) % SECRETS.length;
+      if (hit(p, rowBtn(4))) campaign.setDebugNgPlus(campaign.ngPlusRuns - 1);
+      if (hit(p, rowBtn(5))) campaign.setDebugNgPlus(campaign.ngPlusRuns + 1);
+      if (hit(p, rowBtn(6))) campaign.setDebugEnding(!campaign.flags.endingReached);
     },
     onDragStart: (p) => scroll.beginDrag(p),
     onDrag: (p) => scroll.drag(p),
@@ -68,7 +75,14 @@ export function createSecretDebugScreen({ renderer, layout, campaign, router }) 
       drawButton(ctx, backRect(), '‹ Back', { font: 'bold 32px system-ui, sans-serif' });
       text(ctx, 'Why not?', h.x + 200, h.y + 43, { size: 42, bold: true, baseline: 'middle' });
       drawButton(ctx, easedRect(), forceEased ? 'Eased view ✓' : 'Eased view', { active: forceEased, font: 'bold 28px system-ui, sans-serif' });
-      SECRETS.forEach((r, i) => drawButton(ctx, ruleRect(i), r.id, { active: i === pick, font: 'bold 28px system-ui, sans-serif' }));
+      const f = 'bold 28px system-ui, sans-serif';
+      drawButton(ctx, rowBtn(0), '‹', { font: 'bold 40px system-ui, sans-serif' });
+      text(ctx, `${pick + 1}/${SECRETS.length}`, rowBtn(1).x + rowBtn(1).w / 2, rowBtn(1).y + 43, { size: 30, bold: true, align: 'center', baseline: 'middle' });
+      drawButton(ctx, rowBtn(2), '›', { font: 'bold 40px system-ui, sans-serif' });
+      text(ctx, 'NG+', rowBtn(3).x + 4, rowBtn(3).y + 43, { size: 26, bold: true, baseline: 'middle', color: '#9AA8B5' });
+      drawButton(ctx, rowBtn(4), `− ${campaign.ngPlusRuns}`, { font: f });
+      drawButton(ctx, rowBtn(5), '+', { font: f });
+      drawButton(ctx, rowBtn(6), campaign.flags.endingReached ? 'Ending ✓' : 'Ending: no', { active: !!campaign.flags.endingReached, font: f });
       const { rule, res, lines } = inspect();
       const S = campaign.secrets;
       const w = bodyRect().w - 12;

@@ -441,8 +441,17 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
       lx: -corner.apex[0] * ws,
       ly: -corner.apex[1] * ws,
     });
-    wallRun(ops, ROOM_ART.rightWall, F.area.cols, ext.cols, false);
-    wallRun(ops, ROOM_ART.leftWall, F.area.rows, ext.rows, true);
+    // The main room's back walls stop at the main room: a separate room (the secret basement, M17) has its own.
+    let mainCols = F.area.cols;
+    let mainRows = F.area.rows;
+    for (const z of F.zones) {
+      if (z.entrance || !(F.isOwned(z.id) || F.zoneReady(z.id))) continue;
+      mainCols = Math.max(mainCols, z.col + z.w);
+      mainRows = Math.max(mainRows, z.row + z.h);
+    }
+    wallRun(ops, ROOM_ART.rightWall, F.area.cols, mainCols, false);
+    wallRun(ops, ROOM_ART.leftWall, F.area.rows, mainRows, true);
+    for (const z of F.zones) if (z.entrance && F.isOwned(z.id)) roomWalls(ops, z, corner, cornerImg, ws);
 
     let minX = Infinity;
     let minY = Infinity;
@@ -472,6 +481,17 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     if (roomOps) camera.moveTo(camera.x + iso.originX - oldOrigin.x, camera.y + iso.originY - oldOrigin.y);
     roomFor = `${ext.cols}x${ext.rows}`;
     return ops;
+  }
+
+  // A separate room's corner post and two back walls (its door on the left wall is the stairs down), drawn at its
+  // own corner of the grid.
+  function roomWalls(ops, z, corner, cornerImg, ws) {
+    const from = ops.length;
+    ops.push({ key: corner.key, w: (cornerImg?.naturalWidth ?? 474) * ws, h: (cornerImg?.naturalHeight ?? 380) * ws, m: new DOMMatrix(), lx: -corner.apex[0] * ws, ly: -corner.apex[1] * ws });
+    wallRun(ops, ROOM_ART.rightWall, z.w, z.w, false);
+    wallRun(ops, ROOM_ART.leftWall, z.h, z.h, true);
+    const at = new DOMMatrix().translate((z.col - z.row) * HW, (z.col + z.row) * HH);
+    for (let i = from; i < ops.length; i++) ops[i].m = at.multiply(ops[i].m);
   }
 
   // One back wall: the starting room's pieces spread evenly from the corner post to the end of the base wall

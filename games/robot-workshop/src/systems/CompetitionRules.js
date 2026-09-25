@@ -27,7 +27,7 @@ export function pilotMods(staff, s) {
     stressPct: staff.traitEffect(s, 'stressPenaltyPct'),
     aggressiveCeilingPct: staff.traitEffect(s, 'aggressiveCeilingPct'),
     breakdownRiskPct: staff.traitEffect(s, 'breakdownRiskPct'),
-    basePct: 0,
+    basePct: staff.traitEffect(s, 'competitionScorePct'), // Homegrown Ace (SEC-BEH-08)
     aggressiveScorePct: null,
     noMoralePenalty: false,
   };

@@ -55,9 +55,10 @@ export const MILESTONE_EVENTS = [
   { id: 'EV_M04', kind: 'milestone', art: 'event_art_04', title: "You're invited: {event}!", text: '{note}' },
   { id: 'EV_M05', kind: 'milestone', art: 'event_art_05', title: 'National Breakthrough!', text: 'National champions! The whole country knows your robots now.' },
   { id: 'EV_M06', kind: 'milestone', art: 'event_art_06', title: 'The World Robotics Championship!', text: 'Your workshop is invited to the world stage. See Compete.', goto: 'competitions' },
-  // Milestone 17 (legendary arrivals) and Milestones 16–17 (secret engine) fire these; stored now, never fired yet.
-  { id: 'EV_M07', kind: 'milestone', art: 'event_art_07', later: 'legendary', title: 'A Legend Arrives', text: '{staff} wants to join your workshop.' },
-  { id: 'EV_M08', kind: 'milestone', art: 'event_art_08', later: 'secret', title: 'Secret Endgame Discovery', text: 'Something hidden has opened up.' },
+  // Fired by secret rules (Milestone 17): every Legendary Arrival (one per legendary/secret worker, so it may repeat)
+  // and the Singularity Workshop (SEC-ROBOT-03).
+  { id: 'EV_M07', kind: 'milestone', art: 'event_art_07', repeats: true, title: 'A Legend Arrives: {staff}', text: 'Hire them on the Roster within {days} days.', goto: 'recruit' },
+  { id: 'EV_M08', kind: 'milestone', art: 'event_art_08', title: 'The Singularity Workshop', text: 'Every legend, every prestige part, one machine. Something hidden has opened up.' },
 ];
 
 // §24.1 repeatable text events — all 20, in the bible's order.

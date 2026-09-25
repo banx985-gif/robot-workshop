@@ -210,7 +210,7 @@ export function createFinanceScreen({ renderer, layout, assets, campaign, router
       const cash = eco.balance('credits');
       text(ctx, 'Credits', 290, 24, { size: 28, color: '#9AA8B5' });
       text(ctx, fmt(cash), 290, 58, { size: 64, bold: true, color: cash < 0 ? '#FF8A80' : '#FFFFFF' });
-      text(ctx, `Tech Chips ${eco.balance('techChips')}`, 290, 150, { size: 32, bold: true, color: '#B39DDB' });
+      text(ctx, `Tech Chips ${eco.balance('techChips')}${eco.balance('prestigeTokens') ? ` · Prestige Tokens ${eco.balance('prestigeTokens')}` : ''}`, 290, 150, { size: 32, bold: true, color: '#B39DDB', maxWidth: w - 310 });
       const next = rep.nextRank;
       text(ctx, `Reputation ${rep.value} · Rank ${rep.rank.id}${next ? ` (Rank ${next.id} at ${fmt(next.min)})` : ''}`, 290, 200, { size: 28, maxWidth: w - 310 });
 

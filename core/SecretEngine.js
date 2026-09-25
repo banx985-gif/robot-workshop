@@ -11,7 +11,9 @@
 //   { fact, op, value, kind: 'count' | 'threshold' | 'fixed', category, label }
 //     ops: eq, neq, gt, gte, lt, lte, in (fact is one of value), has (fact list contains value)
 //   { fact, op: 'countOf', where: [{ field, op, value }], value, kind }   how many items of a list fact match
-//     every `where` test (field = a path inside each item) — needs at least `value` (or cmp: 'eq' / 'lte' …)
+//     every `where` test (field = a path inside each item) — needs at least `value` (or cmp: 'eq' / 'lte' …).
+//     A `where` test can carry its own kind (e.g. "250 units" inside "a robot that sold 250 units") and is eased
+//     the same way; by: 'field' counts distinct values of that field instead (e.g. "across 2 purposes").
 //   { all: [cond] }  "all of these happened"      { any: [cond] }  "any of these"
 // Facts are read by name only, from a registry the game fills (FactRegistry below): run facts, account facts,
 // and the trigger event's own payload. An unknown fact is simply not met.
@@ -122,7 +124,7 @@ export class SecretEngine {
     // Trigger-event index: event → rules that care about it. Nothing else ever checks a rule.
     this.index = new Map();
     for (const r of rules) for (const ev of r.triggerEvents ?? []) (this.index.get(ev) ?? this.index.set(ev, []).get(ev)).push(r);
-    this.account = { history: {}, facts: {} };
+    this.account = { history: {}, facts: {}, flags: {} }; // flags: account-wide switches a reward can set
     this.resetRun();
   }
 
@@ -184,17 +186,29 @@ export class SecretEngine {
       const list = cond.all ?? cond.any;
       const parts = list.map((c) => this.evalCond(c, ctx, eased));
       const ok = cond.all ? parts.every((p) => p.ok) : parts.some((p) => p.ok);
-      return { cond, ok, parts, group: cond.all ? 'all' : 'any' };
+      const partial = cond.all ? parts.reduce((t, p) => t + p.partial, 0) / (parts.length || 1) : Math.max(0, ...parts.map((p) => p.partial));
+      return { cond, ok, parts, group: cond.all ? 'all' : 'any', partial };
     }
     const need = eased ? easeValue(cond, this.easing) : cond.value;
     let value = this.facts.get(cond.fact, ctx);
     let ok;
+    let whereNeeds = [];
+    let bestNear = 0;
     if (cond.op === 'countOf') {
       const list = value == null ? [] : Array.isArray(value) ? value : Object.values(value);
-      value = list.filter((item) => (cond.where ?? []).every((w) => OPS[w.op]?.(readPath(item, w.field), w.value) ?? false)).length;
+      const where = (cond.where ?? []).map((w) => ({ ...w, need: eased ? easeValue(w, this.easing) : w.value }));
+      const hits = list.filter((item) => where.every((w) => OPS[w.op]?.(readPath(item, w.field), w.need) ?? false));
+      // Clue progress: how close the nearest item that doesn't count yet is (its share of the tests it passes).
+      const near = list.filter((item) => !hits.includes(item));
+      bestNear = where.length ? Math.max(0, ...near.map((item) => where.filter((w) => OPS[w.op]?.(readPath(item, w.field), w.need)).length / where.length)) : 0;
+      value = cond.by ? new Set(hits.map((item) => readPath(item, cond.by))).size : hits.length;
+      if (eased) whereNeeds = where.filter((w) => w.need !== w.value).map((w) => ({ field: w.field, need: w.need, base: w.value }));
       ok = OPS[cond.cmp ?? 'gte'](value, need);
     } else ok = value !== undefined && (OPS[cond.op]?.(value, need) ?? false);
-    return { cond, ok, value, need, base: cond.value, eased: eased && need !== cond.value, known: this.facts.has(cond.fact) };
+    // How far along it is (0–1), for clue stages only: done = 1; a number on its way = its share of the need.
+    let partial = ok ? 1 : 0;
+    if (!ok && typeof value === 'number' && typeof need === 'number' && need > 0 && ['gte', 'gt', 'countOf'].includes(cond.op)) partial = Math.min(0.99, (value + bestNear) / need);
+    return { cond, ok, value, need, base: cond.value, eased: eased && (need !== cond.value || whereNeeds.length > 0), whereNeeds, known: this.facts.has(cond.fact), partial };
   }
 
   // The whole rule, every condition with its live value (also what the "why not?" inspector shows).
@@ -207,7 +221,8 @@ export class SecretEngine {
     const allOk = all.every((p) => p.ok);
     const anyOk = !any.length || any.some((p) => p.ok);
     const forbidOk = forbids.every((p) => !p.ok);
-    return { rule, eased, ng, all, any, forbids, allOk, anyOk, forbidOk, ok: ng.ok && allOk && anyOk && forbidOk, met: all.filter((p) => p.ok).length + (any.length && anyOk ? 1 : 0), total: all.length + (any.length ? 1 : 0) };
+    const progress = all.reduce((t, p) => t + p.partial, 0) + (any.length ? Math.max(0, ...any.map((p) => p.partial)) : 0);
+    return { rule, eased, ng, all, any, forbids, allOk, anyOk, forbidOk, ok: ng.ok && allOk && anyOk && forbidOk, met: all.filter((p) => p.ok).length + (any.length && anyOk ? 1 : 0), total: all.length + (any.length ? 1 : 0), progress };
   }
 
   // A trigger event happened: check only the rules indexed under it. Returns the rules unlocked now.
@@ -230,13 +245,19 @@ export class SecretEngine {
   }
 
   // Clue stages only ever go up.
+  // Progress counts part-way conditions (half the robots needed = 0.5). Stages go in order: stage 1 at minMet
+  // (default 1; on a one-condition rule, half way), stage 2 ('allButOne') when all but one are done (a one-condition
+  // rule: 80% there). A rule that is fully met unlocks instead.
   _clues(rule, res) {
     const stages = rule.clueStages ?? [];
     let stage = this.run.clues[rule.id] ?? 0;
-    stages.forEach((s, i) => {
-      const need = s.minMet === 'allButOne' ? res.total - 1 : s.minMet ?? 1;
-      if (res.met >= need && res.ng.ok && i + 1 > stage) stage = i + 1;
-    });
+    for (const [i, s] of stages.entries()) {
+      let need = s.minMet === 'allButOne' ? res.total - 1 : s.minMet ?? 1;
+      if (res.total <= 1) need = s.minMet === 'allButOne' ? 0.8 : Math.min(need, 0.5);
+      need = Math.max(need, i ? 0.5 : 0);
+      if (!(res.progress >= need && res.ng.ok)) break;
+      stage = Math.max(stage, i + 1);
+    }
     if (stage > (this.run.clues[rule.id] ?? 0)) {
       this.run.clues[rule.id] = stage;
       this.bus?.emit('secret:clue', { rule, stage, missing: this.missingCategories(res) });
@@ -291,6 +312,7 @@ export class SecretEngine {
   }
 
   loadAccount(data) {
-    this.account = { history: {}, facts: {}, ...(data ? JSON.parse(JSON.stringify(data)) : {}) };
+    this.account = { history: {}, facts: {}, flags: {}, ...(data ? JSON.parse(JSON.stringify(data)) : {}) };
+    this.account.flags ||= {};
   }
 }

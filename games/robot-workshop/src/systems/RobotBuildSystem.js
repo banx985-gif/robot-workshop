@@ -397,6 +397,7 @@ export class RobotBuildSystem {
       faults: d.faults.length,
       faultsFound: d.faultsFound,
       faultsFixed: d.faultsFixed,
+      faultsByPhase: { ...(d.faultsByPhase ?? {}) }, // e.g. zero software faults (SEC-STAFF-L3)
       breakthroughs: d.breakthroughs.filter((b) => b.hit).length,
       synergies: syn.active, // combos that fired (ids, data/synergies.js)
       synergyRewards: syn.rewards, // what each one gave (after Master Integrator)

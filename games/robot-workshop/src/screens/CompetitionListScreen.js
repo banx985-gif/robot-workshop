@@ -60,6 +60,12 @@ export function createCompetitionListScreen({ renderer, layout, assets, campaign
   // What the Enter button does / why not: { ok, label, reason }.
   function status(ev) {
     if (!campaign.competitionOpen(ev.id)) {
+      // §29.5 Black Circuit: once invited, the one-time stake of 3 Prestige Tokens (never credits or Tech Chips).
+      if (ev.id === 'C12' && campaign.secrets.account.flags.blackCircuitInvite && !campaign.secrets.account.flags.blackCircuit) {
+        const block = campaign.blackCircuitStakeBlock();
+        return { ok: !block, stake: true, label: 'Pay stake', reason: block ?? 'Pay the 3 Prestige Token invitation stake' };
+      }
+      if (ev.id === 'C12' && campaign.secrets.account.flags.blackCircuit) return { ok: false, label: 'Rank A', reason: 'Stake paid — the Black Circuit opens at Company Rank A' };
       if (ev.secret) return { ok: false, label: 'Secret', reason: 'A secret invitation — nobody will say how to get one' };
       const met = campaign.competitionUnlocked(ev);
       const miss = missingParts(ev.unlock, (r) => campaign.ruleMet(r));
@@ -105,7 +111,10 @@ export function createCompetitionListScreen({ renderer, layout, assets, campaign
       COMPETITIONS.forEach((ev, i) => {
         if (hit(c, enterRect(i))) {
           const st = status(ev);
-          if (st.ok) router.go('compSetup', { eventId: ev.id });
+          if (st.stake && st.ok) {
+            const res = campaign.payBlackCircuitStake();
+            message = res.ok ? { text: 'Stake paid: the Black Circuit is yours for good (from Rank A)', color: '#B388FF' } : { text: res.reason, color: '#FF8A80' };
+          } else if (st.ok) router.go('compSetup', { eventId: ev.id });
           else message = { text: `${ev.id}: ${st.reason}`, color: '#FFD166' };
         }
         const last = lastOf(ev.id);
@@ -201,7 +210,7 @@ export function createCompetitionListScreen({ renderer, layout, assets, campaign
       text(ctx, 'Last:', lr.x + 20, lr.y + lr.h / 2 - 3, { size: 26, bold: true, baseline: 'middle' });
       text(ctx, placeText(last.place, last.player.dnf), lr.x + lr.w - 20, lr.y + lr.h / 2 - 3, { size: 30, bold: true, baseline: 'middle', align: 'right', color: placeColor(last.place, last.player.dnf) });
     }
-    drawButton(ctx, enterRect(i), st.label, { active: st.ok, accent: '#7CFFB2', disabled: !st.ok, locked: !open, font: 'bold 32px system-ui, sans-serif', badge: st.ok ? '!' : null });
+    drawButton(ctx, enterRect(i), st.label, { active: st.ok, disabled: !st.ok, locked: !open && !st.stake, accent: st.stake ? '#B388FF' : '#7CFFB2', font: 'bold 32px system-ui, sans-serif', badge: st.ok ? '!' : null });
   }
 
   return screen;

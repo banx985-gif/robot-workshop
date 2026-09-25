@@ -3,6 +3,8 @@
 export const CURRENCIES = {
   credits: { id: 'credits', name: 'Credits', short: 'cr', icon: 'ui_icon_01_money' },
   techChips: { id: 'techChips', name: 'Tech Chips', short: 'TC', icon: 'ui_icon_02_premium' },
+  // §20.1: earned from endings, prestige competitions and difficult records; never sold (Milestone 17).
+  prestigeTokens: { id: 'prestigeTokens', name: 'Prestige Tokens', short: 'PT', icon: 'reward_10' },
 };
 
 // §20.2 first run

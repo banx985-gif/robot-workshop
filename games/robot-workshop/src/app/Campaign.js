@@ -42,7 +42,7 @@ import { EVENTS, EVENTS_BY_ID, EVENT_CAPS, EVENT_RULES, NOTIFY_RULES } from '../
 import { SPONSORS, SPONSOR_RULES } from '../../data/sponsors.js';
 import { SecretEngine } from '../../../../core/SecretEngine.js';
 import { SECRETS, SECRETS_BY_ID, SECRET_RULES, SECRET_TRIGGERS } from '../../data/secrets.js';
-import { createSecretFacts, runAccountFacts } from '../systems/secretFacts.js';
+import { createSecretFacts, runAccountFacts, robotFact } from '../systems/secretFacts.js';
 import { SYNERGIES_BY_ID } from '../../data/synergies.js';
 import { COMPETITIONS, COMPETITIONS_BY_ID, COMPETITION_RULES, TROPHIES, RANKING_POINTS } from '../../data/competitions.js';
 import { RIVALS, RIVAL_RULES } from '../../data/rivals.js';
@@ -65,8 +65,8 @@ import { REVIEW_TEMPLATES, FIT_BANDS } from '../../data/reviews.js';
 import { CALENDAR, SPEED_UNLOCKS, STAFF_RULES, PROJECT_RULES, CAMPAIGN_SEED } from '../../data/balance.js';
 import { CURRENCIES, STARTING_MONEY, DEBT_RULES, SALARY_RULES, OPERATING_COST, TECH_CHIP_REWARDS, RANKS, REPUTATION_RULES } from '../../data/economy.js';
 import { PRODUCT_SLOT_STEPS, SALES_RULES } from '../../data/market.js';
-import { FACILITIES, EXPANSIONS, WORKSHOP_START, PROJECT_BAYS, DISPLAY_RULES, LOCKED_LATER } from '../../data/facilities.js';
-import { RESEARCH_NODES, RESEARCH_MILESTONES, RESEARCH_QUEUES, RESEARCH_RULES, RESEARCH_BRANCH_INFO, RP_SOURCES, NG_PLUS_RESEARCH, researchNodeId } from '../../data/research.js';
+import { FACILITIES, EXPANSIONS, WORKSHOP_START, PROJECT_BAYS, DISPLAY_RULES, LOCKED_LATER, PRESTIGE_DISPLAY } from '../../data/facilities.js';
+import { RESEARCH_NODES, RESEARCH_MILESTONES, RESEARCH_QUEUES, RESEARCH_RULES, RESEARCH_BRANCH_INFO, RP_SOURCES, NG_PLUS_RESEARCH, researchNodeId, SECRET_RESEARCH } from '../../data/research.js';
 import { describeUnlock } from '../systems/unlockRules.js';
 import { RobotBuildSystem } from '../systems/RobotBuildSystem.js';
 import { Sales } from '../systems/Sales.js';
@@ -118,11 +118,14 @@ export const SAVE_MIGRATIONS = {
   12: (record) => ({ ...record, data: { ...record.data, events: null, sponsors: null, notifications: null } }),
   // v13 (Milestone 15) had no secret engine: null = no clues or secrets yet in this run.
   13: (record) => ({ ...record, data: { ...record.data, secrets: null } }),
+  // v14 (Milestone 16) held the 3 engine test rules: Campaign.loadData takes them and their rewards back out.
+  14: (record) => ({ ...record, data: { ...record.data, removeTestSecrets: true } }),
 };
 
 // Things research unlock actions name ("part:CH02", "facility:F07"…): for these, the research part of their
 // unlock rule is met only by that action having fired (see data/research.js).
-const PROMISED = new Set(RESEARCH_NODES.flatMap((n) => n.actions.map((a) => `${a.type}:${a.id}`)));
+// Secret Lab topics and secret rewards (Milestone 17) promise theirs the same way (e.g. CH10, TO08, F35).
+const PROMISED = new Set([...RESEARCH_NODES, ...SECRET_RESEARCH].flatMap((n) => n.actions.map((a) => `${a.type}:${a.id}`)).concat(SECRETS.flatMap((s) => s.rewardActions.filter((a) => ['part', 'facility'].includes(a.type)).map((a) => `${a.type}:${a.id}`))));
 const QUEUE_RULES = new Set(RESEARCH_QUEUES.map((q) => q.rule));
 // Project tiers that count as an "advanced robot" (C09 needs 5): Advanced and above.
 const ADVANCED_TIERS = PROJECT_TIERS.slice(PROJECT_TIERS.findIndex((t) => t.id === 'advanced')).map((t) => t.id);
@@ -147,6 +150,7 @@ export class Campaign {
       zones: EXPANSIONS,
       entrance: WORKSHOP_START.entrance,
       sellRefundPct: WORKSHOP_START.sellRefundPct,
+      zoneShown: (z) => !z.secret || this.facilities?.isOwned(z.id) || !!this.unlocks?.has('zone', z.id), // the basement stays hidden until its secret
     });
     const fx = (key) => this.facilities.total(key) + (this.sponsors?.total(key) ?? 0) + (this.events?.total(key) ?? 0);
     this.fx = fx;
@@ -184,7 +188,7 @@ export class Campaign {
     this.unlocks = new UnlockRunner({ bus });
     this.research = new ResearchSystem({
       bus,
-      nodes: RESEARCH_NODES,
+      nodes: [...RESEARCH_NODES, ...SECRET_RESEARCH],
       milestones: RESEARCH_MILESTONES,
       queues: RESEARCH_QUEUES,
       runner: this.unlocks,
@@ -198,7 +202,13 @@ export class Campaign {
         speedPct: () => fx('researchSpeedPct') + this.ngPlusRuns * NG_PLUS_RESEARCH.speedPctPerRun,
         costPct: () => this.ngPlusRuns * NG_PLUS_RESEARCH.costPctPerRun,
         busyElsewhere: (id) => this.busyReason(id, 'research'),
-        onComplete: (node, { staffId }) => staffId && this.staff.addXp(staffId, node.cost * RESEARCH_RULES.xpPerRp),
+        onComplete: (node, { staffId }) => {
+          if (staffId) this.staff.addXp(staffId, node.cost * RESEARCH_RULES.xpPerRp);
+          (this.flags.researchDays ||= {})[node.id] = this.clock.totalDays; // SEC-STAFF-S3: topics done before the end of Year 3
+        },
+        // Secret Lab topics also cost Prestige Tokens (§29.3).
+        extraCostBlock: (node) => (node.prestigeTokens && this.economy.balance('prestigeTokens') < node.prestigeTokens ? `Needs ${node.prestigeTokens} Prestige Tokens` : null),
+        payExtraCost: (node) => node.prestigeTokens && this.economy.add('prestigeTokens', -node.prestigeTokens, `Secret research: ${node.name}`, 'research'),
       },
     });
     this.assignments = new AssignmentSystem({
@@ -220,12 +230,18 @@ export class Campaign {
       reappearChance: RECRUIT_RULES.reappearChance,
       freeManualPerYear: RECRUIT_RULES.freeManualPerYear,
       hooks: {
-        makeCandidate: candidateMaker(
-          () => this.takenLooks(),
-          (ch, tier) => this.namedPool(ch, tier),
+        makeCandidate: this._withDeclinedLegends(
+          candidateMaker(
+            () => this.takenLooks(),
+            (ch, tier) => this.namedPool(ch, tier),
+          ),
         ),
         // §16.2: Agency's small elite chance only after its condition.
-        tierWeights: (ch) => (ch.eliteNeeds && !this.ruleMet(ch.eliteNeeds) ? { ...ch.weights, elite: 0 } : ch.weights),
+        tierWeights: (ch) => {
+          if (ch.eliteNeeds && !this.ruleMet(ch.eliteNeeds)) return { ...ch.weights, elite: 0 };
+          const bonus = this.fx('prestigeDisplay') ? Math.min(PRESTIGE_DISPLAY.capPct, this.trophies.count * PRESTIGE_DISPLAY.pctPerTrophy) : 0; // F35
+          return bonus && ch.weights.elite ? { ...ch.weights, elite: ch.weights.elite + bonus } : ch.weights;
+        },
       },
     });
     this.training = new TrainingSystem({
@@ -237,7 +253,7 @@ export class Campaign {
       slots: TRAINING_SLOTS,
       rules: TRAINING_RULES,
       hooks: {
-        statCap: (s) => this.staff.statCap(s),
+        statCap: (s, k) => this.staff.statCap(s, k),
         primaryStat: (s) => ROLES[s.role]?.primaryStat,
         slotCount: (slot) => Math.min(slot.max, slot.base + fx(slot.effect)),
         conditionMet: (rule) => this.unlockMet(rule),
@@ -324,6 +340,8 @@ export class Campaign {
       this._synergiesFinished(record);
       this.projectRp(record);
       this.sponsors.signal('robotFinished', { record }, this.clock.totalDays);
+      // Once the Singularity has been found this run, any later robot that meets its robot condition gets SYN20 too.
+      if (this.secrets.unlockedInRun('SEC-ROBOT-03') && this._singularityRobot() === record) this._applySingularity(record);
       if (job.data.contractId) this.deliverRecord(job.data.contractId, record.number);
     });
     // Events (§24), sponsors (§23) and the message inbox (Milestone 15). Events roll on their own seeded stream.
@@ -382,8 +400,19 @@ export class Campaign {
     this.unlocks.handlers = {
       ...this.unlocks.handlers,
       currency: (a) => this._secretCurrency(a),
-      event: (a) => this.events.fire(a.id, this.clock.totalDays, { secret: a.secret }), // e.g. EV20, the mysterious message
+      event: (a) => this.events.fire(a.id, this.clock.totalDays, { secret: a.secret }), // EV20 the anonymous message, EV_M08
+      staffArrival: (a) => this.legendaryArrival(a.id, a.windowDays),
+      flag: (a) => (this.flags[a.id] = a.value ?? true), // Nocturne revealed, the hidden ending variant
+      accountFlag: (a) => (this.secrets.account.flags[a.id] = true), // the Black Circuit invitation
+      combo: (a) => this._secretCombo(a),
+      family: (a) => ((this.secrets.account.flags.families ||= {})[a.id] = true), // a robot look archived for good
+      trait: (a) => this._secretTrait(a),
+      clue: (a) => this._secretClue(a),
+      // secretResearch, part, facility, zone, competition, record: read back through unlocks.has (topics, parts,
+      // F35, the basement, C11 and Records open because the action has fired).
     };
+    bus.on('recruit:expired', ({ candidate }) => this._arrivalGone(candidate));
+    bus.on('staff:hired', () => this._arrivalGone(null));
     for (const [ev, busEvent] of Object.entries(SECRET_TRIGGERS)) bus.on(busEvent, (payload) => this.checkSecrets(ev, payload));
   }
 
@@ -406,7 +435,150 @@ export class Campaign {
     const why = `Secret: ${rule?.name ?? a.secret}`;
     if (a.currency === 'rp') this.research.addRp(a.amount, why, this.clock.totalDays);
     else if (a.currency === 'techChips') this.economy.add('techChips', a.amount, why, 'reward');
-    else if (a.currency === 'prestigeTokens') this.flags.prestigeTokensEarned = (this.flags.prestigeTokensEarned ?? 0) + a.amount; // paid out with NG+
+    else if (a.currency === 'prestigeTokens') this.economy.add('prestigeTokens', a.amount, why, 'reward');
+    else if (a.currency === 'rep') this.reputation.add(a.amount, why);
+  }
+
+  // A combo's exact recipe becomes known (SYN18 / SYN19 via the robot paths). SYN20 (SEC-ROBOT-03) also goes onto the
+  // robot that earned it: the Singularity Workshop combo and robot look 20.
+  _secretCombo(a) {
+    this.synergyArchive.discover(a.id, { day: this.clock.totalDays, year: this.clock.year, via: a.secret, campaignId: this.campaignId });
+    if (a.id === 'SYN20') {
+      const rec = this._singularityRobot();
+      if (rec) this._applySingularity(rec);
+    }
+  }
+
+  // The newest finished robot that meets SEC-ROBOT-03's robot condition (the engine checks it, not a copy of it).
+  _singularityRobot() {
+    const rule = SECRETS_BY_ID['SEC-ROBOT-03'];
+    const eased = this.secrets.isRepeat(rule.id);
+    const one = { ...rule.requiresAll[0], fact: 'event.robots' };
+    for (const rec of [...this.history.records].reverse()) {
+      if (rec.result && this.secrets.evalCond(one, { payload: { robots: [robotFact(rec, this)] } }, eased).ok) return rec;
+    }
+    return null;
+  }
+
+  _applySingularity(rec) {
+    const r = rec.result;
+    if (!r || r.synergies?.includes('SYN20')) return;
+    r.synergies = [...(r.synergies ?? []), 'SYN20'];
+    r.visual = 'V20';
+    (rec.newSynergies ||= []).push({ id: 'SYN20', firstEver: true });
+    this.bus.emit('synergy:discovered', { record: rec, found: [{ id: 'SYN20', firstEver: true }] });
+  }
+
+  // Loyal (only if a trait slot is free) and Homegrown Ace (on top of the slots) — for someone on the team now.
+  _secretTrait(a) {
+    const st = this.staff.get(a.staff);
+    if (!st || st.traits.includes(a.trait)) return;
+    if (a.ifSlot && st.traits.length >= this.staff.traitSlots(st)) return;
+    st.traits.push(a.trait);
+  }
+
+  _secretClue(a) {
+    const cur = this.secrets.run.clues[a.id] ?? 0;
+    if ((a.stage ?? 1) > cur && !this.secrets.unlockedInRun(a.id)) {
+      this.secrets.run.clues[a.id] = a.stage ?? 1;
+      this.bus.emit('secret:clue', { rule: SECRETS_BY_ID[a.id], stage: a.stage ?? 1, missing: [] });
+    }
+  }
+
+  // --- Legendary Arrival (§29.1–29.2, §16.3) ---
+  // A special candidate card that no refresh can push out, for 56 days (84 on a repeat). One arrival at a time: a
+  // second one waits its turn. Not hired in time (declined) → that person joins Global Search at 4% a card until hired.
+  legendaryArrival(staffId, days = SECRET_RULES.arrivalDays.first) {
+    if (this.staff.get(staffId)) return false;
+    const sp = this.recruitment.special;
+    if (sp && ['legendary', 'secret'].includes(STAFF_BY_ID[sp.staffId]?.tier)) {
+      (this.flags.arrivalQueue ||= []).push({ staffId, days });
+      return 'queued';
+    }
+    this.recruitment.addSpecial(namedCandidate(staffId), { day: this.clock.totalDays, days, note: 'Legendary Arrival' });
+    this.flags.declinedLegends = (this.flags.declinedLegends ?? []).filter((id) => id !== staffId);
+    this.events.fire('EV_M07', this.clock.totalDays, { staff: STAFF_BY_ID[staffId].name, staffId, days });
+    return true;
+  }
+
+  // The special card left without a hire (declined), or someone was hired: the next waiting arrival comes in.
+  _arrivalGone(candidate) {
+    const id = candidate?.staffId;
+    if (id && ['legendary', 'secret'].includes(STAFF_BY_ID[id]?.tier) && !this.staff.get(id)) {
+      this.flags.declinedLegends = [...new Set([...(this.flags.declinedLegends ?? []), id])];
+    }
+    const q = this.flags.arrivalQueue ?? [];
+    while (q.length && !this.recruitment.special) {
+      const next = q.shift();
+      this.legendaryArrival(next.staffId, next.days);
+    }
+  }
+
+  // Global Search cards: 4% each to be a declined legendary / secret worker (one not here and not on the board).
+  _withDeclinedLegends(make) {
+    return (channel, tier, rng) => {
+      if (channel.id === 'globalSearch') {
+        const onBoard = new Set(this.recruitment.cards.map((c) => c.staffId).filter(Boolean));
+        const pool = (this.flags.declinedLegends ?? []).filter((id) => !this.staff.get(id) && !onBoard.has(id));
+        if (pool.length && rng.chance(SECRET_RULES.declinedPoolChance)) return namedCandidate(rng.pick(pool));
+      }
+      return make(channel, tier, rng);
+    };
+  }
+
+  // §29.5 Black Circuit: after the invitation, the one-time stake of 3 Prestige Tokens opens C12 for good (Rank A+).
+  blackCircuitStakeBlock() {
+    const f = this.secrets.account.flags;
+    if (!f.blackCircuitInvite) return 'No invitation';
+    if (f.blackCircuit) return 'Already paid';
+    if (this.economy.balance('prestigeTokens') < SECRET_RULES.blackCircuitStake) return `Needs ${SECRET_RULES.blackCircuitStake} Prestige Tokens`;
+    return null;
+  }
+
+  payBlackCircuitStake() {
+    const block = this.blackCircuitStakeBlock();
+    if (block) return { ok: false, reason: block };
+    this.economy.add('prestigeTokens', -SECRET_RULES.blackCircuitStake, 'Black Circuit invitation stake', 'reward');
+    this.secrets.account.flags.blackCircuit = true;
+    this._competitionInvites();
+    this.save().catch(() => {});
+    return { ok: true };
+  }
+
+  // Saves from Milestone 16: the 3 "Test:" rules go, with what they paid (25 RP, 1 Tech Chip, 1 stored Prestige
+  // Token) and their inbox messages — players never see them again.
+  _removeTestSecrets() {
+    const S = this.secrets;
+    const day = this.clock.totalDays;
+    const had = (id) => !!S.run.unlocked[id];
+    if (had('TEST-01')) this.research.addRp(-Math.min(25, this.research.rp), 'Removed: test secret reward', day);
+    if (had('TEST-02') && this.economy.ledger.some((l) => l.reason === 'Secret: Test: Steady Hands')) this.economy.add('techChips', -1, 'Removed: test secret reward', 'reward');
+    if (had('TEST-03') && this.flags.prestigeTokensEarned) this.flags.prestigeTokensEarned -= 1;
+    for (const k of ['unlocked', 'clues']) for (const id of Object.keys(S.run[k])) if (id.startsWith('TEST-')) delete S.run[k][id];
+    for (const k of Object.keys(S.stats.byRule)) if (k.startsWith('TEST-')) delete S.stats.byRule[k];
+    this.unlocks.log = this.unlocks.log.filter((l) => !String(l.source ?? '').startsWith('secret:TEST-'));
+    for (const t of Object.keys(this.unlocks.unlocked)) this.unlocks.unlocked[t] = this.unlocks.unlocked[t].filter((id) => !String(id).startsWith('TEST-'));
+    const isTest = (e) => String(e.data?.id ?? e.data?.secretId ?? '').startsWith('TEST-');
+    this.notes.inbox = this.notes.inbox.filter((e) => !isTest(e));
+    this.notes.queue = this.notes.queue.filter((id) => this.notes.get(id));
+  }
+
+  // Prestige Tokens became a real currency in Milestone 17: pay out what earlier builds stored (C10–C12 prizes).
+  _payStoredPrestige() {
+    const owed = (this.flags.prestigeTokensEarned ?? 0) - (this.flags.prestigeTokensPaid ?? 0);
+    if (owed > 0) this.economy.add('prestigeTokens', owed, 'Prestige Tokens earned before they could be spent', 'reward');
+    this.flags.prestigeTokensPaid = this.flags.prestigeTokensEarned ?? 0;
+  }
+
+  // Debug (?debug=1) until New Game+ (Milestone 20) and the ending (Milestone 19) exist.
+  setDebugNgPlus(n) {
+    this.flags.ngPlusRuns = Math.max(0, Math.min(NG_PLUS_RESEARCH.maxRuns, n));
+    this.flags.ngPlus = this.flags.ngPlusRuns > 0;
+  }
+
+  setDebugEnding(on) {
+    this.flags.endingReached = !!on;
+    if (on) this.checkSecrets('runEnded', {});
   }
 
   get closed() {
@@ -571,7 +743,13 @@ export class Campaign {
       case 'all':
         return rule.of.every((r) => this.ruleMet(r, subject));
       case 'secret':
-        return this.secrets.unlockedInRun(rule.id); // the real §29 rules arrive in Milestone 17
+        // Something a secret reward or a Secret Lab topic promises (CH10, TO08, F35…) opens when that action fires.
+        if (subject && PROMISED.has(`${subject.type}:${subject.id}`)) return this.unlocks.has(subject.type, subject.id);
+        return this.secrets.unlockedInRun(rule.id);
+      case 'action':
+        return this.unlocks.has(rule.kind, rule.id);
+      case 'accountFlag':
+        return !!this.secrets.account.flags[rule.flag];
       default:
         return false;
     }
@@ -591,8 +769,12 @@ export class Campaign {
         return recs.filter((r) => ADVANCED_TIERS.includes(r.result?.tier)).length;
       case 'aiHeavyProjects':
         return recs.filter((r) => (COMPONENTS[r.result?.components?.[AI_HEAVY.slot]]?.cx ?? 0) >= AI_HEAVY.minCx).length;
+      case 'researchPrototypes':
+        return recs.filter((r) => r.result?.purpose === 'experimental').length; // M17: a Research Prototype = an Experimental robot
+      case 'distinctPurposesCompleted':
+        return new Set(recs.map((r) => r.result?.purpose).filter(Boolean)).size;
       default:
-        return 0; // researchPrototypes, distinctPurposesCompleted: later milestones
+        return 0;
     }
   }
 
@@ -687,6 +869,8 @@ export class Campaign {
     const z = EXPANSIONS.find((e) => e.id === zoneId);
     this.economy.add('credits', -z.cost, `Workshop ${z.name}`, 'expansion');
     this.facilities.openZone(zoneId);
+    // The basement comes with the Secret Lab already built inside it (§29.4).
+    if (z.comesWith && !this.facilities.has(z.comesWith.def)) this.facilities.place(z.comesWith.def, z.comesWith.col, z.comesWith.row, 0);
     return { ok: true, zone: z };
   }
 
@@ -840,6 +1024,7 @@ export class Campaign {
       const r = this.store.purchase(RECRUIT_RULES.techChipItem, 'Tech Chip candidate refresh');
       if (!r.ok) return r;
       this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'techChips'); // §16.4: ordinary pool only
+      this.flags.techChipRefresh = true; // SEC-BEH-07 No Refresh Run
     } else {
       const ch = this.recruitment.channel(channelId);
       this.economy.add('credits', -ch.cost, `Recruitment: ${ch.name}`, 'hiring');
@@ -998,6 +1183,7 @@ export class Campaign {
   _tutorialHires() {
     const t = TUTORIAL_HIRES.tessa;
     if (this.flags.tessaOffered || this.clock.totalDays < t.day - 1) return;
+    if (['legendary', 'secret'].includes(STAFF_BY_ID[this.recruitment.special?.staffId]?.tier)) return; // a Legendary Arrival card is up: wait
     this.flags.tessaOffered = true;
     if (this.staff.get(t.staffId)) return;
     this.recruitment.addSpecial({ ...namedCandidate(t.staffId), guaranteed: t.guaranteed }, { day: this.clock.totalDays, days: RECRUIT_RULES.specialDays, note: t.note });
@@ -1197,10 +1383,10 @@ export class Campaign {
     w.rep = Math.round(w.rep * this.celebrityMult());
     if (w.rep) this.reputation.add(w.rep, `Competition: ${ev.name}`, { quiet: true }); // shown on the result screen
     if (w.rp) this.research.addRp(w.rp, `Competition: ${ev.name}`, day);
-    // Prestige Tokens (C10–C12): counted now, paid out when the currency arrives with New Game+.
+    // Prestige Tokens (C10–C12, §21.5): a real currency since Milestone 17.
     if (result.won && ev.rewards.prestigeTokens) {
       w.prestigeTokens = ev.rewards.prestigeTokens;
-      this.flags.prestigeTokensEarned = (this.flags.prestigeTokensEarned ?? 0) + w.prestigeTokens;
+      this.economy.add('prestigeTokens', w.prestigeTokens, `Prize: ${ev.name}`, 'competition');
     }
     const pilot = this.staff.get(choice.pilotId);
     this.staff.addXp(pilot, w.xp);
@@ -1574,6 +1760,8 @@ export class Campaign {
     this.sponsors.load(data.sponsors);
     this.notes.load(data.notifications);
     this.secrets.loadRun(data.secrets); // null before Milestone 16
+    if (data.removeTestSecrets) this._removeTestSecrets();
+    this._payStoredPrestige();
     this.applyFeatures();
     this.guideState = data.guide ?? null;
     this.assignments.refresh();
@@ -1601,6 +1789,7 @@ export class Campaign {
       const account = await this.accountManager?.load();
       this.synergyArchive.loadAccount(account?.synergies);
       this.secrets.loadAccount(account?.secrets); // secret history + facts across runs
+      for (const id of Object.keys(this.secrets.account.history)) if (id.startsWith('TEST-')) delete this.secrets.account.history[id]; // M16 test rules
     } catch (err) {
       console.error('[Campaign] could not load the account record', err);
     }

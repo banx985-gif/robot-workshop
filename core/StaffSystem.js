@@ -155,8 +155,11 @@ export class StaffSystem {
     return ran;
   }
 
-  statCap(staff) {
-    return this.tiers[staff.tier]?.statCap ?? Infinity;
+  // Tier cap; a trait can raise one stat's cap (effects: { capPct_tst: 12 } — e.g. Homegrown Ace).
+  statCap(staff, statKey = null) {
+    const base = this.tiers[staff.tier]?.statCap ?? Infinity;
+    const pct = statKey ? this.traitEffect(staff, `capPct_${statKey}`) : 0;
+    return pct ? Math.round(base * (1 + pct / 100)) : base;
   }
 
   traitSlots(staff) {
@@ -198,7 +201,7 @@ export class StaffSystem {
     if (primary) gains[primary] = this.rng.int(lu.primaryMin, lu.primaryMax);
     const others = this.rng.shuffle(this.statKeys.filter((k) => k !== primary)).slice(0, lu.otherCount);
     for (const k of others) gains[k] = this.rng.int(lu.otherMin, lu.otherMax);
-    for (const [k, v] of Object.entries(gains)) s.stats[k] = Math.min(cap, (s.stats[k] ?? 0) + v);
+    for (const [k, v] of Object.entries(gains)) s.stats[k] = Math.min(this.statCap(s, k) ?? cap, (s.stats[k] ?? 0) + v);
     s.level++;
     s.energy = 100;
     this._updateStatus(s, false);

@@ -89,6 +89,13 @@ export const TRAITS = {
     description: 'Teaches as they go: lower-level teammates on the same project earn 15% more XP.',
     effects: { mentorXpPct: 15 },
   },
+  // Secret reward (SEC-BEH-08 Original Pilot): Kai West's own trait, given on top of his trait slots.
+  homegrownAce: {
+    name: 'Homegrown Ace',
+    description: 'Won the world with the team that raised him: +12% TST cap and +5% competition score.',
+    effects: { capPct_tst: 12, competitionScorePct: 5 },
+    unique: true,
+  },
   loyal: {
     name: 'Loyal',
     description: 'Morale never drops below 5. Loyalty counts double for some secrets.',
@@ -170,7 +177,7 @@ export const TRAITS = {
 };
 
 // The 20 shared traits of §9.8 (candidates roll from these; signature traits are never rolled).
-export const NORMAL_TRAITS = Object.keys(TRAITS).filter((t) => !TRAITS[t].signature);
+export const NORMAL_TRAITS = Object.keys(TRAITS).filter((t) => !TRAITS[t].signature && !TRAITS[t].unique); // unique: only ever given by a secret
 
 // Words for "later" systems on the detail screen.
 export const LATER_WORDS = {

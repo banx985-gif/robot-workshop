@@ -25,6 +25,10 @@ const RED = '#FF8A80';
 export function createBuildScreen({ renderer, layout, assets, campaign, router, workshop, hud }) {
   const W = renderer.width;
   const F = campaign.facilities;
+  // Secret facilities and the secret basement stay out of the lists until their secret opens them (M17); the Secret
+  // Lab is never bought on its own (it comes with the basement).
+  const shownFacilities = () => FACILITY_ORDER.filter((id) => FACILITIES[id].catalogue !== false && (!FACILITIES[id].secret || campaign.facilityUnlocked(id)));
+  const shownZones = () => EXPANSIONS.filter((z) => !z.secret || F.zoneShown(z) || F.isOwned(z.id));
   const topBar = createTopBar({ layout, campaign, hud, nav: [{ id: 'done', label: 'Done', onTap: () => router.go('workshop') }] });
   let tab = 'facilities';
   let mode = 'catalogue'; // 'catalogue' | 'place' | 'edit'
@@ -229,12 +233,12 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
       if (!scroll.contains(p)) return;
       const c = scroll.toContent(p);
       if (tab === 'facilities') {
-        FACILITY_ORDER.forEach((id, i) => {
+        shownFacilities().forEach((id, i) => {
           if (!hitRect(c, cardRect(i))) return;
           startPlacing(id);
         });
       } else {
-        EXPANSIONS.forEach((z, i) => {
+        shownZones().forEach((z, i) => {
           if (hitRect(c, buyRect(i)) || hitRect(c, rowRect(i))) askExpansion(z);
         });
       }
@@ -297,15 +301,15 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
     startEdit,
     // Guide / test helpers: screen rects.
     cardRectOf(defId) {
-      const i = FACILITY_ORDER.indexOf(defId);
+      const i = shownFacilities().indexOf(defId);
       return mode === 'catalogue' && tab === 'facilities' && i >= 0 ? inScroll(cardRect(i)) : null;
     },
     buyRectOf(zoneId) {
-      const i = EXPANSIONS.findIndex((z) => z.id === zoneId);
+      const i = shownZones().findIndex((z) => z.id === zoneId);
       return mode === 'catalogue' && tab === 'expansions' && i >= 0 ? inScroll(buyRect(i)) : null;
     },
     scrollToCard(defId) {
-      const i = FACILITY_ORDER.indexOf(defId);
+      const i = shownFacilities().indexOf(defId);
       if (i >= 0) scroll.scrollY = cardRect(i).y;
     },
     worldRect,
@@ -481,13 +485,13 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
   function drawCatalogue(ctx) {
     TABS.forEach((t, i) => {
       const label = t.id === 'facilities' ? `Facilities (${F.placed.length} built)` : 'Expansions';
-      drawButton(ctx, tabRect(i), label, { selected: tab === t.id, font: 'bold 32px system-ui, sans-serif', badge: t.id === 'expansions' && tab !== 'expansions' && EXPANSIONS.some((z) => !campaign.expansionBlock(z.id)) ? '!' : null });
+      drawButton(ctx, tabRect(i), label, { selected: tab === t.id, font: 'bold 32px system-ui, sans-serif', badge: t.id === 'expansions' && tab !== 'expansions' && shownZones().some((z) => !campaign.expansionBlock(z.id)) ? '!' : null });
     });
-    const items = tab === 'facilities' ? FACILITY_ORDER : EXPANSIONS;
+    const items = tab === 'facilities' ? shownFacilities() : shownZones();
     scroll.contentHeight = tab === 'facilities' ? Math.ceil(items.length / 3) * (CARD_H + GAP) : items.length * (ROW_H + GAP);
     scroll.begin(ctx);
-    if (tab === 'facilities') FACILITY_ORDER.forEach((id, i) => drawCard(ctx, id, cardRect(i)));
-    else EXPANSIONS.forEach((z, i) => drawExpansion(ctx, z, i));
+    if (tab === 'facilities') shownFacilities().forEach((id, i) => drawCard(ctx, id, cardRect(i)));
+    else shownZones().forEach((z, i) => drawExpansion(ctx, z, i));
     scroll.end(ctx);
   }
 

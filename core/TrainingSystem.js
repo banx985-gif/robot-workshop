@@ -11,7 +11,7 @@
 // slots (plain data): [{ id, name, roles: null | ['pilot'] }] — how many of each is open comes from slotCount(slot).
 //   A worker takes the first free slot made for their role, else a general one (roles: null).
 // Game hooks:
-//   statCap(staff), primaryStat(staff), slotCount(slot), conditionMet(rule) → bool
+//   statCap(staff, statKey), primaryStat(staff), slotCount(slot), conditionMet(rule) → bool
 //   busyElsewhere(staffId) → reason | null    (on a project, researching…)
 //   canPay(course) → reason | null, pay(course, staff)   money is the game's business
 //   durationPct(course, staff, slot) → % change on days (facilities; never below 1 day)
@@ -98,7 +98,7 @@ export class TrainingSystem {
     if (e.kind === 'all') return [...this.statKeys];
     if (e.kind === 'lowest') {
       // lowest stats that can still grow
-      return [...this.statKeys].filter((k) => (s.stats[k] ?? 0) < cap).sort((a, b) => (s.stats[a] ?? 0) - (s.stats[b] ?? 0) || this.statKeys.indexOf(a) - this.statKeys.indexOf(b)).slice(0, e.count ?? 3);
+      return [...this.statKeys].filter((k) => (s.stats[k] ?? 0) < (this.hooks.statCap?.(s, k) ?? cap)).sort((a, b) => (s.stats[a] ?? 0) - (s.stats[b] ?? 0) || this.statKeys.indexOf(a) - this.statKeys.indexOf(b)).slice(0, e.count ?? 3);
     }
     return [];
   }
@@ -107,7 +107,7 @@ export class TrainingSystem {
   gainRoom(courseId, s) {
     const c = this.byId[courseId];
     const cap = this.hooks.statCap?.(s) ?? Infinity;
-    return this.targets(c, s).reduce((t, k) => t + Math.max(0, cap - (s.stats[k] ?? 0)), 0);
+    return this.targets(c, s).reduce((t, k) => t + Math.max(0, (this.hooks.statCap?.(s, k) ?? cap) - (s.stats[k] ?? 0)), 0);
   }
 
   // For the screen: [{ key, from, min, max }] with min/max already clamped to the cap.
@@ -118,7 +118,8 @@ export class TrainingSystem {
     const cap = this.hooks.statCap?.(s) ?? Infinity;
     return this.targets(c, s).map((k) => {
       const from = s.stats[k] ?? 0;
-      return { key: k, from, min: Math.min(cap, from + c.effect.min) - from, max: Math.min(cap, from + c.effect.max) - from, cap };
+      const kc = this.hooks.statCap?.(s, k) ?? cap;
+      return { key: k, from, min: Math.min(kc, from + c.effect.min) - from, max: Math.min(kc, from + c.effect.max) - from, cap: kc };
     });
   }
 
@@ -167,7 +168,7 @@ export class TrainingSystem {
     const gains = {};
     for (const k of this.targets(c, s)) {
       const from = s.stats[k] ?? 0;
-      const to = Math.min(cap, from + this.rng.int(c.effect.min, c.effect.max));
+      const to = Math.min(this.hooks.statCap?.(s, k) ?? cap, from + this.rng.int(c.effect.min, c.effect.max));
       if (to > from) gains[k] = to - from;
       s.stats[k] = Math.max(from, to);
     }

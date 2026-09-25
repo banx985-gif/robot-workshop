@@ -11,11 +11,15 @@ export function conditionLines(part, { debug = false, depth = 0 } = {}) {
   }
   const c = part.cond;
   const op = c.op === 'countOf' ? OP_WORDS[c.cmp ?? 'gte'] : OP_WORDS[c.op];
-  const need = part.eased ? `${show(part.need)} (eased from ${show(part.base)})` : show(part.need);
+  const need = part.eased && part.need !== part.base ? `${show(part.need)} (eased from ${show(part.base)})` : show(part.need);
+  // Eased numbers inside a count-of (e.g. "250 units" → 125 on a repeat run).
+  const whereNote = part.whereNeeds?.length ? ` (easier this run: ${part.whereNeeds.map((w) => `${w.field.split('.').at(-1)} ${show(w.need)} instead of ${show(w.base)}`).join(', ')})` : '';
   const label = c.label ?? c.fact;
+  // Progress numbers only where they mean something to a player (counts, thresholds, "3 of 5"), not rank indexes.
+  const numeric = typeof part.value === 'number' && typeof part.need === 'number' && (['count', 'threshold'].includes(c.kind) || (c.op === 'countOf' && part.need > 1));
   const text = debug
     ? `${c.fact}${c.op === 'countOf' ? ' count-of' : ''} ${op} ${need} · now ${show(part.value)}${part.known ? '' : ' · UNKNOWN FACT'}${c.kind && c.kind !== 'fixed' ? ` · ${c.kind}` : ''}`
-    : `${label}: ${typeof part.value === 'number' && typeof part.need === 'number' ? `${show(part.value)} / ${op} ${need}` : part.ok ? 'done' : 'not yet'}`;
+    : `${label}: ${numeric ? `${show(part.value)} / ${op} ${need}` : part.ok ? 'done' : 'not yet'}${whereNote}`;
   return [{ text, ok: part.ok, depth }];
 }
 

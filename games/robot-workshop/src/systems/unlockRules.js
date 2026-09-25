@@ -51,6 +51,10 @@ export function describeUnlock(rule) {
       return `A finished ${PURPOSES[rule.purpose]?.name ?? rule.purpose} robot`;
     case 'contractsDone':
       return `Complete ${rule.min} ${rule.purpose ? `${PURPOSES[rule.purpose]?.name ?? rule.purpose} ` : ''}contracts`;
+    case 'action':
+      return 'Secret';
+    case 'accountFlag':
+      return 'Secret'; // never names what the secret is
     case 'all':
       return rule.of.map(describeUnlock).join(' + ');
     default:

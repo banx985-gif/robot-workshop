@@ -217,6 +217,37 @@ FACILITIES.F33 = {
   art: 'facility_33_server_rack',
 };
 
+// F34–F35 (Milestone 17, §18.2): the two secret facilities. Neither shows in the Build catalogue until its secret opens it.
+// F34 Secret Lab: comes with the hidden basement (zone XB, SEC-FAC-01) — it is never bought on its own.
+FACILITIES.F34 = {
+  id: 'F34',
+  name: 'Secret Lab',
+  cost: 25000,
+  w: 4,
+  h: 3,
+  effects: [{ key: 'secretLab', value: 1, maxCount: 1 }],
+  blurb: 'Prestige research and rumours. Some secrets need it.',
+  unlock: { type: 'secret', id: 'SEC-FAC-01' },
+  art: 'facility_34_secret_lab',
+  catalogue: false, // arrives with the basement
+  secret: true,
+};
+// F35 Prestige Trophy Display (SEC-FAC-02): +1% elite recruitment weight per prestige trophy, up to +5%.
+FACILITIES.F35 = {
+  id: 'F35',
+  name: 'Prestige Trophy Display',
+  cost: 18000,
+  w: 3,
+  h: 2,
+  effects: [{ key: 'prestigeDisplay', value: 1, maxCount: 1 }],
+  blurb: '+1% elite recruitment per prestige trophy (up to +5%). A proud display.',
+  unlock: { type: 'secret', id: 'SEC-FAC-02' },
+  art: 'facility_35_prestige_trophy_display',
+  secret: true,
+};
+// F35: each trophy on the shelf counts (M17 reading of "per prestige trophy": the six §21.6 trophies), capped at +5%.
+export const PRESTIGE_DISPLAY = { pctPerTrophy: 1, capPct: 5 };
+
 export const FACILITY_ORDER = Object.keys(FACILITIES);
 
 // Where staff work in each stage (§8.2): the stage's own station if the workshop has one, else a workbench,
@@ -248,6 +279,9 @@ export const EXPANSIONS = [
   { id: 'X2', name: 'Expansion 2', note: '+4 rows', col: 0, row: 10, w: 12, h: 4, cost: 18000, unlock: { type: 'rank', rank: 'C' }, requires: ['X1'], buyable: false },
   { id: 'X3', name: 'Expansion 3', note: '+6 columns', col: 12, row: 0, w: 6, h: 14, cost: 35000, unlock: { type: 'rank', rank: 'B' }, requires: ['X2'], buyable: false },
   { id: 'X4', name: 'Expansion 4', note: '+6 rows', col: 0, row: 14, w: 18, h: 6, cost: 60000, unlock: { type: 'rank', rank: 'A' }, requires: ['X3'], buyable: false },
+  // §18.1 prestige basement: a separate 8×8 room (its own stairs), hidden until SEC-FAC-01 opens it; 25,000 credits
+  // uncovers it and the Secret Lab (F34) comes built inside (§29.4).
+  { id: 'XB', name: 'Secret basement', note: 'a hidden 8×8 room with the Secret Lab', col: 22, row: 0, w: 8, h: 8, cost: 25000, unlock: { type: 'secret', id: 'SEC-FAC-01' }, requires: [], buyable: true, secret: true, entrance: { col: 22, row: 7 }, comesWith: { def: 'F34', col: 24, row: 2 } },
 ];
 export const LOCKED_LATER = 'Opens in a later update';
 

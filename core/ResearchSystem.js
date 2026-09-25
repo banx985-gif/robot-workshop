@@ -5,6 +5,7 @@
 //   cost      research currency paid when the node is started; the same number is the work needed to finish it
 //   requires  nodes that must be done first (the tree must have no loops — DataValidator.noCycles checks it)
 //   condition anything else the game wants first (a rank, a facility…), checked by conditionMet(rule)
+//   hidden    a secret topic: never counted in doneCount or the milestones (the visible tree stays the tree)
 // milestones: [{ count, actions }]   fired once when that many nodes are done in total
 // queues:     [{ id, name, rule }]   queue n is open while the rules of queues 1…n are all met (conditionMet)
 //
@@ -14,6 +15,7 @@
 //   conditionMet(rule) → bool,  workerStat(staff, node) → number,  bonusPerDay() → number,  speedPct() → number
 //   costPct() → % change on node costs (e.g. New Game+),  busyElsewhere(staffId) → reason | null (e.g. on a project)
 //   onComplete(node, { staffId }) after the actions have fired
+//   extraCostBlock(node) → reason | null, payExtraCost(node): a second price paid on the first start (e.g. prestige)
 // A worker can be on one queue only, and never while busyElsewhere says they are busy.
 // Emits 'research:rp', 'research:start', 'research:assign', 'research:stop', 'research:complete', 'research:milestone'.
 export class ResearchSystem {
@@ -72,8 +74,9 @@ export class ResearchSystem {
     return this.done.includes(id);
   }
 
+  // Visible topics done (secret ones don't count).
   get doneCount() {
-    return this.done.length;
+    return this.done.filter((id) => !this.byId[id]?.hidden).length;
   }
 
   costOf(nodeOrId) {
@@ -147,6 +150,8 @@ export class ResearchSystem {
     if (st === 'active') return { ok: false, reason: 'Already being researched' };
     if (st === 'locked') return { ok: false, reason: 'Locked' };
     if (!this.paid[id] && this.rp < this.costOf(n)) return { ok: false, reason: 'Not enough RP' };
+    const extra = !this.paid[id] ? this.hooks.extraCostBlock?.(n) : null;
+    if (extra) return { ok: false, reason: extra };
     return { ok: true, reason: null };
   }
 
@@ -162,6 +167,7 @@ export class ResearchSystem {
       const cost = this.costOf(id);
       this.rp -= cost;
       this.paid[id] = cost;
+      this.hooks.payExtraCost?.(this.byId[id]);
       this.progress[id] = 0;
     }
     this.queues[i] = { nodeId: id, staffId };
@@ -246,7 +252,7 @@ export class ResearchSystem {
     this.hooks.onComplete?.(n, { staffId });
     this.bus?.emit('research:complete', { node: n, queue: i, staffId, fired });
     for (const m of this.milestones) {
-      if (this.done.length >= m.count && !this.milestonesHit.includes(m.count)) {
+      if (this.doneCount >= m.count && !this.milestonesHit.includes(m.count)) {
         this.milestonesHit.push(m.count);
         const mf = this.runner.run(m.actions ?? [], `milestone:${m.count}`);
         this.bus?.emit('research:milestone', { milestone: m, fired: mf });

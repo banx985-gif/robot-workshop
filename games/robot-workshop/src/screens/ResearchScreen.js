@@ -1,5 +1,6 @@
 // Research Tree (bible §6.3, §19): the research queues at the top, the whole six-branch tree as a map of
 // done / active / available / locked dots (tap a branch), then that branch's six topics with their RP cost,
+// (Milestone 17: a seventh column, the Secret Lab, once it is owned — prestige part topics costing RP + Prestige Tokens)
 // what each one unlocks, and what is still missing. Tap "Research…" to pick a worker and start.
 // The game pauses while this screen is open (bible §4.2: research selection pauses).
 // Debug builds (?debug=1) add "Debug: finish all" under the milestones: every topic completes through the normal
@@ -12,7 +13,7 @@ import { FACILITY_NAMES } from '../../data/unlocks.js';
 import { PURPOSES, PURPOSE_ORDER } from '../../data/purposes.js';
 import { ROLES } from '../../data/staff.js';
 import { WORK_STATS } from '../../data/stats.js';
-import { RESEARCH_BRANCH_ORDER, RESEARCH_BRANCH_INFO, RESEARCH_MILESTONES, RESEARCH_ART, FEATURES } from '../../data/research.js';
+import { RESEARCH_BRANCH_ORDER, RESEARCH_BRANCH_INFO, RESEARCH_MILESTONES, RESEARCH_ART, FEATURES, SECRET_RESEARCH_BRANCH } from '../../data/research.js';
 import { describeUnlock, missingParts } from '../systems/unlockRules.js';
 import { panel, text, contained, bar, fmt } from '../ui/widgets.js';
 
@@ -68,8 +69,9 @@ export function createResearchScreen({ renderer, layout, assets, bus, campaign, 
   }
   function columnRect(b) {
     const m = mapRect();
-    const i = RESEARCH_BRANCH_ORDER.indexOf(b);
-    const w = (m.w - 5 * 12) / 6;
+    const list = branches();
+    const i = list.indexOf(b);
+    const w = (m.w - (list.length - 1) * 12) / list.length;
     return { x: m.x + i * (w + 12), y: m.y, w, h: m.h };
   }
   function bodyRect() {
@@ -84,6 +86,11 @@ export function createResearchScreen({ renderer, layout, assets, bus, campaign, 
     return { x: r.x + r.w - 20 - 230, y: r.y + r.h - 20 - 76, w: 230, h: 76 };
   };
   const nodesOf = (b) => res.nodes.filter((n) => n.branch === b);
+  // The six visible branches, plus the Secret Lab's topics once it is owned (M17).
+  const branches = () => (campaign.facilities.has('F34') ? [...RESEARCH_BRANCH_ORDER, SECRET_RESEARCH_BRANCH] : RESEARCH_BRANCH_ORDER);
+  // A Secret Lab topic stays '???' until its secret has made it appear.
+  const secretHidden = (n) => n.hidden && !campaign.unlocks.has('secretResearch', n.id);
+  const priceText = (n, cost) => (n.prestigeTokens ? fmt(cost) + ' RP + ' + n.prestigeTokens + ' PT' : fmt(cost) + ' RP');
   const milestoneTop = () => nodesOf(branch).length * (ROW_H + GAP) + 10;
   const debugRect = () => ({ x: 0, y: milestoneTop() + 70 + RESEARCH_MILESTONES.length * 64 + 10, w: 420, h: 80 });
 
@@ -217,7 +224,7 @@ export function createResearchScreen({ renderer, layout, assets, bus, campaign, 
       resumeOnExit = !campaign.clock.paused;
       campaign.clock.pause();
       if (params.branch) branch = params.branch;
-      if (!branch) branch = RESEARCH_BRANCH_ORDER.find((b) => nodesOf(b).some((n) => res.status(n.id) === 'available')) ?? RESEARCH_BRANCH_ORDER[0];
+      if (!branch || !branches().includes(branch)) branch = RESEARCH_BRANCH_ORDER.find((b) => nodesOf(b).some((n) => res.status(n.id) === 'available')) ?? RESEARCH_BRANCH_ORDER[0];
       scroll.scrollY = 0;
     },
     exit() {
@@ -239,7 +246,7 @@ export function createResearchScreen({ renderer, layout, assets, bus, campaign, 
         tapQueue(i, p);
         return;
       }
-      for (const b of RESEARCH_BRANCH_ORDER) {
+      for (const b of branches()) {
         if (hitRect(p, columnRect(b))) {
           if (b !== branch) screen.setBranch(b);
           return;
@@ -366,7 +373,7 @@ export function createResearchScreen({ renderer, layout, assets, bus, campaign, 
 
   // The whole tree: one column per branch, six dots each (done / active / available / locked), joined top to bottom.
   function drawMap(ctx) {
-    for (const b of RESEARCH_BRANCH_ORDER) {
+    for (const b of branches()) {
       const r = columnRect(b);
       const info = RESEARCH_BRANCH_INFO[b];
       const list = nodesOf(b);
@@ -451,16 +458,16 @@ export function createResearchScreen({ renderer, layout, assets, bus, campaign, 
 
     const x = r.x + 110;
     const mw = r.w - 130;
-    text(ctx, `${n.id} · ${n.name}`, x, r.y + 16, { size: 32, bold: true, color: st === 'locked' ? '#AEB8C2' : '#FFFFFF', maxWidth: mw - 220 });
+    text(ctx, secretHidden(n) ? '??? · A secret topic' : `${n.id} · ${n.name}`, x, r.y + 16, { size: 32, bold: true, color: st === 'locked' ? '#AEB8C2' : '#FFFFFF', maxWidth: mw - 220 });
     const cost = res.costOf(n);
     const right =
-      st === 'done' ? 'Done ✓' : st === 'active' ? `${Math.floor(res.fraction(n.id) * 100)}%` : res.paid[n.id] ? `Paid · ${Math.floor(res.fraction(n.id) * 100)}%` : `${fmt(cost)} RP`;
+      st === 'done' ? 'Done ✓' : st === 'active' ? `${Math.floor(res.fraction(n.id) * 100)}%` : res.paid[n.id] ? `Paid · ${Math.floor(res.fraction(n.id) * 100)}%` : secretHidden(n) ? '???' : priceText(n, cost);
     text(ctx, right, r.x + r.w - 20, r.y + 18, { size: 30, bold: true, align: 'right', color: st === 'done' ? GREEN : st === 'active' ? CYAN : st === 'locked' ? '#8C98A5' : res.rp >= cost || res.paid[n.id] ? GOLD : RED });
 
     // What it unlocks: part icons + names.
     let ux = x;
     const uy = r.y + 60;
-    for (const u of unlockItems(n)) {
+    for (const u of secretHidden(n) ? [] : unlockItems(n)) {
       if (r.x + r.w - 20 - ux < 120) break;
       if (u.art) {
         ctx.save();
@@ -526,7 +533,7 @@ export function createResearchScreen({ renderer, layout, assets, bus, campaign, 
     panel(ctx, d, { fill: 'rgba(26,32,40,0.99)', stroke: info.color, lineWidth: 5, radius: 28 });
     text(ctx, `${node.id} · ${node.name}`, d.x + d.w / 2, d.y + 36, { size: 42, bold: true, align: 'center', maxWidth: d.w - 60 });
     const cost = res.costOf(node);
-    const costLine = picker.mode === 'assign' ? 'Change who researches it' : res.paid[node.id] ? 'Already paid — resumes where it stopped' : `Costs ${fmt(cost)} RP · you have ${fmt(res.rp)} RP`;
+    const costLine = picker.mode === 'assign' ? 'Change who researches it' : res.paid[node.id] ? 'Already paid — resumes where it stopped' : `Costs ${priceText(node, cost)} · you have ${fmt(res.rp)} RP`;
     text(ctx, costLine, d.x + d.w / 2, d.y + 100, { size: 30, align: 'center', color: res.rp >= cost || res.paid[node.id] || picker.mode === 'assign' ? GOLD : RED, maxWidth: d.w - 60 });
     text(ctx, `Unlocks: ${unlockItems(node).map((u) => u.label).join(', ')}`, d.x + d.w / 2, d.y + 150, { size: 26, align: 'center', color: GREEN, maxWidth: d.w - 60 });
     text(ctx, `Who researches it? Faster with high ${stat.name} (${stat.short}).`, d.x + 30, d.y + 206, { size: 28, bold: true, maxWidth: d.w - 60 });
@@ -545,7 +552,7 @@ export function createResearchScreen({ renderer, layout, assets, bus, campaign, 
       const tag = block ?? `≈ ${daysWith(node, s)} days`;
       text(ctx, on ? `✓ ${tag}` : tag, r.x + r.w - 20, r.y + r.h / 2, { size: 26, bold: true, align: 'right', baseline: 'middle', color: block ? RED : on ? GREEN : '#C9D3DD', maxWidth: 300 });
     });
-    const label = picker.mode === 'assign' ? 'Assign' : res.paid[node.id] ? 'Resume' : `Start · ${fmt(cost)} RP`;
+    const label = picker.mode === 'assign' ? 'Assign' : res.paid[node.id] ? 'Resume' : `Start · ${priceText(node, cost)}`;
     const ok = !!picker.staffId && (picker.mode === 'assign' || res.canStart(picker.queue, node.id).ok);
     drawButton(ctx, dialogButton(0), label, { active: ok, disabled: !ok, accent: GREEN, font: 'bold 36px system-ui, sans-serif' });
     drawButton(ctx, dialogButton(1), 'Cancel', { font: 'bold 36px system-ui, sans-serif' });

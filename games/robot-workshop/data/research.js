@@ -139,3 +139,28 @@ export const RESEARCH_ART = {
   glow: 'vfx_03',
   blueprint: 'vfx_04',
 };
+
+// §29.3 prestige part research (Milestone 17): special topics in the Secret Lab. Each appears when its secret fires
+// (a 'secretResearch' reward action, data/secrets.js) and needs the Secret Lab (F34); it costs RP + Prestige Tokens
+// (research costs are prestige payments: never eased on a repeat, §30.4a). hidden: never counted as a visible topic.
+// TO08 is not here: "One of Everything" (SEC-BEH-06) opens it directly.
+export const SECRET_RESEARCH_BRANCH = 'secretLab';
+export const SECRET_RESEARCH = [
+  ['SL-CH10', 'Prestige Chassis', 1500, 2, 'CH10'],
+  ['SL-MO08', 'Rocket/Skate Drive', 1200, 1, 'MO08'],
+  ['SL-AI08', 'Experimental Neural Core', 1400, 2, 'AI08'],
+  ['SL-PO08', 'Prestige Quantum Core', 1600, 3, 'PO08'],
+  ['SL-SP08', 'Secret Prestige Module', 1500, 2, 'SP08'],
+].map(([id, name, cost, prestigeTokens, partId], i) => ({
+  id,
+  branch: SECRET_RESEARCH_BRANCH,
+  level: i + 1,
+  name,
+  cost,
+  prestigeTokens,
+  requires: [],
+  condition: { type: 'all', of: [{ type: 'action', kind: 'secretResearch', id }, { type: 'facility', id: 'F34' }] },
+  actions: [part(partId)],
+  hidden: true,
+}));
+RESEARCH_BRANCH_INFO[SECRET_RESEARCH_BRANCH] = { name: 'Secret Lab', short: 'Secret', stat: 'eng', color: '#B388FF' };

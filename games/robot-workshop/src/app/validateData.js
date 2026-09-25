@@ -314,11 +314,11 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   }
 
   // --- facilities (§18.2: F01–F15 in Milestone 8, F33 in Milestone 9), expansions (§18.1), bays (§18.3), staff caps (§39.1) ---
-  const EFFECT_KEYS = /^(progressPct\.(concept|engineering|software|assembly|testing)|stationStatPct\.(eng|des|prg|fab|tst)|gainPct\.[A-Z]{3}|robotStat\.[A-Z]{3}|commercialStat\.[A-Z]{3}|materialCostPct|contractPayoutPct|restEnergyPct|restMorale|displaySlots|projectBays|researchQueues|researchPerDay|researchSpeedPct|runningCostPerDay|salesUnitsPct)$/;
+  const EFFECT_KEYS = /^(progressPct\.(concept|engineering|software|assembly|testing)|stationStatPct\.(eng|des|prg|fab|tst)|gainPct\.[A-Z]{3}|robotStat\.[A-Z]{3}|commercialStat\.[A-Z]{3}|materialCostPct|contractPayoutPct|restEnergyPct|restMorale|displaySlots|projectBays|researchQueues|researchPerDay|researchSpeedPct|runningCostPerDay|salesUnitsPct|secretLab|prestigeDisplay)$/;
   v.keysMatchIds('facilities', FACILITIES);
   const facIds = v.uniqueIds('facilities', Object.values(FACILITIES));
-  const EXPECTED_FACILITIES = [...Array.from({ length: 15 }, (_, i) => `F${String(i + 1).padStart(2, '0')}`), 'F33'];
-  v.check(FACILITY_ORDER.join() === EXPECTED_FACILITIES.join(), 'facilities: expected F01–F15 and F33 in order');
+  const EXPECTED_FACILITIES = [...Array.from({ length: 15 }, (_, i) => `F${String(i + 1).padStart(2, '0')}`), 'F33', 'F34', 'F35'];
+  v.check(FACILITY_ORDER.join() === EXPECTED_FACILITIES.join(), 'facilities: expected F01–F15, F33 and the secret F34–F35 in order');
   v.uniqueIds('facility art', Object.values(FACILITIES), (f) => f.art);
   for (const f of Object.values(FACILITIES)) {
     const o = `facility ${f.id}`;
@@ -342,7 +342,7 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   }
   for (const id of FALLBACK_STATIONS) v.ref('fallback stations', 'facility', id, facIds);
   v.uniqueIds('expansions', EXPANSIONS);
-  v.check(EXPANSIONS.length === 4, `expansions: expected 4, found ${EXPANSIONS.length}`);
+  v.check(EXPANSIONS.length === 5 && EXPANSIONS.at(-1).id === 'XB' && EXPANSIONS.at(-1).secret && EXPANSIONS.at(-1).w === 8 && EXPANSIONS.at(-1).h === 8, `expansions: expected X1–X4 + the secret 8×8 basement XB (§18.1), found ${EXPANSIONS.length}`);
   for (const z of EXPANSIONS) {
     const o = `expansion ${z.id}`;
     v.check(z.cost > 0 && z.w > 0 && z.h > 0, `${o}: bad size or cost`);
@@ -519,7 +519,7 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   const beat = (id) => COMPETITIONS.find((e) => e.id === id)?.beatYear;
   v.check(beat('C03') <= 5 && beat('C07') >= 6 && beat('C07') <= 9 && beat('C08') >= 10 && beat('C08') <= 14 && beat('C09') >= 15, 'competitions: ladder beats do not match §4.3');
   // C11 / C12 need secrets (Milestones 16–17): they must never open in normal play.
-  const secretIn = (r) => r?.type === 'secret' || (r?.type === 'all' && r.of.some(secretIn));
+  const secretIn = (r) => r?.type === 'secret' || r?.type === 'accountFlag' || (r?.type === 'all' && r.of.some(secretIn)); // C12: the stake's account flag
   for (const id of ['C11', 'C12']) v.check(secretIn(COMPETITIONS.find((e) => e.id === id)?.unlock), `competition ${id}: must stay behind its secret`);
   v.check(COMPETITIONS.find((e) => e.id === 'C12')?.hiddenWeights && COMPETITIONS.find((e) => e.id === 'C08')?.rotate?.boosts.length === 2, 'competitions: C08 rotates two boosted stats; C12 hides its weights');
   // §22 rivals.
@@ -606,14 +606,28 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
 
   // --- §28 secret rules (Milestone 16: the 3 engine test rules; the 34 real ones arrive in Milestone 17) ---
   v.uniqueIds('secrets', SECRETS);
-  v.check(SECRETS.length === 3 && SECRETS.every((s) => s.test), 'secrets: Milestone 16 holds only the 3 engine test rules');
+  // §29: all 34 — 5 legendary staff, 5 secret staff, 5 prestige parts, 2 facilities, 3 competitions, 3 robot paths, 11 play-style.
+  const GROUP_COUNTS = { legendary: 5, secretStaff: 5, parts: 5, facilities: 2, competitions: 3, robots: 3, behaviour: 11 };
+  v.check(SECRETS.length === 34, `secrets: expected the 34 of §29, found ${SECRETS.length}`);
+  for (const [g, n] of Object.entries(GROUP_COUNTS)) v.check(SECRETS.filter((x) => x.group === g).length === n, `secrets: ${g} should have ${n}`);
+  v.check(!SECRETS.some((x) => x.test || String(x.id).startsWith('TEST-')), 'secrets: the Milestone 16 test rules must be gone');
+  const staffArrivals = SECRETS.flatMap((x) => x.rewardActions.filter((a) => a.type === 'staffArrival').map((a) => a.id)).sort().join();
+  v.check(staffArrivals === 'DES09,DES10,ENG09,ENG10,MEC09,MEC10,PIL09,PIL10,PRG09,PRG10', 'secrets: each legendary / secret worker arrives through exactly one rule');
+  for (const x of SECRETS.filter((y) => y.group === 'secretStaff')) v.check((x.ngPlusMin ?? 0) >= 1, `secret ${x.id}: secret staff are NG+ gated`);
+  // Nothing is bought: no rule reads credits or Tech Chips, and no reward is a shop item.
+  const reads = (c) => (c.all || c.any ? (c.all ?? c.any).flatMap(reads) : [c.fact]);
+  for (const x of SECRETS) {
+    const facts = [...(x.requiresAll ?? []), ...(x.requiresAny ?? []), ...(x.forbids ?? [])].flatMap(reads);
+    v.check(!facts.some((f) => ['run.credits', 'run.techChips'].includes(f)), `secret ${x.id}: must not be met by holding money or Tech Chips`);
+    v.check(x.clueStages.every((c) => c.text && c.text.length > 10), `secret ${x.id}: clue stages need their words`);
+  }
   v.check(SECRET_RULES.easing.countFactor === 0.5 && SECRET_RULES.easing.thresholdPct === 15 && SECRET_RULES.arrivalDays.repeat === 84 && SECRET_RULES.arrivalDays.first === 56, 'secrets: repeat easing differs from §30.4a (½ counts, −15% thresholds, 84-day window)');
   const checkCond = (o, c) => {
     if (c.all || c.any) return (c.all ?? c.any).forEach((x) => checkCond(o, x));
     v.check(SECRET_OPS.includes(c.op), `${o}: unknown operator "${c.op}"`);
     v.check(/^(run|account|event)./.test(c.fact ?? ''), `${o}: fact "${c.fact}" must be run.*, account.* or event.*`);
     v.check(!c.kind || ['count', 'threshold', 'fixed'].includes(c.kind), `${o}: kind must be count / threshold / fixed`);
-    if (c.op === 'countOf') v.check(Array.isArray(c.where) && c.where.every((w) => SECRET_OPS.includes(w.op) && w.field), `${o}: countOf needs where: [{ field, op, value }]`);
+    if (c.op === 'countOf') v.check(Array.isArray(c.where) && c.where.every((w) => SECRET_OPS.includes(w.op) && typeof w.field === 'string'), `${o}: countOf needs where: [{ field, op, value }]`);
   };
   for (const s of SECRETS) {
     const o = `secret ${s.id}`;

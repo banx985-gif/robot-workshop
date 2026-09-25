@@ -138,7 +138,9 @@ const ASSETS = {
   ...Object.fromEntries(Object.values(EVENT_ICONS).map((k) => art(k.startsWith('reward_') ? 'rewards' : 'ui', k))),
   ...Object.fromEntries(SPONSORS.map((s) => (s.art ? art('npc', s.art) : art('ui', s.icon)))),
   // Secrets (Milestone 16): the ??? marker, the discovery effect and the records icon.
-  ...Object.fromEntries([art('ui', SECRET_ART.marker), art('vfx', SECRET_ART.discover), art('ui', SECRET_ART.records)]),
+  // Milestone 17: legendary aura, Prestige Token, secret badge (the 09/10 staff, prestige parts, F34/F35, robots 18–20,
+  // event art 07/08 and the Nocturne logo come in with their own lists above).
+  ...Object.fromEntries([art('ui', SECRET_ART.marker), art('vfx', SECRET_ART.discover), art('ui', SECRET_ART.records), art('vfx', SECRET_ART.aura), art('rewards', SECRET_ART.token), art('badges', SECRET_ART.badge)]),
   // Deliberately missing file: proves the placeholder fallback.
   placeholderTest: 'assets/m0-missing-test.png',
 };
@@ -667,7 +669,7 @@ function presentNext() {
 }
 
 const LEVEL_ACCENT = { minor: '#4FC3F7', medium: '#FFD166', major: '#FFD166' };
-const goArgs = { contracts: { tab: 'offered' }, competitions: { eventId: 'C09' } };
+const goArgs = { contracts: { tab: 'offered' }, competitions: { eventId: 'C09' }, recruit: { focusSpecial: true } };
 
 function present(e) {
   debug.log(`pop-up: ${e.kind} "${e.title}"`);
@@ -919,7 +921,7 @@ if (debug.enabled) {
   window.__m13 = { ...window.__m12, rankings: rankingsScreen, trophiesScreen: trophyScreen, rankingSystem: campaign.rankings, trophyCase: campaign.trophies, rivalSystem: campaign.rivals };
   window.__m14 = { ...window.__m13, combos: comboArchiveScreen, synergyArchive: campaign.synergyArchive, showComboDiscovered };
   window.__m15 = { ...window.__m14, bus, inbox: inboxScreen, eventPopup, modal, events: campaign.events, sponsors: campaign.sponsors, notes: campaign.notes, presentPlace, EVENTS_BY_ID };
-  window.__m16 = { ...window.__m15, rumours: rumourScreen, secretDebug: secretDebugScreen, secrets: campaign.secrets };
+  window.__m16 = { ...window.__m15, rumours: rumourScreen, secretDebug: secretDebugScreen, secrets: campaign.secrets, research: researchScreen, build: buildScreen, recruit: recruitScreen };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
   bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));

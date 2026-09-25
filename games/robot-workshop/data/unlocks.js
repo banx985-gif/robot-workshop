@@ -12,8 +12,10 @@
 //   { type: 'yearReached', year }      the campaign has reached that year (Milestone 13)
 //   eventWins / eventEntered / totalWins / trophy   competition prerequisites, see core/CompetitionPrereqs.js (Milestone 13)
 //   { type: 'contractsDone', purpose, min }  that many contracts completed for robots of that purpose (sponsors, M15)
+//   { type: 'action', kind, id }       that unlock action has fired (e.g. a Secret Lab topic appearing, M17)
+//   { type: 'accountFlag', flag }      an account-wide switch a secret set (e.g. the Black Circuit stake, M17)
 
-export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'researchCount', 'feature', 'purposeBuilt', 'yearReached', 'eventWins', 'eventEntered', 'totalWins', 'trophy', 'contractsDone', 'all'];
+export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'researchCount', 'feature', 'purposeBuilt', 'yearReached', 'eventWins', 'eventEntered', 'totalWins', 'trophy', 'contractsDone', 'action', 'accountFlag', 'all'];
 
 export const RESEARCH_BRANCHES = {
   mechanical: 'Mechanical Research',
