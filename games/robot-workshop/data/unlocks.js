@@ -11,8 +11,9 @@
 //                                      regionalCup / nationalCup (own that trophy), worldTier (the World Championship is open)
 //   { type: 'yearReached', year }      the campaign has reached that year (Milestone 13)
 //   eventWins / eventEntered / totalWins / trophy   competition prerequisites, see core/CompetitionPrereqs.js (Milestone 13)
+//   { type: 'contractsDone', purpose, min }  that many contracts completed for robots of that purpose (sponsors, M15)
 
-export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'researchCount', 'feature', 'purposeBuilt', 'yearReached', 'eventWins', 'eventEntered', 'totalWins', 'trophy', 'all'];
+export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'researchCount', 'feature', 'purposeBuilt', 'yearReached', 'eventWins', 'eventEntered', 'totalWins', 'trophy', 'contractsDone', 'all'];
 
 export const RESEARCH_BRANCHES = {
   mechanical: 'Mechanical Research',

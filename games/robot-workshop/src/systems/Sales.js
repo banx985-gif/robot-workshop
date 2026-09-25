@@ -6,7 +6,7 @@ import { PRICE_POSITIONS, BASE_UNIT_VALUE, SALES_RULES } from '../../data/market
 
 export class Sales {
   constructor({ rng, market, reputation, effects = () => 0 }) {
-    this.effects = effects; // facility effect query (e.g. a Showroom's +% units sold, later)
+    this.effects = effects; // shared effect query (a Showroom's +% units sold, an event's trend, a sponsor's revenue)
     this.rng = rng; // seeded variance (the campaign's main stream, as in Milestone 4)
     this.market = market;
     this.reputation = reputation;
@@ -55,7 +55,8 @@ export class Sales {
     const v = variance ?? this.rng.range(SALES_RULES.variance.min, SALES_RULES.variance.max);
     const units = Math.max(0, Math.round(SALES_RULES.baseUnits * fitFactor * qualityFactor * repFactor * trendFactor * ageFactor * demandMult * novelty * v * (1 + this.effects('salesUnitsPct') / 100)));
     const unitPrice = Math.round(data.baseUnitValue * pos.priceMult);
-    return { units, unitPrice, revenue: units * unitPrice, demand };
+    const revenue = Math.round(units * unitPrice * (1 + this.effects('salesRevenuePct') / 100)); // a sponsor's +% revenue
+    return { units, unitPrice, revenue, demand };
   }
 
   // Rough 6-month forecast for the launch picker (no randomness, this month's demand).

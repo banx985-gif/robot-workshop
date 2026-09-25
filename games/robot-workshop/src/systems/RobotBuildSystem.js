@@ -141,9 +141,10 @@ export class RobotBuildSystem {
   }
 
   // --- facility bonuses -------------------------------------------------------
-  // Flat stat from facilities (e.g. Test Rig +2 REL; Paint Booth +5 APL on commercial models only).
-  facilityStat(k, commercial) {
-    return this.effects(`robotStat.${k}`) + (commercial ? this.effects(`commercialStat.${k}`) : 0);
+  // Flat stat from facilities (e.g. Test Rig +2 REL; Paint Booth +5 APL on commercial models only), and for one
+  // purpose when it is given (a sponsor's +8 REL on Rescue builds, Milestone 15).
+  facilityStat(k, commercial, purpose = null) {
+    return this.effects(`robotStat.${k}`) + (commercial ? this.effects(`commercialStat.${k}`) : 0) + (purpose ? this.effects(`purposeStat.${purpose}.${k}`) : 0);
   }
 
   gainMultiplier(k) {
@@ -151,7 +152,7 @@ export class RobotBuildSystem {
   }
 
   progressMultiplier(phase) {
-    return 1 + this.effects(`progressPct.${phase.id}`) / 100;
+    return 1 + (this.effects(`progressPct.${phase.id}`) + this.effects('progressPct.all')) / 100; // all: an event's short boost
   }
 
   statMultiplier(statKey) {
@@ -220,7 +221,7 @@ export class RobotBuildSystem {
     const base = this.baseStats(job.data.components);
     const commercial = !job.data.contractId;
     const out = {};
-    for (const k of ROBOT_STAT_KEYS) out[k] = base[k] + job.data.gains[k] + this.facilityStat(k, commercial);
+    for (const k of ROBOT_STAT_KEYS) out[k] = base[k] + job.data.gains[k] + this.facilityStat(k, commercial, job.data.purpose);
     out.REL -= job.data.faults.length * R.faultReliabilityPenalty;
     for (const k of ROBOT_STAT_KEYS) out[k] = clamp(Math.round(out[k]), 0, 999);
     return out;

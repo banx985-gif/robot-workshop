@@ -30,7 +30,10 @@ import { COMPETITION_RULE_TYPES } from '../../../../core/CompetitionPrereqs.js';
 import { TUNINGS, STRATEGIES, DEFAULT_TUNING, DEFAULT_STRATEGY } from '../../data/tuning.js';
 import { RESEARCH_NODES, RESEARCH_BRANCH_ORDER, RESEARCH_BRANCH_INFO, RESEARCH_MILESTONES, RESEARCH_QUEUES, FEATURES, RP_SOURCES, researchNodeId } from '../../data/research.js';
 
-const SLOT_COUNTS = { chassis: 10, mobility: 8, ai: 8, tool: 8, power: 8, special: 8 }; // §11
+import { EVENTS, MILESTONE_EVENTS, REPEATABLE_EVENTS, EVENT_CAPS, EVENT_ICONS, EVENT_CONDITIONS, NOTIFY_RULES } from '../../data/events.js';
+import { SPONSORS, SPONSOR_RULES } from '../../data/sponsors.js';
+
+const SLOT_COUNTS ={ chassis: 10, mobility: 8, ai: 8, tool: 8, power: 8, special: 8 }; // §11
 const ROBOT_ART = (key) => `assets/images/robots/${key}.png`;
 const PART_ART = (key) => `assets/images/components/${key}.png`;
 
@@ -554,6 +557,50 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   v.check(JSON.stringify(COMPETITION_RULES.pilotWeights) === JSON.stringify({ tst: 0.28, eng: 0.04, prg: 0.04 }) && COMPETITION_RULES.form.min === 0.97 && COMPETITION_RULES.form.max === 1.03, 'competition formula: pilot weights / form differ from §21.3');
   v.check(COMPETITION_RULES.winMorale.min === 5 && COMPETITION_RULES.winMorale.max === 12, 'competition win morale must be +5 to +12 (§9.5)');
   for (const k of Object.values(COMPETITION_ART)) v.check(typeof k === 'string', 'competition art: bad key');
+
+  // --- §24 events and §23 sponsors (Milestone 15) ---
+  v.uniqueIds('events', EVENTS);
+  v.check(MILESTONE_EVENTS.length === 8 && MILESTONE_EVENTS.every((e, i) => e.kind === 'milestone' && e.art === `event_art_0${i + 1}`), 'events: the 8 milestone events use event_art_01…08 in §24.1 order');
+  v.check(REPEATABLE_EVENTS.length === 20, 'events: expected the 20 repeatable text events of §24.1');
+  v.check(EVENT_CAPS.choice === 14 && EVENT_CAPS.flavour === 5, 'events: cadence caps differ from §24.3 (14 / 5 days)');
+  v.check(NOTIFY_RULES.maxQueue === 20, 'notifications: §40 caps queued pop-ups at 20');
+  const EFFECT_TYPES = ['credits', 'rep', 'rp', 'morale', 'energy', 'modifier', 'chance', 'sponsorOffer'];
+  const checkEffects = (owner, list) => {
+    for (const e of list ?? []) {
+      v.check(EFFECT_TYPES.includes(e.type), `${owner}: unknown effect "${e.type}"`);
+      if (e.type === 'chance') {
+        v.check(e.p > 0 && e.p < 1, `${owner}: chance p must be between 0 and 1`);
+        checkEffects(owner, e.then);
+        checkEffects(owner, e.else);
+      }
+      if (e.type === 'modifier') v.check(typeof e.key === 'string' && Number.isFinite(e.value) && e.days > 0, `${owner}: modifier needs key, value, days`);
+      if (['credits', 'rep', 'rp'].includes(e.type)) v.check(Number.isFinite(e.amount?.base), `${owner}: ${e.type} needs amount.base`);
+    }
+  };
+  for (const e of REPEATABLE_EVENTS) {
+    const o = `event ${e.id}`;
+    v.check(e.kind in EVENT_CAPS, `${o}: kind must be one of ${Object.keys(EVENT_CAPS).join(', ')}`);
+    v.check(e.icon in EVENT_ICONS, `${o}: unknown icon "${e.icon}"`);
+    if (e.trigger && !EVENT_CONDITIONS.includes(e.trigger.type)) checkUnlock(o, e.trigger);
+    checkEffects(o, e.effects);
+    if (e.kind === 'choice') {
+      v.check(e.choices?.length >= 2 && e.choices.filter((c) => c.default).length === 1, `${o}: a choice event needs 2+ choices and exactly one default`);
+      for (const c of e.choices ?? []) checkEffects(`${o} ${c.id}`, c.effects);
+    } else v.check(!e.choices, `${o}: only choice events have choices`);
+  }
+  v.check(REPEATABLE_EVENTS.at(-1)?.secret && REPEATABLE_EVENTS.at(-1).trigger?.type === 'secret', 'events: the mysterious anonymous message stays behind a secret rule until Milestones 16–17');
+  for (const e of MILESTONE_EVENTS) v.art(`event ${e.id}`, `assets/images/events/${e.art}.png`);
+  v.uniqueIds('sponsors', SPONSORS);
+  v.check(SPONSORS.length === 6 && SPONSOR_RULES.dealMonths === 6 && SPONSOR_RULES.unlock.rank === 'C', 'sponsors: six sponsors, 6-month deals, open at Rank C (§23)');
+  const BENEFIT_KEYS = /^(salesRevenuePct|partCostPct\.\w+|competitionEntryPct|competitionPrizePct|facilityCostPct|purposeStat\.\w+\.[A-Z]{3}|competitionStat\.[A-Z]{3}|projectRpPct)$/;
+  for (const s of SPONSORS) {
+    const o = `sponsor ${s.id}`;
+    checkUnlock(o, s.requirement);
+    v.check(s.benefits.length > 0 && s.benefits.every((b) => BENEFIT_KEYS.test(b.key) && Number.isFinite(b.value)), `${o}: unknown benefit key`);
+    v.check(['count', 'avoid'].includes(s.obligation?.type) && ['launch', 'competitionEntered', 'contractDone', 'contractFailed', 'robotFinished'].includes(s.obligation.signal), `${o}: bad obligation`);
+    v.check(!!(s.art || s.icon) && !!s.benefitText && !!s.obligationText, `${o}: needs art or an icon and its words`);
+    v.art(o, s.art ? `assets/images/npc/${s.art}.png` : `assets/images/ui/${s.icon}.png`);
+  }
 
   // --- every image the game loads ---
   for (const [key, path] of Object.entries(manifest)) v.art(`image "${key}"`, path, { placeholder: placeholders.includes(key) });

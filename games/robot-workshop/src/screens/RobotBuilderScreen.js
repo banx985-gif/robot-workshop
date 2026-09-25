@@ -338,10 +338,10 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       panel(ctx, { x: 0, y: y.summary, w, h: 300 }, { fill: 'rgba(40,48,60,0.96)' });
       text(ctx, `${tier.name} tier · complexity ${campaign.robots.totalComplexity(state.components)} · ${fmt(tier.phaseTarget)} work per phase`, 24, y.summary + 22, { size: 28, bold: true, maxWidth: w - 48 });
       const build = campaign.buildCostFor(state.components);
-      const off = campaign.fx('materialCostPct');
+      const off = build - campaign.robots.buildCost(state.components); // facilities, events, a sponsor
       const daily = estimateDailyCost();
       const days = est ? Math.round(est * PHASES.length) : 0;
-      text(ctx, `Build cost ${fmt(build)}${off ? ` (${off}% facilities)` : ''} now · about ${fmt(daily)} a day to run (≈${fmt(daily * days)} total) · you have ${fmt(campaign.economy.balance('credits'))}`, 24, y.summary + 70, {
+      text(ctx, `Build cost ${fmt(build)}${off ? ` (${off > 0 ? '+' : ''}${fmt(off)} vs list)` : ''} now · about ${fmt(daily)} a day to run (≈${fmt(daily * days)} total) · you have ${fmt(campaign.economy.balance('credits'))}`, 24, y.summary + 70, {
         size: 24,
         color: campaign.economy.balance('credits') < build ? '#FF8A80' : '#9AA8B5',
         maxWidth: w - 48,

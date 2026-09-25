@@ -44,6 +44,12 @@ import { createCompetitionResultScreen } from './screens/CompetitionResultScreen
 import { createRankingsScreen } from './screens/RankingsScreen.js';
 import { createTrophyScreen } from './screens/TrophyScreen.js';
 import { createComboArchiveScreen } from './screens/ComboArchiveScreen.js';
+import { createInboxScreen } from './screens/InboxScreen.js';
+import { createEventPopup } from './ui/EventPopup.js';
+import { drawToasts } from '../../../core/ui/Toast.js';
+import { wireMessages, effectsText, fillText } from './app/Messages.js';
+import { EVENTS_BY_ID, EVENT_ICONS, MILESTONE_EVENTS } from '../data/events.js';
+import { SPONSORS } from '../data/sponsors.js';
 import { SYNERGIES_BY_ID, SYNERGY_ART } from '../data/synergies.js';
 import { rewardText, lookOf } from './systems/Synergies.js';
 import { COMPETITIONS, COMPETITION_ART, TROPHIES } from '../data/competitions.js';
@@ -51,9 +57,8 @@ import { RIVALS } from '../data/rivals.js';
 import { TUTORIAL_HIRES } from '../data/recruitment.js';
 import { RECRUIT_ART, PORTRAITS, PORTRAIT_FOLDER } from '../data/recruitment.js';
 import { TRAINING_ART } from '../data/training.js';
-import { RESEARCH_ART, FEATURES } from '../data/research.js';
+import { RESEARCH_ART } from '../data/research.js';
 import { FACILITIES, BUILD_ART } from '../data/facilities.js';
-import { RANK_NOTES } from '../data/economy.js';
 import { FIRST_CONTRACT_ART } from '../data/contracts.js';
 import { SEGMENTS } from '../data/segments.js';
 import { createDebugBuilderScreen } from './screens/DebugBuilderScreen.js';
@@ -124,6 +129,11 @@ const ASSETS = {
   ...Object.fromEntries(RIVALS.filter((r) => r.manager).map((r) => art('npc', r.manager))),
   // Combos (Milestone 14): discovery glow, combos icon, the ??? marker (robots 11–20 are in the robot families above).
   ...Object.fromEntries([art('vfx', SYNERGY_ART.discover), art('vfx', SYNERGY_ART.blueprint), art('ui', SYNERGY_ART.icon), art('ui', SYNERGY_ART.secret)]),
+  // Events, sponsors and the inbox (Milestone 15): the 8 milestone pictures, the event icons, the two sponsor reps
+  // and the sponsors' icons.
+  ...Object.fromEntries(MILESTONE_EVENTS.map((e) => art('events', e.art))),
+  ...Object.fromEntries(Object.values(EVENT_ICONS).map((k) => art(k.startsWith('reward_') ? 'rewards' : 'ui', k))),
+  ...Object.fromEntries(SPONSORS.map((s) => (s.art ? art('npc', s.art) : art('ui', s.icon)))),
   // Deliberately missing file: proves the placeholder fallback.
   placeholderTest: 'assets/m0-missing-test.png',
 };
@@ -147,7 +157,27 @@ const router = new ScreenRouter(bus);
 const vfx = new VfxSystem({ assets, width: W, height: H, reducedFlashes: readFlashSetting() });
 const audio = new AudioManager({ bus, sounds: SOUNDS });
 const major = new MajorFeedback({ layout, width: W, height: H, pause: () => campaign.clock.pause() });
-router.modal = major;
+// Text events and reopened inbox messages (Milestone 15). Together with the big moments they form the router's
+// modal: while either shows, it takes every tap. Only one of them is ever up (see presentNext below).
+const eventPopup = createEventPopup({
+  layout,
+  assets,
+  width: W,
+  height: () => H,
+  pause: () => {
+    if (campaign.clock.paused) return false;
+    campaign.clock.pause();
+    return true;
+  },
+  resume: () => campaign.clock.resume(),
+});
+const modal = {
+  get active() {
+    return major.active || eventPopup.active;
+  },
+  onTap: (p) => (major.active ? major.onTap(p) : eventPopup.onTap(p)),
+};
+router.modal = modal;
 
 // Sprites are cached at the screen's real pixel size: remake them when that changes.
 assets.setPixelScale(renderer.pixelScale);
@@ -176,17 +206,24 @@ const loop = new FixedStepLoop({
     router.update(dt);
     vfx.update(dt); // real time: effects keep playing while the calendar is paused
     major.update(dt);
+    eventPopup.update(dt);
     coach.update(dt);
-    if (campaignReady) guide.update();
+    if (campaignReady) {
+      campaign.notes.update(dt, { hold: !toastPlace() }); // toasts fade in real time, only while they can show
+      presentNext();
+      guide.update();
+    }
   },
   render: (alpha) => {
     const ctx = renderer.begin('#101418');
     router.render(ctx, alpha);
+    if (campaignReady && toastPlace()) drawToastStack(ctx);
     if (guide.active) {
       const step = guide.current;
       coach.render(ctx, step, guideTarget(step.target), { block: step.block, next: !!step.advance.next });
     }
     major.render(ctx);
+    eventPopup.render(ctx);
     vfx.render(ctx, 'screen');
     debug.render(ctx);
   },
@@ -199,6 +236,9 @@ bus.on('screen:change', ({ to }) => (debug.compact = !['workshop', 'test', 'boot
 // Campaign: calendar + staff + save slot.
 const campaign = new Campaign({ bus });
 let campaignReady = false;
+// Messages (Milestone 15): what happens in play becomes inbox entries, toasts and queued pop-ups. Wired before the
+// handlers below, so a moment's entry exists by the time they run.
+wireMessages({ bus, campaign, ready: () => campaignReady });
 async function startCampaign() {
   const adapter = await createStorageAdapter({ dbName: 'robot-workshop', prefix: 'robot-workshop:' });
   campaign.saveManager = new SaveManager({ adapter, key: 'campaign', version: SAVE_VERSION, migrations: SAVE_MIGRATIONS, bus });
@@ -476,7 +516,7 @@ function drawPauseButton(ctx, b, paused) {
 // ---------------------------------------------------------------------------
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'p' && e.key !== 'P' && e.key !== ' ') return;
-  if (major.active) return;
+  if (modal.active) return;
   if (router.currentName === 'test') loop.togglePause();
   else if (campaignReady && !campaign.closed) campaign.clock.togglePause();
 });
@@ -496,6 +536,7 @@ const hud = {
   goProducts: () => router.go('products'),
   goContracts: () => router.go('contracts'),
   goHelp: () => router.go('help'),
+  goInbox: () => router.go('inbox'),
 };
 const workshopScreen = createWorkshopScreen({ renderer, layout, assets, bus, debug, campaign, router, goProject, hud });
 bus.on('renderer:resize', () => workshopScreen.resize());
@@ -518,7 +559,8 @@ const guide = new GuideSystem({
   bus,
   targetRect: guideTarget,
   screen: () => router.currentName,
-  canShow: () => campaignReady && !major.active && !campaign.closed && !buildScreen?.confirm && !['boot', 'test', 'debugbuilder', 'help', 'components', 'staffdebug'].includes(router.currentName),
+  // A pop-up waiting on the workshop goes first; the guide steps back until it has been read.
+  canShow: () => campaignReady && !modal.active && !(campaign.notes.pending && presentPlace()) && !campaign.closed && !buildScreen?.confirm && !['boot', 'test', 'debugbuilder', 'help', 'components', 'staffdebug'].includes(router.currentName),
   pause: () => {
     if (campaign.clock.paused) return false;
     campaign.clock.pause();
@@ -567,50 +609,21 @@ const competitionsScreen = createCompetitionListScreen({ renderer, layout, asset
 const rankingsScreen = createRankingsScreen({ renderer, layout, assets, campaign, router });
 const trophyScreen = createTrophyScreen({ renderer, layout, assets, campaign, router });
 const comboArchiveScreen = createComboArchiveScreen({ renderer, layout, assets, campaign, router });
+const inboxScreen = createInboxScreen({ renderer, layout, assets, campaign, router, goProject, hud, openEntry });
+bus.on('event:fired', ({ instance, def }) => debug.log(`event ${def.id} (${def.kind}) day ${instance.day}`));
+bus.on('sponsor:signed', ({ def }) => debug.log(`sponsor signed: ${def.name}`));
+bus.on('sponsor:ended', ({ def, record }) => debug.log(`sponsor ended: ${def.name} (${record.result})`));
+bus.on('notify:fold', ({ entry }) => debug.log(`folded into inbox: ${entry.title}`));
 const compSetupScreen = createCompetitionSetupScreen({ renderer, layout, assets, bus, campaign, router });
 const compWatchScreen = createCompetitionWatchScreen({ renderer, layout, assets, campaign, router, vfx, held: () => guide.active || major.active });
 const compResultScreen = createCompetitionResultScreen({ renderer, layout, assets, campaign, router, vfx });
-// An event invites the company. The very first one (the Local Trial, §26) is a big moment with Kai West on the Roster.
-bus.on('competition:invite', ({ event, first }) => {
+// An event invites the company. The first one (the Local Trial, §26: Kai West on the Roster) and the World
+// Championship are illustrated milestone events; the rest arrive as a toast (all queued by src/app/Messages.js).
+bus.on('competition:invite', ({ event }) => {
   debug.log(`competition open: ${event.id} ${event.name}`);
   if (!campaignReady) return;
   audio.play('levelUp');
   campaign.save().catch(() => {});
-  // The World Championship arrives as a big moment of its own (§24.1 "World Championship Arrival").
-  if (event.id === 'C09') {
-    major.show({
-      title: 'The World Robotics Championship!',
-      subtitle: 'Your workshop is invited to the world stage. See Compete.',
-      accent: '#FFD166',
-      drawFn: (ctx, t) => {
-        const s = Math.min(1, t / 0.4);
-        ctx.save();
-        ctx.globalAlpha = s;
-        assets.drawContained(ctx, COMPETITION_ART.worldMoment, { x: W / 2 - 380, y: H / 2 - 520 + (1 - s) * 60, w: 760, h: 760 });
-        ctx.restore();
-      },
-      onAck: () => router.go('competitions', { eventId: 'C09' }),
-    });
-    return;
-  }
-  if (!first) {
-    floatNumber(`New event: ${event.name}!`, FLOAT_COLORS.info, COMPETITION_ART.icon, 0.5);
-    return;
-  }
-  const kai = campaign.recruitment.special?.staffId === TUTORIAL_HIRES.kai.staffId;
-  if (!kai) bus.emit('guide:pilotReady', {}); // Kai is here already (or not coming): no hiring steps
-  major.show({
-    title: `You're invited: ${event.name}!`,
-    subtitle: kai ? 'Kai West, a test pilot, wants to join (cheap) — see Roster. Then tap Compete.' : 'Tap Compete in the workshop to enter.',
-    accent: '#FFD166',
-    drawFn: (ctx, t) => {
-      const s = Math.min(1, t / 0.4);
-      ctx.save();
-      ctx.globalAlpha = s;
-      assets.drawContained(ctx, COMPETITION_ART.firstMoment, { x: W / 2 - 380, y: H / 2 - 520 + (1 - s) * 60, w: 760, h: 760 });
-      ctx.restore();
-    },
-  });
 });
 // The guide's "hire Kai" steps end when Kai joins (the Tessa steps already used staff:hired).
 bus.on('staff:hired', ({ staff }) => staff.id === TUTORIAL_HIRES.kai.staffId && bus.emit('guide:pilotReady', {}));
@@ -622,27 +635,130 @@ bus.on('product:sales', ({ product, sale }) => debug.log(`${product.name}: ${sal
 
 // A finished robot (major feedback, bible §33.4): the game pauses, the Helper pops onto the pedestal
 // with the completion flash, and nothing moves on until the player taps. Then the result screen.
+// The "Robot finished!" card and any "New combo discovered!" cards are queued pop-ups (src/app/Messages.js).
 bus.on('project:complete', ({ record }) => {
   const wasRunning = !campaign.clock.paused;
   campaign.clock.pause();
-  campaign.save().catch(() => {});
   if (router.currentName !== 'workshop') router.go('workshop');
   workshopScreen.celebrate(record);
   audio.play('robotDone');
-  const r = record.result;
-  const deal = record.contract ? (record.contract.ok ? ' · contract met!' : ' · missed its contract') : '';
-  major.show({
-    title: 'Robot finished!',
-    subtitle: `${record.name} · Review ${r.review.toFixed(1)} / 10 · Quality ${r.quality.toFixed(1)}${deal}`,
-    accent: '#7CFFB2',
-    onAck: () => router.go('result', { number: record.number, resumeOnExit: wasRunning }),
-  });
-  // Combos found for the first time in this run (Milestone 14): a small moment each, after "Robot finished!".
-  for (const f of record.newSynergies ?? []) showComboDiscovered(f, record);
+  const e = campaign.notes.inbox.find((x) => x.kind === 'robotDone' && x.data?.number === record.number);
+  if (e) e.data.resume = wasRunning; // the result screen restarts the clock if it was running
+  campaign.save().catch(() => {});
 });
 
+// --- Pop-ups (Milestone 15) -----------------------------------------------------------------------
+// Everything that pops up waits in one queue (campaign.notes, saved with the run) and shows one at a time, only on
+// the workshop view and only when nothing else is open there — never over another pop-up, a guide step or a screen.
+const presentPlace = () => campaignReady && !campaign.closed && router.currentName === 'workshop';
+function presentNext() {
+  if (modal.active || !presentPlace() || guide.active) return;
+  const e = campaign.notes.take();
+  if (e) present(e);
+}
+
+const LEVEL_ACCENT = { minor: '#4FC3F7', medium: '#FFD166', major: '#FFD166' };
+const goArgs = { contracts: { tab: 'offered' }, competitions: { eventId: 'C09' } };
+
+function present(e) {
+  debug.log(`pop-up: ${e.kind} "${e.title}"`);
+  switch (e.kind) {
+    case 'event':
+      return showEvent(e);
+    case 'milestone': {
+      const def = EVENTS_BY_ID[e.data?.id];
+      audio.play('levelUp');
+      return major.show({
+        title: e.title,
+        subtitle: e.body,
+        accent: '#FFD166',
+        drawFn: (ctx, t) => {
+          const s = Math.min(1, t / 0.4);
+          ctx.save();
+          ctx.globalAlpha = s;
+          assets.drawContained(ctx, e.art, { x: W / 2 - 380, y: H / 2 - 520 + (1 - s) * 60, w: 760, h: 760 });
+          ctx.restore();
+        },
+        onAck: def?.goto ? () => router.go(def.goto, goArgs[def.goto] ?? {}) : null,
+      });
+    }
+    case 'robotDone':
+      return major.show({ title: e.title, subtitle: e.body, accent: '#7CFFB2', onAck: () => router.go('result', { number: e.data.number, resumeOnExit: !!e.data.resume }) });
+    case 'combo':
+      return showComboDiscovered(e.data);
+    case 'rankUp':
+      audio.play('levelUp');
+      return major.show({ title: e.title, subtitle: e.body, accent: '#FFD166' });
+    case 'researchMilestone':
+      return major.show({ title: e.title, subtitle: e.body, accent: '#4FC3F7' });
+    case 'sponsorEnded':
+      return eventPopup.show({
+        title: e.title,
+        body: e.body,
+        icon: e.icon,
+        accent: e.data?.result === 'met' ? '#7CFFB2' : '#FFD166',
+        choices: e.data?.renewal ? [{ label: 'See the renewal (Finance)' }, { label: 'Later' }] : [],
+        onChoose: (i) => i === 0 && e.data?.renewal && router.go('finance'),
+      });
+    default:
+      return showMessage(e);
+  }
+}
+
+// A text event: its question and choices (each with what it will do), or — once answered — what happened.
+function showEvent(e) {
+  const inst = campaign.events.instance(e.data?.uid);
+  const def = EVENTS_BY_ID[e.data?.id];
+  if (!inst || !def || inst.status !== 'open') return showMessage(e);
+  eventPopup.show({
+    title: e.title,
+    body: fillText(def.text, inst.params),
+    icon: e.icon,
+    accent: '#FFD166',
+    choices: def.choices.map((c, i) => ({ label: c.label, sub: effectsText(inst.choices[i] ?? [], { staffName: inst.params.staff ?? '' }) || 'Nothing changes' })),
+    onChoose: (i) => {
+      campaign.answerEvent(inst.uid, i);
+      campaign.notes.queue = campaign.notes.queue.filter((id) => id !== e.id); // answered from the inbox: no pop-up later
+      debug.log(`event ${def.id}: ${def.choices[i]?.id}`);
+      if (def.choices[i]?.goto) router.go(def.choices[i].goto);
+    },
+  });
+}
+
+// Any message, reopened (the inbox) or shown as is: its picture or icon, its words, OK.
+function showMessage(e) {
+  eventPopup.show({ title: e.title, body: e.body, icon: e.art ? null : e.icon, art: e.art, accent: LEVEL_ACCENT[e.level], choices: [], okLabel: 'OK' });
+}
+
+// The inbox reopens a message. A waiting question can be answered from there; it then leaves the pop-up queue.
+function openEntry(e) {
+  if (modal.active) return;
+  campaign.notes.queue = campaign.notes.queue.filter((id) => id !== e.id);
+  if (e.kind === 'event') showEvent(e);
+  else if (e.kind === 'combo') showComboDiscovered(e.data);
+  else showMessage(e);
+}
+
+// Toasts: on the workshop view, over the room under the project strip — never over another screen's content or a
+// pop-up (they wait, and every one is in the inbox anyway).
+const toastPlace = () => presentPlace() && !modal.active;
+function drawToastStack(ctx) {
+  const toasts = campaign.notes.toasts;
+  if (!toasts.length) return;
+  const t = topBarRect(layout);
+  const sr = layout.safeRect;
+  drawToasts(ctx, toasts, {
+    x: sr.x + 48,
+    y: t.y + t.h + 170,
+    w: sr.w - 96,
+    life: campaign.notes.toastSec,
+    accent: (e) => (e.icon === EVENT_ICONS.warning ? '#FF8A80' : LEVEL_ACCENT[e.level]),
+    drawIcon: (c, e, r) => (e.art ?? e.icon) && assets.drawContained(c, e.art ?? e.icon, r),
+  });
+}
+
 // "New combo discovered!": the rare-unlock glow behind the combo's look (or the combos icon), a blueprint pop.
-function showComboDiscovered({ id, firstEver }, record) {
+function showComboDiscovered({ id, firstEver }) {
   const rule = SYNERGIES_BY_ID[id];
   if (!rule) return;
   const look = lookOf(id);
@@ -700,37 +816,13 @@ bus.on('contract:success', ({ contract }) => {
   floatNumber(`+${(contract.result?.paid ?? contract.payout).toLocaleString('en-US')}`, FLOAT_COLORS.credits, 'ui_icon_01_money', 0.24);
   audio.play('sale');
 });
-bus.on('contract:failed', ({ contract }) => {
-  const m = moneyBarRect(layout);
-  vfx.text('screen', `Contract failed: ${contract.title}`, m.x + m.w / 2, topBarRect(layout).y + topBarRect(layout).h + 60, { color: '#FF8A80', size: 36, life: 2.6, rise: 30 });
-});
-bus.on('contract:offered', ({ contract }) => {
-  if (campaign.flags.firstContractSeen || !campaignReady) return;
-  campaign.flags.firstContractSeen = true;
-  major.show({
-    title: 'Your first customer!',
-    subtitle: `${contract.customer} has a job for you — see Contracts`,
-    accent: '#FFB74D',
-    drawFn: (ctx, t) => {
-      const s = Math.min(1, t / 0.4);
-      ctx.save();
-      ctx.globalAlpha = s;
-      assets.drawContained(ctx, FIRST_CONTRACT_ART, { x: W / 2 - 380, y: H / 2 - 520 + (1 - s) * 60, w: 760, h: 760 });
-      ctx.restore();
-    },
-    onAck: () => router.go('contracts', { tab: 'offered' }),
-  });
-});
+// A failed contract is a toast and an inbox message; the first contract offer is an illustrated milestone event
+// (both from src/app/Messages.js).
 bus.on('reputation:change', ({ amount, quiet }) => {
   if (amount > 0 && !quiet) floatNumber(`+${amount} Rep`, FLOAT_COLORS.reputation, 'ui_icon_03_reputation', 0.74);
 });
-// A new Company Rank (§8.3) is a big moment: what it opens, then carry on.
-bus.on('reputation:rankUp', ({ rank }) => {
-  if (!campaignReady) return;
-  audio.play('levelUp');
-  campaign.save().catch(() => {});
-  major.show({ title: `Company Rank ${rank.id}!`, subtitle: RANK_NOTES[rank.id] ?? 'Your workshop is growing.', accent: '#FFD166' });
-});
+// A new Company Rank (§8.3) is a big moment (a queued pop-up): what it opens, then carry on.
+bus.on('reputation:rankUp', () => campaignReady && campaign.save().catch(() => {}));
 // Money for building shows in the ledger; a sale floats its refund.
 // Research (Milestone 9): RP float up in cyan; a finished topic is a medium moment (sound + note in the workshop);
 // the first RP ever and a business milestone get a short message.
@@ -739,16 +831,11 @@ bus.on('research:rp', ({ amount, first }) => {
   floatNumber(`+${amount} RP`, FLOAT_COLORS.research, RESEARCH_ART.rp, 0.5);
   if (first) debug.log('first Research Points earned');
 });
+// (A finished topic is a toast; a research milestone a queued pop-up — src/app/Messages.js.)
 bus.on('research:complete', ({ node, fired }) => {
   audio.play('phaseDone');
   campaign.save().catch(() => {});
   debug.log(`research ${node.id} done: ${fired.map((a) => a.type + ' ' + a.id).join(', ')}`);
-  if (router.currentName !== 'workshop' && router.currentName !== 'research') floatNumber(`${node.name} researched!`, FLOAT_COLORS.research, RESEARCH_ART.icon, 0.5);
-});
-bus.on('research:milestone', ({ milestone, fired }) => {
-  if (!campaignReady || !fired.length) return;
-  const f = FEATURES[fired.at(-1).id];
-  major.show({ title: `${milestone.count} research topics done!`, subtitle: `${fired.map((a) => FEATURES[a.id]?.name ?? a.id).join(' + ')}: ${f?.note ?? ''}`, accent: '#4FC3F7' });
 });
 // Hiring and training (Milestone 10): a new face walks in; a finished course floats its gains over the worker.
 bus.on('staff:hired', ({ staff, debug: spawned }) => {
@@ -797,6 +884,7 @@ if (debug.enabled) {
   window.__m12 = { ...window.__m11, competitions: competitionsScreen, compSetup: compSetupScreen, compWatch: compWatchScreen, compResult: compResultScreen, competitionSystem: campaign.competitions };
   window.__m13 = { ...window.__m12, rankings: rankingsScreen, trophiesScreen: trophyScreen, rankingSystem: campaign.rankings, trophyCase: campaign.trophies, rivalSystem: campaign.rivals };
   window.__m14 = { ...window.__m13, combos: comboArchiveScreen, synergyArchive: campaign.synergyArchive, showComboDiscovered };
+  window.__m15 = { ...window.__m14, bus, inbox: inboxScreen, eventPopup, modal, events: campaign.events, sponsors: campaign.sponsors, notes: campaign.notes, presentPlace, EVENTS_BY_ID };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
   bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));
@@ -829,6 +917,7 @@ router
   .register('rankings', rankingsScreen)
   .register('trophies', trophyScreen)
   .register('combos', comboArchiveScreen)
+  .register('inbox', inboxScreen)
   .register('debugbuilder', debugBuilderScreen);
 if (debug.enabled) router.register('staffdebug', staffDebugScreen); // ?debug=1 only: spawn any of the 50
 router.go('boot');

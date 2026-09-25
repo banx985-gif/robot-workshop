@@ -175,7 +175,7 @@ export function createCompetitionListScreen({ renderer, layout, assets, campaign
     const boosted = ev.rotate && !hidden ? `This month boosted: ${Object.entries(weights).filter(([, v]) => v > ev.rotate.base).map(([k]) => k).join(' & ')}` : ev.rotate ? 'Weights change every month' : null;
     if (boosted) text(ctx, boosted, x, r.y + 134, { size: 22, color: '#80DEEA', maxWidth: mw });
     const y0 = r.y + (boosted ? 168 : 140);
-    text(ctx, `Rivals ≈ ${ev.target} · Entry ${ev.entry ? fmt(ev.entry) : 'free'}`, x, y0, { size: 25, maxWidth: mw });
+    text(ctx, `Rivals ≈ ${ev.target} · Entry ${campaign.entryFee(ev.id) ? fmt(campaign.entryFee(ev.id)) : 'free'}`, x, y0, { size: 25, maxWidth: mw });
     const extras = [ev.rewards.rep ? `${ev.rewards.rep} Rep` : null, ev.rewards.prestigeTokens ? `${ev.rewards.prestigeTokens} Prestige Token${ev.rewards.prestigeTokens > 1 ? 's' : ''}` : null, ev.rewards.trophy ? TROPHIES_BY_ID[ev.rewards.trophy].name : null].filter(Boolean);
     text(ctx, `1st: ${fmt(ev.rewards.credits)}${extras.length ? ' + ' + extras.join(' · ') : ''}`, x, y0 + 38, { size: 24, color: '#FFD166', maxWidth: mw });
 

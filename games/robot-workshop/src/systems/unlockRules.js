@@ -49,6 +49,8 @@ export function describeUnlock(rule) {
       return `Own the ${TROPHIES_BY_ID[rule.id]?.name ?? rule.id}`;
     case 'purposeBuilt':
       return `A finished ${PURPOSES[rule.purpose]?.name ?? rule.purpose} robot`;
+    case 'contractsDone':
+      return `Complete ${rule.min} ${rule.purpose ? `${PURPOSES[rule.purpose]?.name ?? rule.purpose} ` : ''}contracts`;
     case 'all':
       return rule.of.map(describeUnlock).join(' + ');
     default:

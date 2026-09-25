@@ -190,7 +190,7 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
     const mw = r.w - 334;
     text(ctx, ev.name, x, r.y + 20, { size: 38, bold: true, maxWidth: mw });
     text(ctx, weightsLine(campaign.competitionWeights(ev.id), { hidden: !campaign.weightsKnown(ev.id) }), x, r.y + 72, { size: 26, bold: true, color: '#4FC3F7', maxWidth: mw });
-    text(ctx, `Rival field ≈ ${ev.target} · Entry ${ev.entry ? fmt(ev.entry) : 'free'}`, x, r.y + 114, { size: 26, maxWidth: mw });
+    text(ctx, `Rival field ≈ ${ev.target} · Entry ${campaign.entryFee(ev.id) ? fmt(campaign.entryFee(ev.id)) : 'free'}`, x, r.y + 114, { size: 26, maxWidth: mw });
     text(ctx, `1st place: ${fmt(ev.rewards.credits)} + ${ev.rewards.rep} Rep`, x, r.y + 152, { size: 26, color: '#FFD166', maxWidth: mw });
     text(ctx, `3 segments: ${ev.segments.join(' → ')}`, x, r.y + 192, { size: 22, color: '#9AA8B5', maxWidth: mw });
   }

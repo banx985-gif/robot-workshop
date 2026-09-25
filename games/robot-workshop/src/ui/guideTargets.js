@@ -84,6 +84,13 @@ export function createGuideTargets({ router, campaign }) {
     compResultDone: () => (on('compResult') ? cur().doneRect() : null),
     // Combos (Milestone 14)
     comboPanel: () => (on('builder') ? inPanel(cur(), cur().comboRect()) : null),
+    // Sponsors (Milestone 15)
+    moneyBar: () => (on('workshop') && !cur().card.isOpen ? cur().topBar.moneyRect() : null),
+    sponsorOffer: () => {
+      if (!on('finance')) return null;
+      const r = cur().sponsorOfferRect();
+      return r ? inPanel(cur(), r) : null;
+    },
   };
 
   return (name) => {

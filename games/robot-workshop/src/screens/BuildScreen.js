@@ -461,7 +461,7 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
     const x = p.x + 210;
     const mw = p.w - 230;
     text(ctx, mode === 'place' ? `Place: ${d.name}` : d.name, x, p.y + 24, { size: 38, bold: true, maxWidth: mw });
-    text(ctx, mode === 'place' ? `Costs ${fmt(d.cost)} · ${d.w}×${d.h} tiles · you have ${fmt(campaign.economy.balance('credits'))}` : `${d.w}×${d.h} tiles · sells for ${fmt(F.sellValue(F.get(editUid)))}`, x, p.y + 74, { size: 26, color: '#9AA8B5', maxWidth: mw });
+    text(ctx, mode === 'place' ? `Costs ${fmt(campaign.facilityCost(defId))} · ${d.w}×${d.h} tiles · you have ${fmt(campaign.economy.balance('credits'))}` : `${d.w}×${d.h} tiles · sells for ${fmt(F.sellValue(F.get(editUid)))}`, x, p.y + 74, { size: 26, color: '#9AA8B5', maxWidth: mw });
     text(ctx, d.blurb, x, p.y + 112, { size: 26, color: '#E8EEF2', maxWidth: mw });
     const g = workshop.ghost;
     if (mode === 'place' && g) text(ctx, g.ok ? '✓ Fits here' : `✗ ${g.reason}`, x, p.y + 154, { size: 28, bold: true, color: g.ok ? GREEN : RED, maxWidth: mw });
@@ -470,7 +470,7 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
     drawButton(ctx, actionRect(0), 'Rotate', { font });
     if (mode === 'place') {
       drawButton(ctx, actionRect(1), 'Cancel', { font });
-      drawButton(ctx, actionRect(2), `Place ${fmt(d.cost)}`, { font, active: !!g?.ok, disabled: !g?.ok, accent: GREEN });
+      drawButton(ctx, actionRect(2), `Place ${fmt(campaign.facilityCost(defId))}`, { font, active: !!g?.ok, disabled: !g?.ok, accent: GREEN });
     } else {
       const block = campaign.sellBlock(editUid);
       drawButton(ctx, actionRect(1), `Sell +${fmt(F.sellValue(F.get(editUid)))}`, { font, disabled: !!block, accent: RED });
@@ -503,7 +503,7 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
     const n = F.count(id);
     if (n) text(ctx, `×${n}`, r.x + r.w - 14, r.y + 12, { size: 26, bold: true, color: GREEN, align: 'right' });
     text(ctx, d.name, r.x + r.w / 2, r.y + 134, { size: 26, bold: true, align: 'center', color: unlocked ? '#FFFFFF' : '#8C98A5', maxWidth: r.w - 16 });
-    text(ctx, `${fmt(d.cost)} · ${d.w}×${d.h}`, r.x + r.w / 2, r.y + 168, { size: 23, align: 'center', color: unlocked && campaign.economy.canAfford('credits', d.cost) ? '#FFD166' : '#8C98A5', maxWidth: r.w - 16 });
+    text(ctx, `${fmt(campaign.facilityCost(id))} · ${d.w}×${d.h}`, r.x + r.w / 2, r.y + 168, { size: 23, align: 'center', color: unlocked && campaign.economy.canAfford('credits', campaign.facilityCost(id)) ? '#FFD166' : '#8C98A5', maxWidth: r.w - 16 });
     if (!unlocked) {
       const rule = describeUnlock(d.unlock);
       drawPadlock(ctx, r.x + 14, r.y + 216, 24, '#FFB74D');

@@ -245,6 +245,10 @@ export class StaffSystem {
     this._applyMoraleFloor(s);
   }
 
+  changeEnergy(s, delta) {
+    s.energy = round1(clamp(s.energy + delta, 0, 100));
+  }
+
   _applyMoraleFloor(s) {
     const floor = this.traitEffect(s, 'moraleFloor');
     if (s.morale < floor) s.morale = floor;

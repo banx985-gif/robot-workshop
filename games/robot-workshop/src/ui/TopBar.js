@@ -1,9 +1,9 @@
 // Top bar shared by the game screens:
-//   row 1: date (+ "Saved" note)
+//   row 1: date, Inbox (unread badge, Milestone 15) and Help
 //   row 2: money bar — credits, Tech Chips, reputation (tap → finance) and a Products button
-//   row 3: Pause / 1× / 2× / 4× (2× and 4× show a padlock until unlocked, bible §4.2), Save (for testing) and screen buttons
+//   row 3: Pause / 1× / 2× / 4× (2× and 4× show a padlock until unlocked, bible §4.2), Save (for testing — says "Saved ✓" for a moment) and screen buttons
 //   nav: [{ id, label, onTap, badge?() }]  drawn right-aligned after Save; badge() → attention badge text or null
-//   hud: { assets, vfx, goFinance, goProducts } shared by every screen (made in main.js)
+//   hud: { assets, vfx, goFinance, goProducts, goContracts, goHelp, goInbox } shared by every screen (made in main.js)
 import { drawButton, hitRect } from '../../../../core/ui/Button.js';
 import { contained, text } from './widgets.js';
 
@@ -37,6 +37,11 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
     return { x: r.x + r.w - 20 - 150, y: r.y + 10, w: 150, h: 68 };
   }
 
+  function inboxRect() {
+    const r = rect();
+    return { x: r.x + r.w - 20 - 150 - 12 - 180, y: r.y + 10, w: 180, h: 68 };
+  }
+
   function contractsRect() {
     const r = rect();
     return { x: r.x + r.w - 20 - 210, y: r.y + 86, w: 210, h: 84 };
@@ -55,7 +60,8 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
       x += (locked ? 118 : 92) + 10;
     }
     // Right side, from the right edge inwards: nav buttons (last first), then Save.
-    const right = [{ id: 'save', label: 'Save' }, ...nav];
+    const saved = savedNote && performance.now() < savedNote.until ? savedNote.text : null;
+    const right = [{ id: 'save', label: saved ?? 'Save', note: !!saved }, ...nav];
     const w = 150;
     let rx = r.x + r.w - 20;
     for (let i = right.length - 1; i >= 0; i--) {
@@ -71,7 +77,7 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
       await campaign.save();
       savedNote = { text: 'Saved ✓', until: performance.now() + 2000 };
     } catch {
-      savedNote = { text: 'Save failed', until: performance.now() + 3000 };
+      savedNote = { text: 'Failed!', until: performance.now() + 3000 };
     }
   }
 
@@ -113,6 +119,7 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
     productsRect,
     contractsRect,
     helpRect,
+    inboxRect,
     contains: (p) => hitRect(p, rect()),
     // Returns true if the tap was used by the bar.
     handleTap(p) {
@@ -123,6 +130,10 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
       }
       if (hitRect(p, productsRect())) {
         hud.goProducts();
+        return true;
+      }
+      if (hitRect(p, inboxRect())) {
+        hud.goInbox?.();
         return true;
       }
       if (hitRect(p, helpRect())) {
@@ -154,10 +165,10 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
       if (ctx.roundRect) ctx.roundRect(r.x, r.y, r.w, r.h, 24);
       else ctx.rect(r.x, r.y, r.w, r.h);
       ctx.fill();
-      text(ctx, campaign.clock.label(), r.x + 24, r.y + 44, { size: 40, bold: true, baseline: 'middle', maxWidth: r.w - 280 });
-      if (savedNote && performance.now() < savedNote.until) {
-        text(ctx, savedNote.text, r.x + r.w - 24 - 170, r.y + 44, { size: 32, bold: true, baseline: 'middle', align: 'right', color: '#7CFFB2' });
-      }
+      text(ctx, campaign.clock.label(), r.x + 24, r.y + 44, { size: 40, bold: true, baseline: 'middle', maxWidth: r.w - 24 - 20 - 150 - 12 - 180 - 20 });
+      const ir = inboxRect();
+      const unread = campaign.notes?.unread ?? 0;
+      drawButton(ctx, ir, 'Inbox', { font: BTN_FONT, badge: unread ? (unread > 99 ? '99+' : unread) : null });
       const hr = helpRect();
       drawButton(ctx, hr, '', { font: BTN_FONT });
       contained(ctx, hud.assets, 'ui_icon_27', { x: hr.x + 10, y: hr.y + 6, w: 50, h: 50 });
@@ -172,7 +183,7 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
           active: b.active,
           locked: b.locked,
           badge: b.badge?.() ?? null,
-          accent: b.id === 'pause' ? '#FFD166' : '#4FC3F7',
+          accent: b.id === 'pause' ? '#FFD166' : b.note ? '#7CFFB2' : '#4FC3F7',
           font: BTN_FONT,
         });
       }

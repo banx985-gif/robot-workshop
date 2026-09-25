@@ -1,11 +1,12 @@
 // One Robot Workshop run: seeded RNG, calendar, staff, robot projects, history, money, products,
 // reputation, market, contracts, the workshop layout (facilities + expansions), research, hiring, training,
 // career records (Milestone 11), competitions (Milestone 12), the competition ladder, rivals, rankings and
-// trophies (Milestone 13), combos and their discovery archive (Milestone 14) and saving/loading.
+// trophies (Milestone 13), combos and their discovery archive (Milestone 14), events, sponsors and the message
+// inbox (Milestone 15) and saving/loading.
 // The combo archive has two halves: this run (in the campaign save) and the account (its own save record,
 // kept across new runs — accountManager).
 // Random numbers: the main stream drives staff, projects and sales; the market and the contracts each
-// have their own seeded stream, so contract offers never change how a robot build rolls.
+// have their own seeded stream, so contract offers never change how a robot build rolls. Events have their own too.
 // Everything that must come back identical after a reload lives here.
 import { Rng } from '../../../../core/Rng.js';
 import { Clock } from '../../../../core/Clock.js';
@@ -34,6 +35,11 @@ import { Rankings } from '../../../../core/Rankings.js';
 import { TrophyCase } from '../../../../core/TrophyCase.js';
 import { competitionRuleMet } from '../../../../core/CompetitionPrereqs.js';
 import { DiscoveryArchive } from '../../../../core/DiscoveryArchive.js';
+import { EventSystem } from '../../../../core/EventSystem.js';
+import { SponsorSystem } from '../../../../core/SponsorSystem.js';
+import { NotificationSystem } from '../../../../core/NotificationSystem.js';
+import { EVENTS, EVENTS_BY_ID, EVENT_CAPS, EVENT_RULES, NOTIFY_RULES } from '../../data/events.js';
+import { SPONSORS, SPONSOR_RULES } from '../../data/sponsors.js';
 import { SYNERGIES_BY_ID } from '../../data/synergies.js';
 import { COMPETITIONS, COMPETITIONS_BY_ID, COMPETITION_RULES, TROPHIES, RANKING_POINTS } from '../../data/competitions.js';
 import { RIVALS, RIVAL_RULES } from '../../data/rivals.js';
@@ -46,7 +52,7 @@ import { STAFF, STAFF_BY_ID, ROLES, TIERS, STARTER_IDS, EMPLOYEE_CAP, RECRUITABL
 import { AI_HEAVY } from '../../data/unlocks.js';
 import { SIGNATURE_HOOKS } from '../systems/signatureHooks.js';
 import { TRAITS } from '../../data/traits.js';
-import { STAT_KEYS } from '../../data/stats.js';
+import { STAT_KEYS, ROBOT_STAT_KEYS } from '../../data/stats.js';
 import { PHASES, BUDGET_FOCUS, PROJECT_TIERS } from '../../data/phases.js';
 import { STARTER_PARTS, COMPONENTS } from '../../data/components.js';
 import { PURPOSES, PURPOSE_ORDER } from '../../data/purposes.js';
@@ -105,6 +111,8 @@ export const SAVE_MIGRATIONS = {
   10: (record) => ({ ...record, data: { ...record.data, rankings: null, trophies: null } }),
   // v11 (Milestone 13) had no combos: null = nothing discovered yet in this run.
   11: (record) => ({ ...record, data: { ...record.data, synergies: null } }),
+  // v12 (Milestone 14) had no events, sponsors or inbox: null = start them fresh from the day the save is loaded.
+  12: (record) => ({ ...record, data: { ...record.data, events: null, sponsors: null, notifications: null } }),
 };
 
 // Things research unlock actions name ("part:CH02", "facility:F07"…): for these, the research part of their
@@ -125,7 +133,8 @@ export class Campaign {
     this.rng = new Rng(this.seed);
     this.clock = new Clock({ bus, ...CALENDAR });
     this.clock.speedAllowed = (speed) => this.speedUnlocked(speed);
-    // Workshop layout (§18). Other systems read facility bonuses through fx(key), never by facility id.
+    // Workshop layout (§18). Other systems read bonuses through fx(key), never by facility id: the shared effect
+    // query adds up the facilities, the active sponsor's benefits and the timed effects of events (Milestone 15).
     this.facilities = new FacilitySystem({
       bus,
       defs: FACILITIES,
@@ -134,7 +143,7 @@ export class Campaign {
       entrance: WORKSHOP_START.entrance,
       sellRefundPct: WORKSHOP_START.sellRefundPct,
     });
-    const fx = (key) => this.facilities.total(key);
+    const fx = (key) => this.facilities.total(key) + (this.sponsors?.total(key) ?? 0) + (this.events?.total(key) ?? 0);
     this.fx = fx;
     this.staff = new StaffSystem({
       rng: this.rng,
@@ -309,8 +318,38 @@ export class Campaign {
       this._careerFinish(job, record);
       this._synergiesFinished(record);
       this.projectRp(record);
+      this.sponsors.signal('robotFinished', { record }, this.clock.totalDays);
       if (job.data.contractId) this.deliverRecord(job.data.contractId, record.number);
     });
+    // Events (§24), sponsors (§23) and the message inbox (Milestone 15). Events roll on their own seeded stream.
+    this.eventRng = new Rng(`${this.seed}|events`);
+    this.events = new EventSystem({
+      bus,
+      rng: this.eventRng,
+      defs: EVENTS,
+      caps: EVENT_CAPS,
+      rules: EVENT_RULES,
+      hooks: {
+        conditionMet: (rule) => this.eventCondition(rule),
+        setup: (inst, def, rng) => this._eventSetup(inst, def, rng),
+        resolve: (e, inst, rng) => this._eventResolve(e, inst, rng),
+        apply: (e, inst) => this._eventApply(e, inst),
+      },
+    });
+    this.sponsors = new SponsorSystem({
+      bus,
+      defs: SPONSORS,
+      dealDays: SPONSOR_RULES.dealMonths * CALENDAR.daysPerMonth,
+      offerDays: SPONSOR_RULES.offerDays,
+      cooldownDays: SPONSOR_RULES.cooldownDays,
+      hooks: {
+        eligible: (d) => this.sponsorsOpen && this.ruleMet(d.requirement),
+        matches: (ob, p) => this._sponsorMatch(ob, p),
+      },
+    });
+    this.notes = new NotificationSystem({ bus, ...NOTIFY_RULES });
+    bus.on('contract:success', () => this.sponsors.signal('contractDone', {}, this.clock.totalDays));
+    bus.on('contract:failed', ({ reason }) => this.sponsors.signal('contractFailed', { reason }, this.clock.totalDays));
     this.flags = {};
     this.guideState = undefined; // first-time guide progress (owned by the game's GuideSystem); null = older save
     this.lastSaveError = null;
@@ -342,6 +381,8 @@ export class Campaign {
     this.contracts.dailyTick(this.clock.totalDays); // deadlines
     this._competitionInvites();
     this._displayReputation();
+    this.sponsors.dailyTick(this.clock.totalDays); // offers run out, a finished deal ends
+    this.events.dailyTick(this.clock.totalDays); // seeded, within the §24.3 caps
   }
 
   // F15: each robot on display earns reputation daily, up to a cap per robot (newest robots go on show).
@@ -395,9 +436,12 @@ export class Campaign {
     return Math.round((base + staff / c.salaryDivisor + this.fx('runningCostPerDay')) * c.focusMultiplier[job.data.budgetFocus] * frugal);
   }
 
-  // What the parts bill comes to today, after Parts Racks / Storage Crates.
+  // What the parts bill comes to today: each part after its slot's discount (a sponsor's cheaper power systems), then
+  // Parts Racks / Storage Crates and event price changes on the whole bill.
   buildCostFor(components) {
-    return Math.round(this.robots.buildCost(components) * (1 + this.fx('materialCostPct') / 100));
+    let t = 0;
+    for (const [slot, id] of Object.entries(components)) t += (COMPONENTS[id]?.cost ?? 0) * (1 + this.fx(`partCostPct.${slot}`) / 100);
+    return Math.round(t * (1 + this.fx('materialCostPct') / 100));
   }
 
   // Product data for launching a robot at a price position (also used for the launch forecast).
@@ -417,6 +461,7 @@ export class Campaign {
     rec.launchedProductId = product.id;
     this.addReview(product, 0);
     this.reputation.add(Math.round(rec.result.quality * REPUTATION_RULES.launchPerQuality * this.celebrityMult()), `Launch: ${rec.name}`);
+    this.sponsors.signal('launch', { record: rec }, this.clock.totalDays);
     if (!this.flags.firstLaunch) {
       this.flags.firstLaunch = true;
       this.economy.add('techChips', TECH_CHIP_REWARDS.firstLaunch, 'First commercial launch', 'reward');
@@ -474,6 +519,8 @@ export class Campaign {
       case 'totalWins':
       case 'trophy':
         return competitionRuleMet(rule, { competitions: this.competitions, trophies: this.trophies });
+      case 'contractsDone':
+        return this.contracts.done.filter((c) => c.status === 'success' && (!rule.purpose || c.purpose === rule.purpose)).length >= rule.min;
       case 'all':
         return rule.of.every((r) => this.ruleMet(r, subject));
       default:
@@ -532,8 +579,14 @@ export class Campaign {
     if (!d) return 'Unknown facility';
     if (!this.facilityUnlocked(defId)) return `Locked: ${describeUnlock(d.unlock)}`;
     if (this.economy.isBlocked('facility')) return 'No building while in debt';
-    if (!this.economy.canAfford('credits', d.cost)) return 'Not enough credits';
+    if (!this.economy.canAfford('credits', this.facilityCost(defId))) return 'Not enough credits';
     return null;
+  }
+
+  // A facility's price today (a sponsor can make them cheaper). Selling refunds half the list price.
+  facilityCost(defId) {
+    const d = FACILITIES[defId];
+    return d ? Math.round(d.cost * (1 + this.fx('facilityCostPct') / 100)) : 0;
   }
 
   buildFacility(defId, col, row, rot = 0) {
@@ -541,7 +594,7 @@ export class Campaign {
     if (block) return { ok: false, reason: block };
     const res = this.facilities.place(defId, col, row, rot);
     if (!res.ok) return res;
-    this.economy.add('credits', -FACILITIES[defId].cost, `Built: ${FACILITIES[defId].name}`, 'facility');
+    this.economy.add('credits', -this.facilityCost(defId), `Built:${FACILITIES[defId].name}`, 'facility');
     return res;
   }
 
@@ -632,7 +685,8 @@ export class Campaign {
     const r = record?.result;
     if (!r) return;
     const day = this.clock.totalDays;
-    this.research.addRp(RP_SOURCES.project.base + (r.totalCx ?? 0) * RP_SOURCES.project.perComplexity, `Robot finished: ${record.name}`, day);
+    const pct = 1 + this.fx('projectRpPct') / 100; // OmniSoft
+    this.research.addRp(Math.round((RP_SOURCES.project.base + (r.totalCx ?? 0) * RP_SOURCES.project.perComplexity) * pct), `Robot finished: ${record.name}`, day);
     const firsts = Object.values(r.components ?? {}).filter((id) => this.research.firstTime('part', id));
     if (firsts.length) this.research.addRp(firsts.length * RP_SOURCES.firstPartUse, `First use: ${firsts.map((id) => COMPONENTS[id]?.name ?? id).join(', ')}`, day);
   }
@@ -1025,12 +1079,20 @@ export class Campaign {
     const s = this.staff.get(pilotId);
     if (!rec?.result || !s || !COMPETITIONS_BY_ID[eventId]) return null;
     const { mods, signatures } = pilotMods(this.staff, s);
-    return { eventId, tuningId, strategyId, weights: this.competitionWeights(eventId), entrant: entrantOf(rec), pilot: pilotOf(s), mods, signatures, prepBonus: this.fx('competitionPrep') };
+    const entrant = entrantOf(rec);
+    for (const k of ROBOT_STAT_KEYS) entrant.stats[k] = Math.min(999, entrant.stats[k] + this.fx(`competitionStat.${k}`)); // Velocity Lab
+    return { eventId, tuningId, strategyId, weights: this.competitionWeights(eventId), entrant, pilot: pilotOf(s), mods, signatures, prepBonus: this.fx('competitionPrep') };
+  }
+
+  // An event's entry fee today (a sponsor can cut it).
+  entryFee(eventId) {
+    const e = COMPETITIONS_BY_ID[eventId]?.entry ?? 0;
+    return Math.round(e * (1 + this.fx('competitionEntryPct') / 100));
   }
 
   // Credits this entry costs: entry fee + tuning.
   competitionCost(eventId, tuningId) {
-    return (COMPETITIONS_BY_ID[eventId]?.entry ?? 0) + (this.competitions.tuning(tuningId)?.cost ?? 0);
+    return this.entryFee(eventId) + (this.competitions.tuning(tuningId)?.cost ?? 0);
   }
 
   // Why this entry can't go ahead, or null.
@@ -1074,12 +1136,14 @@ export class Campaign {
     const tuning = this.competitions.tuning(choice.tuningId);
     const setup = this.competitionSetup(choice);
     const day = this.clock.totalDays;
-    if (ev.entry) this.economy.add('credits', -ev.entry, `Entry fee: ${ev.name}`, 'competition');
+    const fee = this.entryFee(ev.id);
+    if (fee) this.economy.add('credits', -fee, `Entry fee: ${ev.name}`, 'competition');
     if (tuning.cost) this.economy.add('credits', -tuning.cost, `Tuning: ${tuning.name} (${ev.name})`, 'competition');
     const run = this.competitions.run(setup, this.competitionSeed(ev.id), this.competitionContext);
     const ranking = this.rankings.record(run.standings, ev.rankWeight ?? 1); // { before, after } positions
-    const result = this.competitions.commit(run, { day, period: this.monthIndex, costs: { entry: ev.entry, tuning: tuning.cost }, signatures: setup.signatures, robotNumber: choice.robotNumber, ranking });
+    const result = this.competitions.commit(run, { day, period: this.monthIndex, costs: { entry: fee, tuning: tuning.cost }, signatures: setup.signatures, robotNumber: choice.robotNumber, ranking });
     const w = result.rewards;
+    w.credits = Math.round((w.credits ?? 0) * (1 + this.fx('competitionPrizePct') / 100)); // BrightGear, a rival challenge
     if (w.credits) this.economy.add('credits', w.credits, `Prize: ${ev.name} (${ordinal(result.place)})`, 'competition');
     w.rep = Math.round(w.rep * this.celebrityMult());
     if (w.rep) this.reputation.add(w.rep, `Competition: ${ev.name}`, { quiet: true }); // shown on the result screen
@@ -1101,6 +1165,7 @@ export class Campaign {
     // A rival finished ahead of the player (the guide's "rivals get stronger" step).
     const beatenBy = result.standings.find((s) => s.id !== 'player' && (result.player.dnf || s.place < result.place));
     if (beatenBy) this.bus.emit('competition:beaten', { result, rivalId: beatenBy.id });
+    this.sponsors.signal('competitionEntered', { eventId: ev.id, result }, day);
     this.bus.emit('competition:enter', { result });
     return { ok: true, reason: null, result };
   }
@@ -1111,6 +1176,127 @@ export class Campaign {
     for (const r of this.competitions.results) this.rankings.record(r.standings, COMPETITIONS_BY_ID[r.eventId]?.rankWeight ?? 1);
     this.trophies.reset();
     this.trophies.check((rule) => this.ruleMet(rule), { day: this.clock.totalDays, rebuilt: true });
+  }
+
+  // --- events (§24) ---
+  // Event trigger words (data/events.js EVENT_CONDITIONS), then the unlock words (secret rules stay shut until M16).
+  eventCondition(rule) {
+    switch (rule?.type) {
+      case 'robotsBuilt':
+        return this.history.count >= rule.min;
+      case 'productsOnSale':
+        return this.products.active.length >= rule.min;
+      case 'projectRunning':
+        return this.projects.jobs.length > 0;
+      case 'staffEnergyBelow':
+        return this.staff.staff.some((s) => s.energy < rule.value);
+      case 'facilitiesOwned':
+        return this.facilities.placed.length >= rule.min;
+      case 'competitionsOpen':
+        return this.openCompetitions.length >= rule.min;
+      case 'sponsorOfferable':
+        return !this.sponsors.offers.length && this.sponsors.offerable(this.clock.totalDays).length > 0;
+      case 'rpEarned':
+        return this.research.rpEarned > 0;
+      default:
+        return this.ruleMet(rule);
+    }
+  }
+
+  // Who an event is about, picked (seeded) the moment it happens.
+  _eventSetup(inst, def, rng) {
+    const staff = this.staff.staff;
+    let s = null;
+    if (def.who === 'staff') s = rng.pick(staff);
+    else if (def.who === 'tired') s = staff.reduce((a, b) => (b.energy < a.energy ? b : a), staff[0]);
+    else if (def.who === 'team') s = rng.pick(this.activeProject ? this.projects.teamOf(this.activeProject) : []) ?? rng.pick(staff);
+    if (s) return { staffId: s.id, staff: s.name };
+    if (def.who === 'rival') {
+      const r = rng.pick(this.rivals.visible((id) => this.rivalShown(id)));
+      return r ? { rivalId: r.id, rival: r.name } : {};
+    }
+    if (def.who === 'sponsor') {
+      const d = rng.pick(this.sponsors.offerable(this.clock.totalDays));
+      return d ? { sponsorId: d.id, sponsor: d.name } : {};
+    }
+    return {};
+  }
+
+  // An effect's numbers, rolled when the event happens: Year 1 = base, + perYear each later year, ± spread.
+  _eventResolve(e, inst, rng) {
+    if (!e.amount || typeof e.amount !== 'object') return { ...e };
+    const a = e.amount;
+    let v = a.base + (a.perYear ?? 0) * (this.clock.year - 1);
+    if (a.spread) v *= rng.range(1 - a.spread, 1 + a.spread);
+    return { ...e, amount: e.type === 'credits' ? Math.round(v / 50) * 50 : Math.round(v) };
+  }
+
+  _eventApply(e, inst) {
+    const def = EVENTS_BY_ID[inst.id];
+    const why = `Event: ${def?.title ?? inst.id}`;
+    const day = this.clock.totalDays;
+    const people = e.who === 'one' ? [this.staff.get(inst.params.staffId)].filter(Boolean) : e.who === 'team' && this.activeProject ? this.projects.teamOf(this.activeProject) : this.staff.staff;
+    switch (e.type) {
+      case 'credits':
+        if (e.amount) this.economy.add('credits', e.amount, why, 'event');
+        break;
+      case 'rep':
+        this.reputation.add(e.amount, why);
+        break;
+      case 'rp':
+        if (e.amount > 0) this.research.addRp(e.amount, why, day);
+        break;
+      case 'morale':
+        for (const s of people) this.staff.changeMorale(s, e.amount);
+        break;
+      case 'energy':
+        for (const s of people) this.staff.changeEnergy(s, e.amount);
+        break;
+      case 'sponsorOffer':
+        if (inst.params.sponsorId) this.sponsors.offer(inst.params.sponsorId, day);
+        break;
+    }
+  }
+
+  // The player's answer to a choice event. Saved straight away: the answer and its outcome are committed.
+  answerEvent(uid, choiceIndex) {
+    const inst = this.events.choose(uid, choiceIndex, { day: this.clock.totalDays });
+    if (inst) this.save().catch(() => {});
+    return inst;
+  }
+
+  // A milestone moment (§24.1 illustrated events): once each, ignores the caps.
+  fireMilestone(id, params = {}) {
+    return this.events.milestone(id, this.clock.totalDays, params);
+  }
+
+  // Debug (?debug=1): make an event happen now (ignores caps and triggers).
+  debugFireEvent(id) {
+    return this.events.fire(id, this.clock.totalDays);
+  }
+
+  // --- sponsors (§23) ---
+  get sponsorsOpen() {
+    return this.ruleMet(SPONSOR_RULES.unlock);
+  }
+
+  _sponsorMatch(ob, p) {
+    const comps = p.record?.result?.components ?? {};
+    if (ob.power && (COMPONENTS[comps[ob.power.slot]]?.cx ?? 0) < ob.power.minCx) return false;
+    if (ob.events && !ob.events.includes(p.eventId)) return false;
+    if (ob.aiHeavy && (COMPONENTS[comps[AI_HEAVY.slot]]?.cx ?? 0) < AI_HEAVY.minCx) return false;
+    return true;
+  }
+
+  signSponsor(id) {
+    const res = this.sponsors.sign(id, this.clock.totalDays);
+    if (res.ok) this.save().catch(() => {});
+    return res;
+  }
+
+  // Debug (?debug=1): an offer from this sponsor now, requirement or not.
+  debugSponsorOffer(id) {
+    return this.sponsors.offer(id, this.clock.totalDays, { renewal: true });
   }
 
   // --- training (§17, §39.2) ---
@@ -1226,6 +1412,10 @@ export class Campaign {
     this.contractRng.setSeed(`${seed}|contracts`);
     this.recruitRng.setSeed(`${seed}|recruit`);
     this.trainingRng.setSeed(`${seed}|training`);
+    this.eventRng.setSeed(`${seed}|events`);
+    this.events.reset(0);
+    this.sponsors.reset();
+    this.notes.reset();
     this.flags = {};
     this.guideState = undefined; // a brand-new run: the guide starts from step 1
     this.reputation.load({ value: 0, highestRankIndex: 0 });
@@ -1284,6 +1474,9 @@ export class Campaign {
       rankings: this.rankings.serialize(),
       trophies: this.trophies.serialize(),
       synergies: this.synergyArchive.serializeRun(),
+      events: this.events.serialize(),
+      sponsors: this.sponsors.serialize(),
+      notifications: this.notes.serialize(),
       guide: this.guideState ?? null,
       flags: { ...this.flags },
     };
@@ -1323,6 +1516,10 @@ export class Campaign {
     if (!hasRankings || !hasTrophies) this._rebuildLadder(); // saves from before Milestone 13
     this.synergyArchive.loadRun(data.synergies); // null before Milestone 14: nothing discovered yet
     this.synergyArchive.loadAccount(null); // anything this run found is known to the account too
+    this.eventRng.setSeed(`${data.seed}|events`);
+    this.events.load(data.events, this.clock.totalDays); // null before Milestone 15: events start from today
+    this.sponsors.load(data.sponsors);
+    this.notes.load(data.notifications);
     this.applyFeatures();
     this.guideState = data.guide ?? null;
     this.assignments.refresh();

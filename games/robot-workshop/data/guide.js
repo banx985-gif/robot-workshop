@@ -462,6 +462,26 @@ export const GUIDE_STEPS = [
     advance: { next: true },
     block: true,
   },
+  // Milestone 15: the first sponsor offer (sponsors open at Rank C).
+  {
+    id: 'P1',
+    title: 'A sponsor!',
+    text: 'A company wants to sponsor your workshop. Tap your money to see the offer on Finance.',
+    target: 'moneyBar',
+    trigger: { event: 'sponsor:offered', screen: ['workshop'] },
+    advance: { tap: true },
+    block: true,
+    skipIf: 'sponsor:viewed', // they went straight to Finance from the offer
+  },
+  {
+    id: 'P2',
+    title: 'Sponsor deals',
+    text: 'One sponsor at a time, for six months. Meet their goal and they offer to renew; miss it and the bonus just ends — no penalty. Tap Sign if you like it.',
+    target: 'sponsorOffer',
+    trigger: { after: 'P1', screen: ['finance'] },
+    advance: { next: true },
+    block: false,
+  },
 ];
 
 // Steps a player who started before the guide existed has clearly already done (old saves).
