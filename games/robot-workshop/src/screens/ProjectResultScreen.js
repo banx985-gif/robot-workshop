@@ -5,7 +5,8 @@ import { drawButton } from '../../../../core/ui/Button.js';
 import { PURPOSES } from '../../data/purposes.js';
 import { COMPONENTS, SLOTS } from '../../data/components.js';
 import { ROBOT_STATS } from '../../data/stats.js';
-import { PRICE_POSITIONS, PRICE_ORDER, SEGMENTS } from '../../data/market.js';
+import { PRICE_POSITIONS, PRICE_ORDER } from '../../data/market.js';
+import { SEGMENTS } from '../../data/segments.js';
 import { panel, text, contained, statBars, hit, fmt } from '../ui/widgets.js';
 import { robotArtOf } from '../systems/robotVisual.js';
 
@@ -78,7 +79,7 @@ export function createProjectResultScreen({ renderer, layout, assets, campaign, 
       }
       if (!scroll.contains(p)) return;
       const rec = record();
-      if (!rec || rec.launchedProductId) return;
+      if (!rec || rec.launchedProductId || rec.deliveredContractId) return;
       const c = scroll.toContent(p);
       if (!campaign.products.freeSlots) {
         if (hit(c, launchRect())) router.go('products');
@@ -151,9 +152,19 @@ export function createProjectResultScreen({ renderer, layout, assets, campaign, 
     panel(ctx, { x: 0, y, w, h: LAUNCH_H }, { stroke: '#FFD166' });
     contained(ctx, assets, 'ui_icon_13', { x: 20, y: y + 16, w: 60, h: 60 });
     const product = rec.launchedProductId ? campaign.products.get(rec.launchedProductId) : null;
+    const segName = (id) => SEGMENTS.find((s) => s.id === id)?.name ?? id;
+    // Built for a contract and accepted: this robot went to the customer.
+    if (rec.deliveredContractId) {
+      const c = campaign.contracts.get(rec.deliveredContractId);
+      text(ctx, 'Delivered to the customer!', 24, y + 22, { size: 44, bold: true, color: '#7CFFB2' });
+      text(ctx, c ? c.title : 'Contract', 24, y + 100, { size: 32, bold: true, maxWidth: w - 48 });
+      text(ctx, c ? `Paid ${fmt(c.payout)} credits · +${c.reputation} Rep${c.result?.special ? ' · bonus Tech Chip' : ''}` : '', 24, y + 150, { size: 30, color: '#FFD166', maxWidth: w - 48 });
+      text(ctx, 'Contract robots do not use a product slot.', 24, y + 200, { size: 28, color: '#9AA8B5', maxWidth: w - 48 });
+      return;
+    }
     if (product) {
       text(ctx, 'On sale!', 96, y + 22, { size: 44, bold: true, color: '#7CFFB2' });
-      text(ctx, `${PRICE_POSITIONS[product.data.position].name} price · ${SEGMENTS[0].name} market`, 24, y + 100, { size: 30, maxWidth: w - 48 });
+      text(ctx, `${PRICE_POSITIONS[product.data.position].name} price · ${segName(product.data.segment)} market`, 24, y + 100, { size: 30, maxWidth: w - 48 });
       text(ctx, 'Sales arrive at the end of each month for 6 months.', 24, y + 150, { size: 28, color: '#9AA8B5', maxWidth: w - 48 });
       text(ctx, 'See them any time with the Products button at the top.', 24, y + 196, { size: 28, color: '#9AA8B5', maxWidth: w - 48 });
       return;
@@ -166,9 +177,11 @@ export function createProjectResultScreen({ renderer, layout, assets, campaign, 
       return;
     }
     PRICE_ORDER.forEach((id, i) => drawButton(ctx, positionRect(i), PRICE_POSITIONS[id].name, { active: position === id, font: 'bold 32px system-ui, sans-serif' }));
-    const data = campaign.market.productData(rec, position, campaign.products.products);
-    const f = campaign.market.forecast(data);
-    text(ctx, PRICE_POSITIONS[position].note + (data.novelty < 1 ? ' Same build as before: −15% sales.' : ''), 24, y + 202, { size: 26, color: '#9AA8B5', maxWidth: w - 48 });
+    const data = campaign.productDataFor(rec.number, position);
+    const novelty = campaign.products.noveltyFor(data);
+    const f = campaign.sales.forecast(data, novelty);
+    if (rec.contract && !rec.contract.ok) text(ctx, `Missed its contract: ${rec.contract.failures.join(', ')}`, 290, y + 34, { size: 22, color: '#FF8A80', maxWidth: w - 310 });
+    text(ctx, `Sells to ${segName(data.segment)} (demand ${campaign.market.demand(data.segment)}). ` + PRICE_POSITIONS[position].note + (novelty < 1 ? ' Same build as before: −15% sales.' : ''), 24, y + 202, { size: 25, color: novelty < 1 ? '#FFB74D' : '#9AA8B5', maxWidth: w - 48 });
     text(ctx, `About ${f.firstMonth.units} sold in month 1 at ${fmt(f.firstMonth.unitPrice)} each · ≈${fmt(f.revenue)} over 6 months`, 24, y + 240, {
       size: 28,
       bold: true,

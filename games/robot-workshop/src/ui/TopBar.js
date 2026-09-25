@@ -18,7 +18,7 @@ export function topBarRect(layout) {
 
 export function moneyBarRect(layout) {
   const r = topBarRect(layout);
-  return { x: r.x + 20, y: r.y + 86, w: r.w - 40 - 250 - 12, h: 84 };
+  return { x: r.x + 20, y: r.y + 86, w: r.w - 40 - 2 * 210 - 2 * 12, h: 84 };
 }
 
 export function createTopBar({ layout, campaign, nav = [], hud }) {
@@ -29,7 +29,12 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
 
   function productsRect() {
     const r = rect();
-    return { x: r.x + r.w - 20 - 250, y: r.y + 86, w: 250, h: 84 };
+    return { x: r.x + r.w - 20 - 2 * 210 - 12, y: r.y + 86, w: 210, h: 84 };
+  }
+
+  function contractsRect() {
+    const r = rect();
+    return { x: r.x + r.w - 20 - 210, y: r.y + 86, w: 210, h: 84 };
   }
 
   function buttons() {
@@ -101,6 +106,7 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
     buttons,
     moneyRect,
     productsRect,
+    contractsRect,
     contains: (p) => hitRect(p, rect()),
     // Returns true if the tap was used by the bar.
     handleTap(p) {
@@ -111,6 +117,10 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
       }
       if (hitRect(p, productsRect())) {
         hud.goProducts();
+        return true;
+      }
+      if (hitRect(p, contractsRect())) {
+        hud.goContracts();
         return true;
       }
       const b = buttons().find((b) => hitRect(p, b.rect));
@@ -141,6 +151,8 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
       drawMoney(ctx);
       const pr = productsRect();
       drawButton(ctx, pr, `Products ${campaign.products.active.length}/${campaign.products.slotCount}`, { font: BTN_FONT });
+      const k = campaign.contracts;
+      drawButton(ctx, contractsRect(), `Contracts ${k.active.length}/${k.maxActive}`, { font: BTN_FONT, badge: k.offers.length && k.canAccept ? k.offers.length : null });
       for (const b of buttons()) {
         drawButton(ctx, b.rect, b.label, {
           active: b.active,

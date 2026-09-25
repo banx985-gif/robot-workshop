@@ -540,7 +540,8 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
       const pct = Math.min(1, job.phaseProgress / job.phaseTarget);
       ctx.fillStyle = '#FFFFFF';
       ctx.font = 'bold 30px system-ui, sans-serif';
-      ctx.fillText(`${job.name} · ${job.phaseIndex + 1}/5 ${phase.name}`, tx, r.y + 28, r.w - 380);
+      const forWho = job.data.contractId ? campaign.contracts.get(job.data.contractId)?.customer : null;
+      ctx.fillText(`${job.name}${forWho ? ` for ${forWho}` : ''} · ${job.phaseIndex + 1}/5 ${phase.name}`, tx, r.y + 28, r.w - 380);
       ctx.fillStyle = '#9AA8B5';
       ctx.font = '26px system-ui, sans-serif';
       const team = job.slots.filter(Boolean).length;

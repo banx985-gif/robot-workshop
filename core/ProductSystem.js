@@ -1,14 +1,19 @@
 // "Things on sale" (robots, dishes, ships…): limited active slots, a fixed sales cycle,
 // and a monthly sales tick. How many sell each month comes from the game via hooks.
 //
+// Slots: a number or a function (e.g. slotsFromRank below, so the count grows with company rank).
+// Novelty: if hooks.isCopy(newData, earlierProduct) says a launch is an exact copy of anything launched
+// before, the product gets novelty = noveltyPenalty (e.g. 0.85), otherwise 1. The game's sales use it.
 // hooks:
 //   monthlySales(product, monthIndex) → { units, revenue, ...extra }   monthIndex 0 = first month on sale
 //   onSale(product, sale)                                              after each month's sale is recorded
 //   onEnd(product)                                                     cycle finished or retired
+//   isCopy(data, earlierProduct) → bool                                 optional: the "exact copy" rule
 // Emits: 'product:launch', 'product:sales', 'product:end'.
 export class ProductSystem {
-  constructor({ bus = null, slots = 2, cycleMonths = 6, hooks = {} }) {
+  constructor({ bus = null, slots = 2, cycleMonths = 6, noveltyPenalty = 1, hooks = {} }) {
     this.bus = bus;
+    this.noveltyPenalty = noveltyPenalty;
     this.slots = slots; // number, or () => number
     this.cycleMonths = cycleMonths;
     this.hooks = hooks;
@@ -35,6 +40,7 @@ export class ProductSystem {
   // fields: { name, launchedAt, data } — data is the game's own info (price position, quality…).
   launch({ name, launchedAt = null, data = {} }) {
     if (!this.freeSlots) return null;
+    const copy = this.copyOf(data);
     const p = {
       id: `P${this.nextId++}`,
       name,
@@ -44,11 +50,23 @@ export class ProductSystem {
       sales: [], // { month, units, revenue, ... }
       totalUnits: 0,
       totalRevenue: 0,
+      novelty: copy ? this.noveltyPenalty : 1,
+      copyOf: copy ? copy.id : null,
       data,
     };
     this.products.push(p);
     this.bus?.emit('product:launch', { product: p });
     return p;
+  }
+
+  // Would launching this data be an exact copy of an earlier product? Returns that product or null.
+  copyOf(data) {
+    if (!this.hooks.isCopy) return null;
+    return this.products.find((p) => this.hooks.isCopy(data, p)) || null;
+  }
+
+  noveltyFor(data) {
+    return this.copyOf(data) ? this.noveltyPenalty : 1;
   }
 
   monthsLeft(p) {
@@ -90,4 +108,11 @@ export class ProductSystem {
     this.nextId = s?.nextId ?? 1;
     this.products = JSON.parse(JSON.stringify(s?.products ?? []));
   }
+}
+
+// Slot count from a rank ladder: steps = [{ minRankIndex, slots }, …]. rankIndex comes from the game.
+export function slotsFromRank(steps, rankIndex) {
+  let n = 0;
+  for (const st of steps) if (rankIndex >= st.minRankIndex && st.slots > n) n = st.slots;
+  return n;
 }

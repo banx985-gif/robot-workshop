@@ -7,6 +7,7 @@ import { panel, text, contained, fmt } from '../ui/widgets.js';
 const CATEGORY_NAMES = {
   start: 'Starting money',
   sales: 'Sales',
+  contract: 'Contracts',
   salary: 'Salaries',
   projectBuild: 'Build costs',
   projectDaily: 'Running costs',

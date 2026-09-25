@@ -17,6 +17,7 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
   const H = renderer.height;
   let slotId = SLOTS[0].id;
   let back = 'builder';
+  let backParams = {};
   let resumeOnExit = false;
   const scroll = new ScrollPanel({ getRect: bodyRect, contentHeight: 0 });
 
@@ -45,6 +46,7 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
     },
     enter(params = {}) {
       back = params.back ?? 'builder';
+      backParams = params.backParams ?? {};
       if (params.slot) slotId = params.slot;
       scroll.scrollY = 0;
       resumeOnExit = !campaign.clock.paused;
@@ -55,7 +57,7 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
     },
     onTap(p) {
       if (hit(p, backRect())) {
-        router.go(back);
+        router.go(back, backParams);
         return;
       }
       SLOTS.forEach((s, i) => {

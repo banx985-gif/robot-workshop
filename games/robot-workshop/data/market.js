@@ -1,11 +1,4 @@
-// Market and sales numbers (bible §14.1–14.4). Milestone 4: one segment only.
-
-export const SEGMENTS = [{ id: 'homeHobby', name: 'Home & Hobby' }];
-
-// Purpose → the segment its sales use (§14.1; Helper's other segment, Small Business, arrives with the rest).
-export const PURPOSE_SEGMENT = { helper: 'homeHobby' };
-
-export const DEMAND_RANGE = { min: 60, max: 140 }; // monthly, seeded
+// Sales numbers (bible §14.2–14.4). Segments and demand rules live in segments.js.
 
 // §14.3 price positions
 export const PRICE_POSITIONS = {
@@ -32,8 +25,13 @@ export const SALES_RULES = {
   ageCurve: [1.0, 1.12, 1.0, 0.82, 0.62, 0.45], // month 1..6 on sale
   variance: { min: 0.9, max: 1.1 },
   reputationCap: 12000,
-  noveltyPenalty: 0.85, // identical parts + purpose as an earlier product: -15%
+  noveltyPenalty: 0.85, // same purpose + the exact same six parts as an earlier product: -15%
+  reviewMonths: [0, 3], // §14.5 customer feedback at launch and at month 3
 };
 
-// §14.2 active product slots at the start
-export const PRODUCT_SLOTS = 2;
+// §14.2 active product slots by company rank: 2 at the start, 3 at Rank C, 4 at Rank A.
+export const PRODUCT_SLOT_STEPS = [
+  { rank: 'E', slots: 2 },
+  { rank: 'C', slots: 3 },
+  { rank: 'A', slots: 4 },
+];

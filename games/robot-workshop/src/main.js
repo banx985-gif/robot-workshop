@@ -25,6 +25,9 @@ import { createProductCatalogueScreen } from './screens/ProductCatalogueScreen.j
 import { createFinanceScreen } from './screens/FinanceScreen.js';
 import { createClosureScreen } from './screens/ClosureScreen.js';
 import { createComponentsScreen } from './screens/ComponentsScreen.js';
+import { createContractsScreen } from './screens/ContractsScreen.js';
+import { FIRST_CONTRACT_ART } from '../data/contracts.js';
+import { SEGMENTS } from '../data/segments.js';
 import { createDebugBuilderScreen } from './screens/DebugBuilderScreen.js';
 import { validateGameData } from './app/validateData.js';
 import { VISUAL_FAMILIES } from '../data/visuals.js';
@@ -61,6 +64,10 @@ const ASSETS = {
   ui_icon_02_premium: 'assets/images/ui/ui_icon_02_premium.png',
   ui_icon_03_reputation: 'assets/images/ui/ui_icon_03_reputation.png',
   ui_icon_13: 'assets/images/ui/ui_icon_13.png',
+  // Contracts: icon, customer portraits, the first-contract moment.
+  ui_icon_14: 'assets/images/ui/ui_icon_14.png',
+  ...Object.fromEntries([...new Set(SEGMENTS.map((s) => s.customerArt))].map((k) => art('npc', k))),
+  [FIRST_CONTRACT_ART]: `assets/images/events/${FIRST_CONTRACT_ART}.png`,
   ui_icon_29: 'assets/images/ui/ui_icon_29.png',
   reward_01: 'assets/images/rewards/reward_01.png',
   // Deliberately missing file: proves the placeholder fallback.
@@ -419,6 +426,7 @@ const hud = {
   vfx,
   goFinance: () => router.go('finance'),
   goProducts: () => router.go('products'),
+  goContracts: () => router.go('contracts'),
 };
 const workshopScreen = createWorkshopScreen({ renderer, layout, assets, bus, debug, campaign, router, goProject, hud });
 bus.on('renderer:resize', () => workshopScreen.resize());
@@ -430,6 +438,7 @@ const productsScreen = createProductCatalogueScreen({ renderer, layout, assets, 
 const financeScreen = createFinanceScreen({ renderer, layout, assets, campaign, router, goProject, hud });
 const closedScreen = createClosureScreen({ renderer, layout, assets, campaign, router });
 const componentsScreen = createComponentsScreen({ renderer, layout, assets, campaign, router });
+const contractsScreen = createContractsScreen({ renderer, layout, assets, campaign, router, goProject, hud });
 // A throwaway run with the three starters on its own bus: the debug builder builds robots in it.
 const makeSandbox = () => {
   const c = new Campaign({ bus: new EventBus() });
@@ -451,9 +460,10 @@ bus.on('project:complete', ({ record }) => {
   workshopScreen.celebrate(record);
   audio.play('robotDone');
   const r = record.result;
+  const deal = record.contract ? (record.contract.ok ? ' · contract met!' : ' · missed its contract') : '';
   major.show({
     title: 'Robot finished!',
-    subtitle: `${record.name} · Review ${r.review.toFixed(1)} / 10 · Quality ${r.quality.toFixed(1)}`,
+    subtitle: `${record.name} · Review ${r.review.toFixed(1)} / 10 · Quality ${r.quality.toFixed(1)}${deal}`,
     accent: '#7CFFB2',
     onAck: () => router.go('result', { number: record.number, resumeOnExit: wasRunning }),
   });
@@ -482,6 +492,32 @@ bus.on('product:sales', ({ sale }) => {
 bus.on('economy:change', (line) => {
   if (line.currency === 'techChips' && line.amount > 0 && line.category !== 'start') floatNumber(`+${line.amount} Tech Chips`, FLOAT_COLORS.techChips, 'ui_icon_02_premium', 0.5);
 });
+// Contracts: pay-out floats up; a failure floats red. The very first offer gets a "first customer" moment.
+bus.on('contract:success', ({ contract }) => {
+  floatNumber(`+${contract.payout.toLocaleString('en-US')}`, FLOAT_COLORS.credits, 'ui_icon_01_money', 0.24);
+  audio.play('sale');
+});
+bus.on('contract:failed', ({ contract }) => {
+  const m = moneyBarRect(layout);
+  vfx.text('screen', `Contract failed: ${contract.title}`, m.x + m.w / 2, topBarRect(layout).y + topBarRect(layout).h + 60, { color: '#FF8A80', size: 36, life: 2.6, rise: 30 });
+});
+bus.on('contract:offered', ({ contract }) => {
+  if (campaign.flags.firstContractSeen || !campaignReady) return;
+  campaign.flags.firstContractSeen = true;
+  major.show({
+    title: 'Your first customer!',
+    subtitle: `${contract.customer} has a job for you — see Contracts`,
+    accent: '#FFB74D',
+    drawFn: (ctx, t) => {
+      const s = Math.min(1, t / 0.4);
+      ctx.save();
+      ctx.globalAlpha = s;
+      assets.drawContained(ctx, FIRST_CONTRACT_ART, { x: W / 2 - 380, y: H / 2 - 520 + (1 - s) * 60, w: 760, h: 760 });
+      ctx.restore();
+    },
+    onAck: () => router.go('contracts', { tab: 'offered' }),
+  });
+});
 bus.on('reputation:change', ({ amount }) => {
   if (amount > 0) floatNumber(`+${amount} Rep`, FLOAT_COLORS.reputation, 'ui_icon_03_reputation', 0.74);
 });
@@ -509,6 +545,9 @@ if (debug.enabled) {
     debug.log(`Reduced Flashes ${vfx.reducedFlashes ? 'on' : 'off'}`);
   });
   bus.on('audio:play', ({ name, silent }) => name !== 'tap' && debug.log(`sound: ${name}${silent ? ' (placeholder)' : ''}`));
+  bus.on('contract:offered', ({ contract }) => debug.log(`offer: ${contract.title}`));
+  bus.on('market:month', ({ started }) => started && debug.log(`trend: ${Object.entries(started.shifts).map(([k, v]) => k + (v > 0 ? ' +' : ' ') + v).join(', ')} for ${started.months} mo`));
+  window.__m7 = { ...window.__m6, contracts: contractsScreen, SEGMENTS };
 }
 
 router
@@ -523,6 +562,7 @@ router
   .register('finance', financeScreen)
   .register('closed', closedScreen)
   .register('components', componentsScreen)
+  .register('contracts', contractsScreen)
   .register('debugbuilder', debugBuilderScreen);
 router.go('boot');
 loop.start();

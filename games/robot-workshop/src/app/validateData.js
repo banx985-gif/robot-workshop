@@ -10,6 +10,10 @@ import { STAFF, ROLES, TIERS } from '../../data/staff.js';
 import { TRAITS } from '../../data/traits.js';
 import { RANKS } from '../../data/economy.js';
 import { UNLOCK_TYPES, RESEARCH_BRANCHES, RESEARCH_MAX_LEVEL, FACILITY_NAMES, COUNTERS, COMPETITION_EVENTS } from '../../data/unlocks.js';
+import { SEGMENTS, PURPOSE_SEGMENTS, MARKET_RULES } from '../../data/segments.js';
+import { CONTRACT_RULES, SIGNATURE_CONTRACTS } from '../../data/contracts.js';
+import { PRODUCT_SLOT_STEPS } from '../../data/market.js';
+import { CALENDAR } from '../../data/balance.js';
 
 const SLOT_COUNTS = { chassis: 10, mobility: 8, ai: 8, tool: 8, power: 8, special: 8 }; // §11
 const ROBOT_ART = (key) => `assets/images/robots/${key}.png`;
@@ -142,6 +146,38 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
       for (const [k, val] of Object.entries(s.stats)) v.check(val <= TIERS[s.tier].statCap, `${o}: starting ${k} ${val} is over the ${s.tier} cap`);
     }
     for (const t of s.traits) v.ref(o, 'trait', t, new Set(Object.keys(TRAITS)));
+  }
+
+  // --- market (§14.1–14.2) ---
+  const segIds = v.uniqueIds('segments', SEGMENTS);
+  v.check(SEGMENTS.length === 8, `segments: expected 8, found ${SEGMENTS.length}`);
+  for (const s of SEGMENTS) {
+    v.check(Number.isInteger(s.min) && Number.isInteger(s.max) && s.min < s.max, `segment ${s.id}: bad demand range`);
+    v.check(Array.isArray(s.customers) && s.customers.length > 0, `segment ${s.id}: needs customer names`);
+    v.art(`segment ${s.id}`, `assets/images/npc/${s.customerArt}.png`);
+  }
+  for (const id of PURPOSE_ORDER) {
+    const list = PURPOSE_SEGMENTS[id];
+    if (v.check(Array.isArray(list) && list.length > 0, `purpose ${id}: no market segment`)) for (const s of list) v.ref(`purpose ${id} segments`, 'segment', s, segIds);
+  }
+  for (const s of segIds) v.check(Object.values(PURPOSE_SEGMENTS).some((l) => l.includes(s)), `segment ${s}: no purpose sells to it`);
+  v.check(MARKET_RULES.trendMonths[0] >= 1 && MARKET_RULES.trendMonths[1] >= MARKET_RULES.trendMonths[0], 'market: bad trend length');
+  for (const st of PRODUCT_SLOT_STEPS) v.ref('product slots', 'rank', st.rank, rankSet);
+
+  // --- contracts (§14.6–14.7) ---
+  for (const t of Object.keys(CONTRACT_RULES.tierMinCx)) v.ref('contract sizes', 'tier', t, new Set(PROJECT_TIERS.map((x) => x.id)));
+  for (const b of CONTRACT_RULES.tierByYear) for (const t of Object.keys(b.weights)) v.ref(`contracts from year ${b.fromYear}`, 'tier', t, new Set(PROJECT_TIERS.map((x) => x.id)));
+  v.uniqueIds('signature contracts', SIGNATURE_CONTRACTS);
+  v.check(SIGNATURE_CONTRACTS.length === 8, `signature contracts: expected 8, found ${SIGNATURE_CONTRACTS.length}`);
+  for (const s of SIGNATURE_CONTRACTS) {
+    const o = `signature ${s.id}`;
+    v.ref(o, 'purpose', s.purpose, new Set(PURPOSE_ORDER));
+    if (v.ref(o, 'segment', s.segment, segIds)) v.check(PURPOSE_SEGMENTS[s.purpose]?.includes(s.segment), `${o}: segment ${s.segment} does not buy ${s.purpose} robots`);
+    for (const k of s.stats) v.check(statSet.has(k), `${o}: unknown stat "${k}"`);
+    if (s.requiredPart) v.ref(o, 'component', s.requiredPart, partIds);
+    v.ref(o, 'tier', s.tier, new Set(PROJECT_TIERS.map((x) => x.id)));
+    v.check(s.appear.year >= 1 && s.appear.year <= CALENDAR.campaignYears && s.appear.month >= 1 && s.appear.month <= 12, `${o}: appears outside the 16-year campaign`);
+    v.check(s.difficulty > 0 && s.difficulty < 1, `${o}: difficulty must be below 1 (so it is always possible)`);
   }
 
   // --- every image the game loads ---

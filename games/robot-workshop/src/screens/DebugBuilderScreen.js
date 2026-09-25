@@ -13,7 +13,7 @@ import { isOpenNow } from '../systems/unlockRules.js';
 import { panel, text, contained, statBars, hit, fmt } from '../ui/widgets.js';
 
 const HEADER_H = 130;
-const Y = { purpose: 0, parts: 250, focus: 250 + 6 * 170 + 10, actions: 250 + 6 * 170 + 150, result: 250 + 6 * 170 + 290 };
+const Y = { purpose: 0, parts: 250, focus: 250 + 6 * 170 + 10, actions: 250 + 6 * 170 + 150, result: 250 + 6 * 170 + 310 };
 const SLOT_H = 170;
 const RESULT_H = 1010;
 
@@ -48,10 +48,10 @@ export function createDebugBuilderScreen({ renderer, layout, assets, campaign, r
     return { x: i * (w + 16), y: Y.focus + 44, w, h: 84 };
   };
   const actionRect = (i) => {
-    const w = (cw() - 2 * 16) / 3;
-    return { x: i * (w + 16), y: Y.actions, w, h: 104 };
+    const w = (cw() - 3 * 12) / 4;
+    return { x: i * (w + 12), y: Y.actions, w, h: 104 };
   };
-  const ACTIONS = ['build', 'random', 'catalogue'];
+  const ACTIONS = ['build', 'random', 'catalogue', 'unlock'];
 
   // Build the chosen robot from start to finish in a sandbox campaign. Returns what happened.
   function build() {
@@ -121,6 +121,7 @@ export function createDebugBuilderScreen({ renderer, layout, assets, campaign, r
           build();
           scroll.scrollY = Y.result - 40;
         } else if (a === 'random') randomize();
+        else if (a === 'unlock') campaign.setDebugUnlockAll(!campaign.flags.debugUnlockAll);
         else router.go('components', { back: 'debugbuilder' });
       });
     },
@@ -156,8 +157,20 @@ export function createDebugBuilderScreen({ renderer, layout, assets, campaign, r
 
       text(ctx, 'Budget focus', 4, Y.focus, { size: 30, bold: true });
       BUDGET_ORDER.forEach((id, i) => drawButton(ctx, focusRect(i), BUDGET_FOCUS[id].name, { selected: state.focus === id, font: 'bold 30px system-ui, sans-serif' }));
-      const labels = { build: 'Build now', random: 'Random parts', catalogue: 'Parts list' };
-      ACTIONS.forEach((a, i) => drawButton(ctx, actionRect(i), labels[a], { selected: a === 'build', accent: a === 'build' ? '#7CFFB2' : '#4FC3F7', font: 'bold 34px system-ui, sans-serif' }));
+      const unlocked = !!campaign.flags.debugUnlockAll;
+      const labels = { build: 'Build now', random: 'Random parts', catalogue: 'Parts list', unlock: unlocked ? 'Game: all open' : 'Game: open all' };
+      ACTIONS.forEach((a, i) =>
+        drawButton(ctx, actionRect(i), labels[a], {
+          selected: a === 'build' || (a === 'unlock' && unlocked),
+          accent: a === 'build' ? '#7CFFB2' : a === 'unlock' ? '#FFB74D' : '#4FC3F7',
+          font: 'bold 28px system-ui, sans-serif',
+        }),
+      );
+      text(ctx, unlocked ? 'Debug: every purpose and part is open in your real game (for testing contracts). Tap again to lock them.' : '"Game: open all" opens every purpose and part in your real game, for testing.', 4, Y.actions + 116, {
+        size: 22,
+        color: '#FFB74D',
+        maxWidth: w,
+      });
 
       drawResult(ctx, w);
       scroll.end(ctx);
