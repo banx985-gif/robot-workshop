@@ -14,7 +14,7 @@ const HEADER_H = 130;
 const FOOTER_H = 150;
 const CONTENT_H = 2010;
 
-export function createRobotBuilderScreen({ renderer, layout, assets, campaign, router }) {
+export function createRobotBuilderScreen({ renderer, layout, assets, campaign, router, debugEnabled = false }) {
   const W = renderer.width;
   const H = renderer.height;
   const state = { purposeId: 'helper', components: { ...STARTER_PARTS }, focus: 'balanced', teamIds: [], inspect: null };
@@ -30,6 +30,12 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
     const sr = layout.safeRect;
     return { x: sr.x + 24, y: sr.y + 24, w: 180, h: 86 };
   }
+  function debugRect() {
+    const sr = layout.safeRect;
+    return { x: sr.x + sr.w - 24 - 200, y: sr.y + 24, w: 200, h: 86 };
+  }
+  // Content rect of the "Parts list" button beside the Parts heading.
+  const catalogueRect = () => ({ x: cw() - 230, y: PARTS_Y - 76, w: 230, h: 66 });
   function startRect() {
     const sr = layout.safeRect;
     return { x: sr.x + 24, y: sr.y + sr.h - FOOTER_H + 24, w: sr.w - 48, h: 110 };
@@ -95,6 +101,8 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
     focusRect,
     rowRect,
     startRect,
+    catalogueRect,
+    debugRect,
     estimateDaysPerPhase,
 
     enter() {
@@ -120,8 +128,16 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
         start();
         return;
       }
+      if (debugEnabled && hit(p, debugRect())) {
+        router.go('debugbuilder');
+        return;
+      }
       if (!scroll.contains(p)) return;
       const c = scroll.toContent(p);
+      if (hit(c, catalogueRect())) {
+        router.go('components', { back: 'builder' });
+        return;
+      }
       for (let i = 0; i < SLOTS.length; i++) {
         if (hit(c, tileRect(i))) {
           state.inspect = state.inspect === i ? null : i;
@@ -153,7 +169,8 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       // Header
       drawButton(ctx, backRect(), '‹ Back', { font: 'bold 32px system-ui, sans-serif' });
       contained(ctx, assets, 'ui_icon_11', { x: sr.x + 230, y: sr.y + 28, w: 76, h: 76 });
-      text(ctx, 'New Robot Project', sr.x + 322, sr.y + 66, { size: 48, bold: true, baseline: 'middle' });
+      text(ctx, 'New Robot Project', sr.x + 322, sr.y + 66, { size: 48, bold: true, baseline: 'middle', maxWidth: debugEnabled ? sr.w - 322 - 240 : sr.w - 340 });
+      if (debugEnabled) drawButton(ctx, debugRect(), 'Debug builder', { accent: '#FFB74D', font: 'bold 28px system-ui, sans-serif' });
 
       scroll.begin(ctx);
       const w = cw();
@@ -164,7 +181,7 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       contained(ctx, assets, purpose.art, { x: 20, y: 16, w: 200, h: 218 });
       text(ctx, 'Purpose', 250, 24, { size: 26, color: '#9AA8B5' });
       text(ctx, purpose.name, 250, 56, { size: 44, bold: true });
-      text(ctx, 'The only purpose for now — more arrive in Milestone 6', 250, 114, { size: 24, color: '#9AA8B5', maxWidth: w - 270 });
+      text(ctx, 'The other 9 purposes open through research later', 250, 114, { size: 24, color: '#9AA8B5', maxWidth: w - 270 });
       const weights = Object.entries(purpose.weights)
         .sort((a, b) => b[1] - a[1])
         .map(([k, v]) => `${k} ${v}`)
@@ -173,7 +190,8 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       text(ctx, weights, 250, 192, { size: 26, bold: true, maxWidth: w - 270 });
 
       // Parts
-      text(ctx, 'Parts (starter parts picked — tap one to see it)', 4, PARTS_Y - 50, { size: 30, bold: true, maxWidth: w });
+      text(ctx, 'Parts (Start parts — tap one to see it)', 4, PARTS_Y - 58, { size: 30, bold: true, maxWidth: w - 250 });
+      drawButton(ctx, catalogueRect(), 'Parts list', { font: 'bold 28px system-ui, sans-serif' });
       SLOTS.forEach((slot, i) => {
         const part = COMPONENTS[state.components[slot.id]];
         const r = tileRect(i);

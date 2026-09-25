@@ -52,12 +52,16 @@ export const PHASES = [
 ];
 
 // Project tier from total part complexity (§11.7) and the work target for every phase (§10.6).
+// With the Milestone 4 pacing (PROJECT_RULES.progressScale) and the three starters: Starter ≈ 2 game months,
+// and the bigger tiers take longer in the same proportion as their targets (measured in Milestone 6 with
+// the three starters: Standard ≈ 3.3, Advanced ≈ 5, Elite ≈ 7.4, Prestige ≈ 10 months; better staff are faster).
+// requiresRank: Prestige projects need Company Rank S (§11.7) in normal play.
 export const PROJECT_TIERS = [
   { id: 'starter', name: 'Starter', maxCx: 11, phaseTarget: 700 },
   { id: 'standard', name: 'Standard', maxCx: 19, phaseTarget: 1100 },
   { id: 'advanced', name: 'Advanced', maxCx: 29, phaseTarget: 1700 },
   { id: 'elite', name: 'Elite', maxCx: 39, phaseTarget: 2500 },
-  { id: 'prestige', name: 'Prestige', maxCx: Infinity, phaseTarget: 3400 },
+  { id: 'prestige', name: 'Prestige', maxCx: Infinity, phaseTarget: 3400, requiresRank: 'S' },
 ];
 
 // Budget focus (§10.7). Percent changes against Balanced.

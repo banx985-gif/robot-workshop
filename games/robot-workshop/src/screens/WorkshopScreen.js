@@ -14,7 +14,7 @@ import { ContextCard } from '../../../../core/ui/ContextCard.js';
 import { hitRect } from '../../../../core/ui/Button.js';
 import { ROLES } from '../../data/staff.js';
 import { PHASES } from '../../data/phases.js';
-import { PURPOSES } from '../../data/purposes.js';
+import { robotArtOf } from '../systems/robotVisual.js';
 import { ROOM, LAYOUT, SIZES, ROUTINE, ROOM_ART, FURNITURE_ART } from '../../data/workshop.js';
 import { VFX_ART, STATUS_ART, STATUS_ORDER, FLOAT_COLORS } from '../../data/feedback.js';
 import { createTopBar } from '../ui/TopBar.js';
@@ -368,7 +368,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     assets.draw(ctx, art.key, r.x, r.y, r.w, r.h);
     const rec = pedestalRecord();
     if (!rec) return;
-    const key = PURPOSES[rec.result.purpose]?.art;
+    const key = robotArtOf(rec.result);
     const h = SIZES.robotH;
     const w = h * assets.aspect(key);
     const fx = r.x + r.w / 2;

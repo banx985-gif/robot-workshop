@@ -7,6 +7,7 @@ import { COMPONENTS, SLOTS } from '../../data/components.js';
 import { ROBOT_STATS } from '../../data/stats.js';
 import { PRICE_POSITIONS, PRICE_ORDER, SEGMENTS } from '../../data/market.js';
 import { panel, text, contained, statBars, hit, fmt } from '../ui/widgets.js';
+import { robotArtOf } from '../systems/robotVisual.js';
 
 const FOOTER_H = 150;
 const LAUNCH_Y = 530;
@@ -105,7 +106,7 @@ export function createProjectResultScreen({ renderer, layout, assets, campaign, 
       text(ctx, 'Robot finished!', w / 2, 10, { size: 56, bold: true, align: 'center', color: '#7CFFB2' });
 
       panel(ctx, { x: 0, y: 90, w, h: 420 });
-      contained(ctx, assets, purpose.art, { x: 20, y: 110, w: 360, h: 380 });
+      contained(ctx, assets, robotArtOf(r), { x: 20, y: 110, w: 360, h: 380 });
       text(ctx, rec.name, 410, 120, { size: 52, bold: true, maxWidth: w - 430 });
       text(ctx, purpose.name, 410, 184, { size: 30, color: '#9AA8B5', maxWidth: w - 430 });
       text(ctx, 'Review', 410, 244, { size: 30, color: '#9AA8B5' });

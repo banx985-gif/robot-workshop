@@ -10,6 +10,7 @@ export class DebugOverlay {
     this.maxLines = maxLines;
     this.top = top; // gap from the safe-area top, logical units
     this.lines = [];
+    this.compact = false; // one FPS line at the very top of the safe area (for busy screens)
 
     if (!this.enabled) return;
     bus?.on('loop:pause', ({ reason }) => this.log(`paused (${reason})`));
@@ -39,6 +40,18 @@ export class DebugOverlay {
     const s = this.loop.stats;
     const r = this.renderer;
     const sr = this.layout?.safeRect ?? { x: 0, y: 0, w: r.width, h: r.height };
+    if (this.compact) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.72)';
+      ctx.fillRect(sr.x + 16, sr.y, 520, 24);
+      ctx.font = "20px ui-monospace, Consolas, monospace";
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = '#7CFFB2';
+      ctx.fillText(`FPS ${s.fps.toFixed(1)}  frame ${s.frameMs.toFixed(1)}ms (max ${s.frameMsMax.toFixed(1)})  render ${s.renderMs.toFixed(2)}ms`, sr.x + 24, sr.y + 2, 504);
+      ctx.restore();
+      return;
+    }
     const x = sr.x + 16;
     const y = sr.y + this.top;
     const w = 520;

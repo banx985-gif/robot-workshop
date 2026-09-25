@@ -2,7 +2,7 @@
 // Below that, finished robots that were never launched, with a button to launch them.
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
-import { PURPOSES } from '../../data/purposes.js';
+import { robotArtOf } from '../systems/robotVisual.js';
 import { PRICE_POSITIONS } from '../../data/market.js';
 import { createTopBar } from '../ui/TopBar.js';
 import { panel, text, contained, bar, hit, fmt } from '../ui/widgets.js';
@@ -108,7 +108,7 @@ export function createProductCatalogueScreen({ renderer, layout, assets, campaig
         const r = cardRect(i);
         const on = p.status === 'active';
         panel(ctx, r, { stroke: on ? '#7CFFB2' : '#35414F' });
-        contained(ctx, assets, PURPOSES[p.data.purpose].art, { x: r.x + 16, y: r.y + 16, w: 170, h: 180 });
+        contained(ctx, assets, robotArtOf(campaign.history.get(p.data.historyNumber)?.result ?? { purpose: p.data.purpose }), { x: r.x + 16, y: r.y + 16, w: 170, h: 180 });
         text(ctx, p.name, r.x + 210, r.y + 24, { size: 40, bold: true, maxWidth: r.w - 480 });
         const status = on ? `On sale · ${campaign.products.monthsLeft(p)} of 6 months left` : p.status === 'retired' ? 'Retired' : 'Sales cycle over';
         text(ctx, `${PRICE_POSITIONS[p.data.position].name} price · ${status}`, r.x + 210, r.y + 80, { size: 26, color: on ? '#7CFFB2' : '#9AA8B5', maxWidth: r.w - 230 });

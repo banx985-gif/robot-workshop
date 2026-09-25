@@ -24,10 +24,13 @@ import { createProjectResultScreen } from './screens/ProjectResultScreen.js';
 import { createProductCatalogueScreen } from './screens/ProductCatalogueScreen.js';
 import { createFinanceScreen } from './screens/FinanceScreen.js';
 import { createClosureScreen } from './screens/ClosureScreen.js';
+import { createComponentsScreen } from './screens/ComponentsScreen.js';
+import { createDebugBuilderScreen } from './screens/DebugBuilderScreen.js';
+import { validateGameData } from './app/validateData.js';
+import { VISUAL_FAMILIES } from '../data/visuals.js';
 import { moneyBarRect, topBarRect } from './ui/TopBar.js';
 import { Campaign, SAVE_MIGRATIONS } from './app/Campaign.js';
 import { COMPONENTS } from '../data/components.js';
-import { PURPOSES } from '../data/purposes.js';
 import { STAFF, ROLES, STARTER_IDS } from '../data/staff.js';
 import { SAVE_VERSION } from '../data/balance.js';
 import { ROOM_ART, FURNITURE_ART } from '../data/workshop.js';
@@ -49,7 +52,7 @@ const ASSETS = {
   ...Object.fromEntries(starters.map((s) => [s.art, `assets/images/staff/${s.art}.png`])),
   ...Object.fromEntries(starters.map((s) => [ROLES[s.role].badge, `assets/images/badges/${ROLES[s.role].badge}.png`])),
   // Robot project art: finished robots, part icons, menu icons.
-  ...Object.fromEntries(Object.values(PURPOSES).map((p) => [p.art, `assets/images/robots/${p.art}.png`])),
+  ...Object.fromEntries(VISUAL_FAMILIES.map((v) => art('robots', v.art))), // all 20 robot families
   ...Object.fromEntries(Object.values(COMPONENTS).map((c) => [c.art, `assets/images/components/${c.art}.png`])),
   ui_icon_11: 'assets/images/ui/ui_icon_11.png',
   ui_icon_06_robot: 'assets/images/ui/ui_icon_06_robot.png',
@@ -63,7 +66,10 @@ const ASSETS = {
   // Deliberately missing file: proves the placeholder fallback.
   placeholderTest: 'assets/m0-missing-test.png',
 };
-const START_SCREEN = new URLSearchParams(window.location.search).get('screen') === 'test' ? 'test' : 'workshop';
+// ?screen=test: the Milestone 0 test screen. ?debug=1&screen=debugbuilder: open straight into the debug builder.
+const SCREEN_PARAM = new URLSearchParams(window.location.search).get('screen');
+const DEBUG_PARAM = new URLSearchParams(window.location.search).get('debug') === '1';
+const START_SCREEN = SCREEN_PARAM === 'test' ? 'test' : SCREEN_PARAM === 'debugbuilder' && DEBUG_PARAM ? 'debugbuilder' : 'workshop';
 
 const bus = new EventBus();
 const rng = new Rng('robot-workshop-m0');
@@ -113,6 +119,8 @@ const loop = new FixedStepLoop({
 });
 const debug = new DebugOverlay({ loop, renderer, layout, input, bus, top: 1230, maxLines: 3 }); // under the room, clear of the top bar and project strip
 bus.on('loop:pause', () => input.reset());
+// The full debug box sits under the workshop room; on list screens it shrinks to one FPS line so it hides nothing.
+bus.on('screen:change', ({ to }) => (debug.compact = !['workshop', 'test', 'boot'].includes(to)));
 
 // Campaign: calendar + staff + save slot.
 const campaign = new Campaign({ bus });
@@ -415,12 +423,20 @@ const hud = {
 const workshopScreen = createWorkshopScreen({ renderer, layout, assets, bus, debug, campaign, router, goProject, hud });
 bus.on('renderer:resize', () => workshopScreen.resize());
 const rosterScreen = createStaffRosterScreen({ renderer, layout, assets, bus, debug, campaign, router, workshop: workshopScreen, goProject, hud });
-const builderScreen = createRobotBuilderScreen({ renderer, layout, assets, campaign, router });
+const builderScreen = createRobotBuilderScreen({ renderer, layout, assets, campaign, router, debugEnabled: debug.enabled });
 const projectScreen = createProjectDetailScreen({ renderer, layout, assets, campaign, router, hud });
 const resultScreen = createProjectResultScreen({ renderer, layout, assets, campaign, router });
 const productsScreen = createProductCatalogueScreen({ renderer, layout, assets, campaign, router, goProject, hud });
 const financeScreen = createFinanceScreen({ renderer, layout, assets, campaign, router, goProject, hud });
 const closedScreen = createClosureScreen({ renderer, layout, assets, campaign, router });
+const componentsScreen = createComponentsScreen({ renderer, layout, assets, campaign, router });
+// A throwaway run with the three starters on its own bus: the debug builder builds robots in it.
+const makeSandbox = () => {
+  const c = new Campaign({ bus: new EventBus() });
+  c.newGame();
+  return c;
+};
+const debugBuilderScreen = createDebugBuilderScreen({ renderer, layout, assets, campaign, router, makeSandbox });
 
 bus.on('economy:closure', () => router.go('closed'));
 bus.on('product:sales', ({ product, sale }) => debug.log(`${product.name}: ${sale.units} sold, +${sale.revenue}`));
@@ -478,6 +494,14 @@ if (debug.enabled) {
   window.__m3 = { ...window.__m2, builder: builderScreen, project: projectScreen, result: resultScreen };
   window.__m4 = { ...window.__m3, products: productsScreen, finance: financeScreen, closed: closedScreen, hud };
   window.__m5 = { ...window.__m4, vfx, audio, major };
+  window.__m6 = { ...window.__m5, components: componentsScreen, debugBuilder: debugBuilderScreen, makeSandbox, validation: null };
+  // §41.5: check all content at start (debug builds only). Results go to the debug box and the console.
+  validateGameData({ manifest: ASSETS, placeholders: ['placeholderTest'] }).then((report) => {
+    window.__m6.validation = report;
+    debug.log(`data check: ${report.errors.length} errors, ${report.warnings.length} warnings, ${report.counts.art} images`);
+    if (report.errors.length) console.error('[data check]', report.errors);
+    else console.info('[data check] OK', report.counts, report.warnings);
+  });
   // Debug: F toggles Reduced Flashes; sound hooks show in the log.
   window.addEventListener('keydown', (e) => {
     if (e.key !== 'f' && e.key !== 'F') return;
@@ -497,7 +521,9 @@ router
   .register('result', resultScreen)
   .register('products', productsScreen)
   .register('finance', financeScreen)
-  .register('closed', closedScreen);
+  .register('closed', closedScreen)
+  .register('components', componentsScreen)
+  .register('debugbuilder', debugBuilderScreen);
 router.go('boot');
 loop.start();
 

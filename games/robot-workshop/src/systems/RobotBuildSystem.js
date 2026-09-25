@@ -1,11 +1,19 @@
 // Robot Workshop rules for a robot project, plugged into the shared ProjectSystem as hooks.
 // Robot stats (§10.4, §10.10), phase gains, faults (§10.8), breakthrough stub (§10.9),
-// budget focus (§10.7), and final Quality + review (§10.11).
+// budget focus (§10.7), Innovation / Fit / Quality / review (§10.11) and the visual family (§13).
+//
+// Formulas finished in Milestone 6 (the bible leaves these open; marked "M6 choice"):
+//   Innovation = Concept-phase seed + the parts' INN values (+ breakthroughs, later)
+//   Fit        = Concept team fit × purpose match, where purpose match = weightedPurposeScore ÷ plain
+//                average of the seven stats, capped at 1. A robot whose strong stats are the ones its
+//                purpose cares about keeps full Fit; one strong in the wrong places loses Fit.
+//   Quality    = §10.11 exactly;  review = Quality ÷ 10 ± seeded 0.35 (§10.11)
 import { PURPOSES } from '../../data/purposes.js';
 import { COMPONENTS, SLOTS } from '../../data/components.js';
 import { PHASES, PROJECT_TIERS, BUDGET_FOCUS } from '../../data/phases.js';
 import { ROBOT_STAT_KEYS } from '../../data/stats.js';
 import { PROJECT_RULES } from '../../data/balance.js';
+import { robotVisual } from './robotVisual.js';
 
 const R = PROJECT_RULES;
 
@@ -34,6 +42,37 @@ export class RobotBuildSystem {
 
   buildCost(components) {
     return this.partsOf(components).reduce((t, p) => t + p.cost, 0);
+  }
+
+  // Innovation that comes with the parts themselves (e.g. Learning AI INN +5).
+  partInnovation(components) {
+    return this.partsOf(components).reduce((t, p) => t + (p.inn ?? 0), 0);
+  }
+
+  // Extra daily fault chance from parts, as a fraction (Experimental Chassis: base fault +3%).
+  partFaultChance(components) {
+    return this.partsOf(components).reduce((t, p) => t + (p.faultPct ?? 0), 0) / 100;
+  }
+
+  // Legal build: one existing part in each of the six slots, each in its own slot.
+  isLegal(purposeId, components) {
+    return !!PURPOSES[purposeId] && SLOTS.every((s) => COMPONENTS[components?.[s.id]]?.slot === s.id);
+  }
+
+  // §10.11 weighted average of the seven stats with the purpose weights (weights sum to 100).
+  weightedScore(purposeId, stats) {
+    let w = 0;
+    for (const [k, weight] of Object.entries(PURPOSES[purposeId].weights)) w += (stats[k] * weight) / 100;
+    return w;
+  }
+
+  // M6 choice: how well the robot's strengths line up with its purpose, 0..1 (1 = no Fit lost).
+  purposeMatch(purposeId, stats) {
+    let sum = 0;
+    for (const k of ROBOT_STAT_KEYS) sum += stats[k];
+    const mean = sum / ROBOT_STAT_KEYS.length;
+    if (mean <= 0) return 0;
+    return clamp(this.weightedScore(purposeId, stats) / mean, 0, 1);
   }
 
   baseStats(components) {
@@ -102,7 +141,7 @@ export class RobotBuildSystem {
   faultChance(job, phase, teamScore) {
     const d = job.data;
     const avgCx = d.totalCx / SLOTS.length;
-    let chance = R.faultBaseChance;
+    let chance = R.faultBaseChance + this.partFaultChance(d.components);
     chance *= 1 + (R.faultComplexityPct / 100) * (avgCx - 1);
     const deficit = Math.max(0, R.faultDeficit.expectedScore - teamScore) / R.faultDeficit.expectedScore;
     chance *= 1 + (deficit * R.faultDeficit.maxExtraPct) / 100;
@@ -198,22 +237,28 @@ export class RobotBuildSystem {
     const d = job.data;
     const purpose = PURPOSES[d.purpose];
     const stats = this.currentStats(job);
-    let weighted = 0;
-    for (const [k, w] of Object.entries(purpose.weights)) weighted += (stats[k] * w) / 100;
-    const quality = round1(clamp(weighted / 6.5 + d.innovation * 0.2 + d.qualityBonus - d.faults.length * R.faultQualityPenalty, 0, 100));
+    const weighted = this.weightedScore(d.purpose, stats);
+    const innovation = round1(d.innovation + this.partInnovation(d.components));
+    const match = this.purposeMatch(d.purpose, stats);
+    const fit = Math.min(100, Math.round(d.fit * match));
+    const quality = round1(clamp(weighted / 6.5 + innovation * 0.2 + d.qualityBonus - d.faults.length * R.faultQualityPenalty, 0, 100));
     const variance = this.rng.range(-R.reviewVariance, R.reviewVariance);
     const review = round1(clamp(quality / 10 + variance, 1, 10));
+    const visual = robotVisual(d.purpose, []); // synergies arrive in Milestone 14
     return {
       purpose: d.purpose,
       purposeName: purpose.name,
       components: { ...d.components },
       budgetFocus: d.budgetFocus,
       tier: d.tier,
+      totalCx: d.totalCx,
       buildCost: d.buildCost,
       stats,
       weightedScore: round1(weighted),
-      innovation: d.innovation,
-      fit: d.fit,
+      innovation,
+      purposeMatch: Math.round(match * 1000) / 1000,
+      fit,
+      visual: visual.id,
       quality,
       review,
       faults: d.faults.length,
