@@ -19,7 +19,6 @@ const RESULT_H = 1010;
 
 export function createDebugBuilderScreen({ renderer, layout, assets, campaign, router, makeSandbox }) {
   const W = renderer.width;
-  const H = renderer.height;
   const state = { purposeId: 'helper', components: { ...STARTER_PARTS }, focus: 'balanced' };
   let last = null; // { record, days, ms, problems }
   let runs = 0;
@@ -131,7 +130,7 @@ export function createDebugBuilderScreen({ renderer, layout, assets, campaign, r
 
     render(ctx) {
       ctx.fillStyle = '#101418';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, W, renderer.height);
       const sr = layout.safeRect;
       drawButton(ctx, backRect(), '‹ Back', { font: 'bold 32px system-ui, sans-serif' });
       text(ctx, 'Debug builder', sr.x + 230, sr.y + 50, { size: 48, bold: true, baseline: 'middle' });

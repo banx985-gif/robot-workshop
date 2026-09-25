@@ -17,7 +17,6 @@ const STATUS_ICONS = {
 
 export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, campaign, router, workshop, goProject, hud }) {
   const W = renderer.width;
-  const H = renderer.height;
   const topBar = createTopBar({
     layout,
     campaign,
@@ -113,7 +112,7 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
 
     render(ctx) {
       ctx.fillStyle = '#101418';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, W, renderer.height);
       topBar.render(ctx);
 
       const lr = listRect();

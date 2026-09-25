@@ -103,6 +103,17 @@ export class AssetManager {
     return { w, h };
   }
 
+  // Draw part of an image: crop = { x, y, w, h } as fractions of the image, into box r (e.g. a face from a full-body picture).
+  drawCrop(ctx, key, crop, r) {
+    const img = this.images.get(key);
+    if (!img) {
+      this.drawPlaceholder(ctx, key, r.x, r.y, r.w, r.h);
+      return;
+    }
+    const sprite = this.sprites.get(key, img, r.w / crop.w, r.h / crop.h);
+    ctx.drawImage(sprite, crop.x * sprite.width, crop.y * sprite.height, crop.w * sprite.width, crop.h * sprite.height, r.x, r.y, r.w, r.h);
+  }
+
   drawPlaceholder(ctx, label, x, y, w, h) {
     ctx.save();
     ctx.fillStyle = '#3a1d3f';

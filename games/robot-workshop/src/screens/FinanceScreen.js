@@ -20,7 +20,6 @@ const LEDGER_Y = 1180;
 
 export function createFinanceScreen({ renderer, layout, assets, campaign, router, goProject, hud }) {
   const W = renderer.width;
-  const H = renderer.height;
   const topBar = createTopBar({
     layout,
     campaign,
@@ -54,7 +53,7 @@ export function createFinanceScreen({ renderer, layout, assets, campaign, router
 
     render(ctx) {
       ctx.fillStyle = '#101418';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, W, renderer.height);
       topBar.render(ctx);
       const eco = campaign.economy;
       const clock = campaign.clock;

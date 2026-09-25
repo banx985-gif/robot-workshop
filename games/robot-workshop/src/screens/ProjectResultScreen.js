@@ -17,7 +17,6 @@ const SHIFT = LAUNCH_H + 20; // everything below the launch panel moves down by 
 
 export function createProjectResultScreen({ renderer, layout, assets, campaign, router }) {
   const W = renderer.width;
-  const H = renderer.height;
   let number = null;
   let position = 'standard';
   let message = null;
@@ -96,7 +95,7 @@ export function createProjectResultScreen({ renderer, layout, assets, campaign, 
 
     render(ctx) {
       ctx.fillStyle = '#101418';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, W, renderer.height);
       const rec = record();
       if (!rec) return;
       const r = rec.result;
@@ -181,8 +180,8 @@ export function createProjectResultScreen({ renderer, layout, assets, campaign, 
     const novelty = campaign.products.noveltyFor(data);
     const f = campaign.sales.forecast(data, novelty);
     if (rec.contract && !rec.contract.ok) text(ctx, `Missed its contract: ${rec.contract.failures.join(', ')}`, 290, y + 34, { size: 22, color: '#FF8A80', maxWidth: w - 310 });
-    text(ctx, `Sells to ${segName(data.segment)} (demand ${campaign.market.demand(data.segment)}). ` + PRICE_POSITIONS[position].note + (novelty < 1 ? ' Same build as before: −15% sales.' : ''), 24, y + 202, { size: 25, color: novelty < 1 ? '#FFB74D' : '#9AA8B5', maxWidth: w - 48 });
-    text(ctx, `About ${f.firstMonth.units} sold in month 1 at ${fmt(f.firstMonth.unitPrice)} each · ≈${fmt(f.revenue)} over 6 months`, 24, y + 240, {
+    text(ctx, `Sells to ${segName(data.segment)} (demand ${campaign.market.demand(data.segment)}). ` + PRICE_POSITIONS[position].note + (novelty < 1 ? ' Same build as before: −15% sales.' : ''), 24, y + 184, { size: 25, color: novelty < 1 ? '#FFB74D' : '#9AA8B5', maxWidth: w - 48 });
+    text(ctx, `About ${f.firstMonth.units} sold in month 1 at ${fmt(f.firstMonth.unitPrice)} each · ≈${fmt(f.revenue)} over 6 months`, 24, y + 222, {
       size: 28,
       bold: true,
       color: '#FFD166',

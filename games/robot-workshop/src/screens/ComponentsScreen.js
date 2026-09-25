@@ -14,7 +14,6 @@ const ROW_H = 196;
 
 export function createComponentsScreen({ renderer, layout, assets, campaign, router }) {
   const W = renderer.width;
-  const H = renderer.height;
   let slotId = SLOTS[0].id;
   let back = 'builder';
   let backParams = {};
@@ -73,7 +72,7 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
 
     render(ctx) {
       ctx.fillStyle = '#101418';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, W, renderer.height);
       const sr = layout.safeRect;
       drawButton(ctx, backRect(), '‹ Back', { font: 'bold 32px system-ui, sans-serif' });
       contained(ctx, assets, 'ui_icon_06_robot', { x: sr.x + 228, y: sr.y + 28, w: 76, h: 76 });

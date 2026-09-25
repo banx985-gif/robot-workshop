@@ -18,7 +18,6 @@ const SEG_NAME = Object.fromEntries(SEGMENTS.map((s) => [s.id, s.name]));
 
 export function createProductCatalogueScreen({ renderer, layout, assets, campaign, router, goProject, hud }) {
   const W = renderer.width;
-  const H = renderer.height;
   const topBar = createTopBar({
     layout,
     campaign,
@@ -53,7 +52,8 @@ export function createProductCatalogueScreen({ renderer, layout, assets, campaig
     const c = cardRect(i);
     return { x: c.x + c.w - 24 - 230, y: c.y + 24, w: 230, h: 80 };
   };
-  const unlaunchedTop = () => HEAD_Y + HEAD_H + products().length * (CARD_H + GAP) + 30;
+  const EMPTY_H = 90; // room for the "Nothing launched yet" line, so the next heading never sits on it
+  const unlaunchedTop = () => HEAD_Y + HEAD_H + (products().length ? products().length * (CARD_H + GAP) : EMPTY_H) + 30;
   const rowRect = (i) => ({ x: 0, y: unlaunchedTop() + 60 + i * (ROW_H + 12), w: cw(), h: ROW_H });
   const rowButtonRect = (i) => {
     const r = rowRect(i);
@@ -98,7 +98,7 @@ export function createProductCatalogueScreen({ renderer, layout, assets, campaig
 
     render(ctx) {
       ctx.fillStyle = '#101418';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, W, renderer.height);
       topBar.render(ctx);
       const w = cw();
       const list = products();

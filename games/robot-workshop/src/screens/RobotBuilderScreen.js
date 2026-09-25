@@ -22,7 +22,6 @@ const CONTRACT_H = 250;
 
 export function createRobotBuilderScreen({ renderer, layout, assets, campaign, router, debugEnabled = false }) {
   const W = renderer.width;
-  const H = renderer.height;
   const state = { purposeId: 'helper', components: { ...STARTER_PARTS }, focus: 'balanced', teamIds: [], inspect: null, contractId: null };
   let resumeOnExit = false;
 
@@ -203,7 +202,7 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
 
     render(ctx) {
       ctx.fillStyle = '#101418';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, W, renderer.height);
       const sr = layout.safeRect;
       const y = Y();
       scroll.contentHeight = y.end;

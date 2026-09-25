@@ -1,0 +1,61 @@
+// Where each guide target is on screen right now (screen units), or null if it is not showing.
+// Names are used by data/guide.js. Rects are read live every frame, so they follow scrolling,
+// camera moves and every screen shape.
+export function createGuideTargets({ router, campaign }) {
+  const cur = () => router.current;
+  const on = (name) => router.currentName === name;
+  const topBtn = (id) => cur()?.topBar?.buttons().find((b) => b.id === id)?.rect ?? null;
+
+  // A rect inside a scroll panel → screen rect, only if it is fully in view.
+  function inPanel(screen, r) {
+    const body = screen.scroll.getRect();
+    const y = body.y + r.y - screen.scroll.scrollY;
+    if (y < body.y - 1 || y + r.h > body.y + body.h + 1) return null;
+    return { x: body.x + r.x, y, w: r.w, h: r.h };
+  }
+
+  const targets = {
+    mina: () => {
+      if (!on('workshop')) return null;
+      const a = cur().agentFor('ENG01') ?? cur().agents[0];
+      return a ? cur().screenRectOf(a) : null;
+    },
+    staffCard: () => (on('workshop') && cur().card.isOpen ? cur().card.rect() : null),
+    topBar: () => (on('workshop') ? cur().topBar.rect() : null),
+    projectButton: () => (on('workshop') ? topBtn('project') : null),
+    builderPart: () => (on('builder') ? inPanel(cur(), cur().tileRect(0)) : null),
+    balanced: () => (on('builder') ? inPanel(cur(), cur().focusRect(1)) : null),
+    startButton: () => (on('builder') ? cur().startRect() : null),
+    progress: () => {
+      if (!campaign.activeProject) return null;
+      if (on('workshop')) return cur().stripRect();
+      if (on('project')) return inPanel(cur(), cur().phaseRect());
+      return null;
+    },
+    // Launch: on the result screen the Launch button; on Products the first "Launch…" row; else the Products button.
+    launch: () => {
+      if (on('result')) {
+        const rec = cur().record;
+        if (!rec || rec.launchedProductId || rec.deliveredContractId || !campaign.products.freeSlots) return null;
+        return inPanel(cur(), cur().launchRect());
+      }
+      if (on('products')) {
+        const waiting = campaign.history.records.some((r) => !r.launchedProductId && !r.deliveredContractId);
+        return waiting ? inPanel(cur(), cur().rowButtonRect(0)) : null;
+      }
+      return cur()?.topBar?.productsRect?.() ?? null;
+    },
+    resultDone: () => (on('result') ? cur().doneRect() : null),
+    productsButton: () => cur()?.topBar?.productsRect?.() ?? null,
+    contractsButton: () => cur()?.topBar?.contractsRect?.() ?? null,
+    helpButton: () => cur()?.topBar?.helpRect?.() ?? null,
+  };
+
+  return (name) => {
+    try {
+      return targets[name]?.() ?? null;
+    } catch {
+      return null; // a screen that is not fully set up yet
+    }
+  };
+}

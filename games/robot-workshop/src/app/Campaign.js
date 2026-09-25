@@ -57,6 +57,8 @@ export const SAVE_MIGRATIONS = {
   // v3 (Milestone 4–6) had one market segment and no contracts: the new market starts fresh on load
   // (Campaign.loadData), contracts start empty, products keep their saved sales exactly.
   3: (record) => ({ ...record, data: { ...record.data, market: null, contracts: null } }),
+  // v4 (Milestone 7) had no first-time guide: null tells the game this is an older run (see main.js).
+  4: (record) => ({ ...record, data: { ...record.data, guide: null } }),
 };
 
 export class Campaign {
@@ -137,6 +139,7 @@ export class Campaign {
       if (job.data.contractId) this.deliverRecord(job.data.contractId, record.number);
     });
     this.flags = {};
+    this.guideState = undefined; // first-time guide progress (owned by the game's GuideSystem); null = older save
     this.lastSaveError = null;
 
     bus.on('clock:day', () => this._day());
@@ -348,6 +351,7 @@ export class Campaign {
     this.marketRng.setSeed(`${seed}|market`);
     this.contractRng.setSeed(`${seed}|contracts`);
     this.flags = {};
+    this.guideState = undefined; // a brand-new run: the guide starts from step 1
     this.reputation.load({ value: 0, highestRankIndex: 0 });
     this.clock.load({ year: 1, month: 1, day: 1, totalDays: 0, dayProgress: 0, speed: CALENDAR.speeds[0] });
     this.staff.load([]);
@@ -381,6 +385,7 @@ export class Campaign {
       market: this.market.serialize(),
       products: this.products.serialize(),
       contracts: this.contracts.serialize(),
+      guide: this.guideState ?? null,
       flags: { ...this.flags },
     };
   }
@@ -403,6 +408,7 @@ export class Campaign {
     if (!this.market.load(data.market)) this.market.start(); // saves from before Milestone 7
     this.products.load(data.products);
     this.contracts.load(data.contracts);
+    this.guideState = data.guide ?? null;
     this.assignments.refresh();
     this.bus.emit('campaign:ready', { fresh: false });
   }

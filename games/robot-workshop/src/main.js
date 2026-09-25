@@ -16,6 +16,11 @@ import { VfxSystem } from '../../../core/VfxSystem.js';
 import { AudioManager } from '../../../core/AudioManager.js';
 import { MajorFeedback } from '../../../core/MajorFeedback.js';
 import { setPressPoint, clearPress } from '../../../core/ui/Button.js';
+import { GuideSystem } from '../../../core/GuideSystem.js';
+import { CoachMark } from '../../../core/ui/CoachMark.js';
+import { GUIDE_STEPS, GUIDE_INTRO_STEPS, GUIDE_FACE, HELP_ICON } from '../data/guide.js';
+import { createGuideTargets } from './ui/guideTargets.js';
+import { createHelpScreen } from './screens/HelpScreen.js';
 import { createWorkshopScreen } from './screens/WorkshopScreen.js';
 import { createStaffRosterScreen } from './screens/StaffRosterScreen.js';
 import { createRobotBuilderScreen } from './screens/RobotBuilderScreen.js';
@@ -40,7 +45,8 @@ import { ROOM_ART, FURNITURE_ART } from '../data/workshop.js';
 import { VFX_ART, STATUS_ART, SOUNDS, FLOAT_COLORS } from '../data/feedback.js';
 
 const W = 1080;
-const H = 1920;
+const BASE_H = 1920; // 9:16; taller phones grow the height (see Renderer)
+const MAX_H = 2640; // up to 9:22 fills edge to edge; taller still gets thin bars top and bottom
 
 const starters = STAFF.filter((s) => STARTER_IDS.includes(s.id));
 const art = (folder, key) => [key, `assets/images/${folder}/${key}.png`];
@@ -66,6 +72,10 @@ const ASSETS = {
   ui_icon_13: 'assets/images/ui/ui_icon_13.png',
   // Contracts: icon, customer portraits, the first-contract moment.
   ui_icon_14: 'assets/images/ui/ui_icon_14.png',
+  // First-time guide: help icon and the two event pictures.
+  [HELP_ICON]: `assets/images/ui/${HELP_ICON}.png`,
+  event_art_01: 'assets/images/events/event_art_01.png',
+  event_art_02: 'assets/images/events/event_art_02.png',
   ...Object.fromEntries([...new Set(SEGMENTS.map((s) => s.customerArt))].map((k) => art('npc', k))),
   [FIRST_CONTRACT_ART]: `assets/images/events/${FIRST_CONTRACT_ART}.png`,
   ui_icon_29: 'assets/images/ui/ui_icon_29.png',
@@ -80,7 +90,8 @@ const START_SCREEN = SCREEN_PARAM === 'test' ? 'test' : SCREEN_PARAM === 'debugb
 
 const bus = new EventBus();
 const rng = new Rng('robot-workshop-m0');
-const renderer = new Renderer(document.getElementById('game'), { width: W, height: H, maxDpr: 2, bus });
+const renderer = new Renderer(document.getElementById('game'), { width: W, height: BASE_H, maxHeight: MAX_H, maxDpr: 2, bus });
+let H = renderer.height; // live logical height
 const layout = new UiLayout(renderer);
 bus.on('renderer:resize', () => layout.refresh());
 const input = new Input(renderer, bus);
@@ -96,7 +107,13 @@ router.modal = major;
 
 // Sprites are cached at the screen's real pixel size: remake them when that changes.
 assets.setPixelScale(renderer.pixelScale);
-bus.on('renderer:resize', () => assets.setPixelScale(renderer.pixelScale));
+bus.on('renderer:resize', () => {
+  H = renderer.height;
+  assets.setPixelScale(renderer.pixelScale);
+  vfx.height = H;
+  major.height = H;
+  debug.top = H - 690; // under the workshop room, whatever the height
+});
 
 // Pressed button look: any button under a finger that is down.
 bus.on('input:down', (p) => setPressPoint(p, renderer.pixelScale));
@@ -115,16 +132,22 @@ const loop = new FixedStepLoop({
     router.update(dt);
     vfx.update(dt); // real time: effects keep playing while the calendar is paused
     major.update(dt);
+    coach.update(dt);
+    if (campaignReady) guide.update();
   },
   render: (alpha) => {
     const ctx = renderer.begin('#101418');
     router.render(ctx, alpha);
+    if (guide.active) {
+      const step = guide.current;
+      coach.render(ctx, step, guideTarget(step.target), { block: step.block, next: !!step.advance.next });
+    }
     major.render(ctx);
     vfx.render(ctx, 'screen');
     debug.render(ctx);
   },
 });
-const debug = new DebugOverlay({ loop, renderer, layout, input, bus, top: 1230, maxLines: 3 }); // under the room, clear of the top bar and project strip
+const debug = new DebugOverlay({ loop, renderer, layout, input, bus, top: H - 690, maxLines: 3 }); // under the room, clear of the top bar and project strip
 bus.on('loop:pause', () => input.reset());
 // The full debug box sits under the workshop room; on list screens it shrinks to one FPS line so it hides nothing.
 bus.on('screen:change', ({ to }) => (debug.compact = !['workshop', 'test', 'boot'].includes(to)));
@@ -427,6 +450,7 @@ const hud = {
   goFinance: () => router.go('finance'),
   goProducts: () => router.go('products'),
   goContracts: () => router.go('contracts'),
+  goHelp: () => router.go('help'),
 };
 const workshopScreen = createWorkshopScreen({ renderer, layout, assets, bus, debug, campaign, router, goProject, hud });
 bus.on('renderer:resize', () => workshopScreen.resize());
@@ -438,6 +462,43 @@ const productsScreen = createProductCatalogueScreen({ renderer, layout, assets, 
 const financeScreen = createFinanceScreen({ renderer, layout, assets, campaign, router, goProject, hud });
 const closedScreen = createClosureScreen({ renderer, layout, assets, campaign, router });
 const componentsScreen = createComponentsScreen({ renderer, layout, assets, campaign, router });
+
+// --- First-time guide (Milestone 7b) -----------------------------------------------------
+// Steps are data (data/guide.js); the engine (core/GuideSystem.js) shows one at a time when it makes sense,
+// pauses the game while it waits, and its progress travels in the save. ?guide=reset replays it.
+const GUIDE_RESET = new URLSearchParams(window.location.search).get('guide') === 'reset';
+const guideTarget = createGuideTargets({ router, campaign });
+const guide = new GuideSystem({
+  steps: GUIDE_STEPS,
+  bus,
+  targetRect: guideTarget,
+  screen: () => router.currentName,
+  canShow: () => campaignReady && !major.active && !campaign.closed && !['boot', 'test', 'debugbuilder', 'help', 'components'].includes(router.currentName),
+  pause: () => {
+    if (campaign.clock.paused) return false;
+    campaign.clock.pause();
+    return true;
+  },
+  resume: () => campaign.clock.resume(),
+});
+const coach = new CoachMark({ layout, assets, face: GUIDE_FACE });
+router.layers.push({ get active() { return guide.active; }, handleInput: (hook, p) => guide.handleInput(hook, p, hook === 'onTap' ? coach.hit(p) : null) });
+bus.on('guide:change', () => (campaign.guideState = guide.serialize()));
+bus.on('guide:done', ({ step }) => {
+  if (step.id === 'S2') workshopScreen.selection.clear(); // "Got it" also closes Mina's card
+  campaign.save().catch(() => {});
+});
+bus.on('campaign:ready', () => {
+  const saved = campaign.guideState;
+  if (GUIDE_RESET || saved === undefined) guide.reset(); // new run (or replay for testing): from step 1
+  else if (saved === null) {
+    // A run started before the guide existed: skip the intro steps it has clearly done already.
+    guide.reset();
+    if (campaign.history.count || campaign.projects.jobs.length) guide.state.done.push(...GUIDE_INTRO_STEPS);
+  } else guide.load(saved);
+  campaign.guideState = guide.serialize();
+});
+const helpScreen = createHelpScreen({ renderer, layout, assets, router, guide });
 const contractsScreen = createContractsScreen({ renderer, layout, assets, campaign, router, goProject, hud });
 // A throwaway run with the three starters on its own bus: the debug builder builds robots in it.
 const makeSandbox = () => {
@@ -548,6 +609,7 @@ if (debug.enabled) {
   bus.on('contract:offered', ({ contract }) => debug.log(`offer: ${contract.title}`));
   bus.on('market:month', ({ started }) => started && debug.log(`trend: ${Object.entries(started.shifts).map(([k, v]) => k + (v > 0 ? ' +' : ' ') + v).join(', ')} for ${started.months} mo`));
   window.__m7 = { ...window.__m6, contracts: contractsScreen, SEGMENTS };
+  window.__m7b = { ...window.__m7, guide, coach, guideTarget, help: helpScreen };
 }
 
 router
@@ -563,6 +625,7 @@ router
   .register('closed', closedScreen)
   .register('components', componentsScreen)
   .register('contracts', contractsScreen)
+  .register('help', helpScreen)
   .register('debugbuilder', debugBuilderScreen);
 router.go('boot');
 loop.start();

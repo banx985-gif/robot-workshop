@@ -30,13 +30,12 @@ const TASK_LABELS = {
 
 export function createWorkshopScreen({ renderer, layout, assets, bus, debug, campaign, router, goProject, hud }) {
   const W = renderer.width;
-  const H = renderer.height;
   const vfx = hud.vfx;
   const { halfW: HW, halfH: HH } = ROOM.view;
 
   const grid = new Grid({ cols: ROOM.cols, rows: ROOM.rows, tileSize: ROOM.cellSize });
   const iso = new IsoProjection({ tileSize: ROOM.cellSize, halfW: HW, halfH: HH });
-  const camera = new Camera({ viewW: W, viewH: H, worldW: W, worldH: H });
+  const camera = new Camera({ viewW: W, viewH: renderer.height, worldW: W, worldH: renderer.height });
   const room = new CachedLayer({ width: 1, height: 1, draw: drawRoom });
   let roomOps = null; // floor tiles and wall pieces, worked out once the art has loaded
   const topBar = createTopBar({
@@ -634,6 +633,12 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
       const a = screen.agentFor(staffId);
       return a ? TASK_LABELS[a.task] : '';
     },
+    // Screen rect of a worker's picture (for the guide).
+    screenRectOf(a) {
+      const b = agentBounds(a);
+      const p = camera.worldToScreen(b.x, b.y);
+      return { x: p.x, y: p.y, w: b.w * camera.zoom, h: b.h * camera.zoom };
+    },
     // Screen (logical) point of a worker's middle, for tests.
     screenPointOf(a) {
       const b = agentBounds(a);
@@ -652,6 +657,11 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     resize() {
       room.setPixelScale(renderer.pixelScale);
       camera.pixelScale = renderer.pixelScale;
+      // Tall phones have a taller view: keep the room where it was, clamped/centred in the new view.
+      const cx = camera.x + camera.visibleW / 2;
+      const cy = camera.y + camera.visibleH / 2;
+      camera.setView(W, renderer.height);
+      camera.centerOn(cx, cy);
     },
 
     // A robot just finished: it pops onto the pedestal with the completion flash and confetti.
@@ -735,7 +745,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
 
     render(ctx) {
       ctx.fillStyle = '#0B0E12';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, W, renderer.height);
 
       camera.apply(ctx);
       room.render(ctx, 0, 0);

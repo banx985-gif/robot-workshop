@@ -17,7 +17,6 @@ const SHORT = { concept: 'Concept', engineering: 'Engineer', software: 'Software
 
 export function createProjectDetailScreen({ renderer, layout, assets, campaign, router, hud }) {
   const W = renderer.width;
-  const H = renderer.height;
   const topBar = createTopBar({
     layout,
     campaign,
@@ -46,6 +45,7 @@ export function createProjectDetailScreen({ renderer, layout, assets, campaign, 
 
   const screen = {
     scroll,
+    phaseRect: () => ({ x: 0, y: Y.phase, w: cw(), h: 250 }), // content rect of the current-phase panel
     focusRect,
     rowRect,
     topBar,
@@ -76,7 +76,7 @@ export function createProjectDetailScreen({ renderer, layout, assets, campaign, 
 
     render(ctx) {
       ctx.fillStyle = '#101418';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, W, renderer.height);
       topBar.render(ctx);
       const j = job();
       if (!j) return;

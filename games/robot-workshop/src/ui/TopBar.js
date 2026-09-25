@@ -32,6 +32,11 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
     return { x: r.x + r.w - 20 - 2 * 210 - 12, y: r.y + 86, w: 210, h: 84 };
   }
 
+  function helpRect() {
+    const r = rect();
+    return { x: r.x + r.w - 20 - 150, y: r.y + 10, w: 150, h: 68 };
+  }
+
   function contractsRect() {
     const r = rect();
     return { x: r.x + r.w - 20 - 210, y: r.y + 86, w: 210, h: 84 };
@@ -107,6 +112,7 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
     moneyRect,
     productsRect,
     contractsRect,
+    helpRect,
     contains: (p) => hitRect(p, rect()),
     // Returns true if the tap was used by the bar.
     handleTap(p) {
@@ -117,6 +123,10 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
       }
       if (hitRect(p, productsRect())) {
         hud.goProducts();
+        return true;
+      }
+      if (hitRect(p, helpRect())) {
+        hud.goHelp();
         return true;
       }
       if (hitRect(p, contractsRect())) {
@@ -146,8 +156,12 @@ export function createTopBar({ layout, campaign, nav = [], hud }) {
       ctx.fill();
       text(ctx, campaign.clock.label(), r.x + 24, r.y + 44, { size: 40, bold: true, baseline: 'middle', maxWidth: r.w - 280 });
       if (savedNote && performance.now() < savedNote.until) {
-        text(ctx, savedNote.text, r.x + r.w - 24, r.y + 44, { size: 32, bold: true, baseline: 'middle', align: 'right', color: '#7CFFB2' });
+        text(ctx, savedNote.text, r.x + r.w - 24 - 170, r.y + 44, { size: 32, bold: true, baseline: 'middle', align: 'right', color: '#7CFFB2' });
       }
+      const hr = helpRect();
+      drawButton(ctx, hr, '', { font: BTN_FONT });
+      contained(ctx, hud.assets, 'ui_icon_27', { x: hr.x + 10, y: hr.y + 6, w: 50, h: 50 });
+      text(ctx, 'Help', hr.x + 64, hr.y + 31, { size: 28, bold: true, baseline: 'middle' });
       drawMoney(ctx);
       const pr = productsRect();
       drawButton(ctx, pr, `Products ${campaign.products.active.length}/${campaign.products.slotCount}`, { font: BTN_FONT });

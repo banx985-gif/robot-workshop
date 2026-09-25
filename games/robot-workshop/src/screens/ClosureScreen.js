@@ -5,7 +5,6 @@ import { text, contained, fmt, hit } from '../ui/widgets.js';
 
 export function createClosureScreen({ renderer, layout, assets, campaign, router }) {
   const W = renderer.width;
-  const H = renderer.height;
 
   function newGameRect() {
     const sr = layout.safeRect;
@@ -25,7 +24,7 @@ export function createClosureScreen({ renderer, layout, assets, campaign, router
     },
     render(ctx) {
       ctx.fillStyle = '#1A0E10';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, W, renderer.height);
       const sr = layout.safeRect;
       const cx = W / 2;
       contained(ctx, assets, 'ui_icon_29', { x: cx - 90, y: sr.y + 160, w: 180, h: 180 });

@@ -1,12 +1,17 @@
-// Owns the canvas. Everything draws in fixed logical units (default 1080×1920).
+// Owns the canvas. Everything draws in logical units: 1080 wide, 1920 tall at the base shape.
 // The canvas is scaled uniformly to fit the window (letterboxed, never stretched)
 // and its backing store uses devicePixelRatio, capped to keep phones fast.
+// Tall phones (taller than 9:16): the width stays 1080 and the logical height grows (up to maxHeight),
+// so the game fills the whole screen edge to edge instead of shrinking into a narrow middle strip.
+// Screens must read renderer.height live (it can change on every resize).
 export class Renderer {
-  constructor(canvas, { width = 1080, height = 1920, maxDpr = 2, bus = null } = {}) {
+  constructor(canvas, { width = 1080, height = 1920, maxHeight = height, maxDpr = 2, bus = null } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false });
     this.width = width;
     this.height = height;
+    this.baseHeight = height;
+    this.maxHeight = Math.max(height, maxHeight);
     this.maxDpr = maxDpr;
     this.bus = bus;
 
@@ -25,6 +30,8 @@ export class Renderer {
   resize() {
     const vw = document.documentElement.clientWidth || window.innerWidth;
     const vh = document.documentElement.clientHeight || window.innerHeight;
+    // Taller than the base shape → grow the logical height to match the screen (within maxHeight).
+    this.height = Math.min(this.maxHeight, Math.max(this.baseHeight, Math.round((this.width * vh) / vw)));
     const scale = Math.min(vw / this.width, vh / this.height);
     const cssW = this.width * scale;
     const cssH = this.height * scale;
