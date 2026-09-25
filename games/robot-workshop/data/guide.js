@@ -1,4 +1,4 @@
-// First-time guide steps (Milestone 7b; building and expansions added in Milestone 8; research in Milestone 9; hiring and training in Milestone 10; the first competition in Milestone 12; the full tutorial, bible §26, comes in Milestone 26 and builds on this).
+// First-time guide steps (Milestone 7b; building and expansions added in Milestone 8; research in Milestone 9; hiring and training in Milestone 10; the first competition in Milestone 12; rivals in Milestone 13; the full tutorial, bible §26, comes in Milestone 26 and builds on this).
 // Plain data for core/GuideSystem.js. Short, friendly words — no walls of text.
 // target names are resolved to screen spots by src/ui/guideTargets.js.
 // trigger: after = previous step done; event = has happened at least once; screen = only shows there.
@@ -439,6 +439,16 @@ export const GUIDE_STEPS = [
     text: 'Prizes, pilot XP and your records. Each event runs once a month, and once you have watched one you can skip straight to its result.',
     target: 'compResultDone',
     trigger: { after: 'C5', screen: ['compResult'] },
+    advance: { next: true },
+    block: true,
+  },
+  // Milestone 13: the first time a rival finishes ahead of you.
+  {
+    id: 'R1',
+    title: 'Beaten by a rival',
+    text: 'Rivals get stronger every year — train your pilot and research better parts.',
+    target: null,
+    trigger: { event: 'competition:beaten', screen: ['compResult'] },
     advance: { next: true },
     block: true,
   },

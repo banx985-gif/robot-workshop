@@ -7,10 +7,10 @@ import { TUNINGS, STRATEGIES, DEFAULT_TUNING, DEFAULT_STRATEGY } from '../../dat
 import { ROLES } from '../../data/staff.js';
 import { TRAITS } from '../../data/traits.js';
 import { describeUnlock } from '../systems/unlockRules.js';
-import { chanceWords } from '../systems/CompetitionRules.js';
+import { chanceWords, entrantOf, rivalLine, behindHint } from '../systems/CompetitionRules.js';
 import { robotArtOf } from '../systems/robotVisual.js';
 import { panel, text, hit, fmt } from '../ui/widgets.js';
-import { drawBackdrop, weightsLine, eventRating } from '../ui/competitionDraw.js';
+import { drawBackdrop, weightsLine, eventRating, rivalOf, drawSpeech } from '../ui/competitionDraw.js';
 
 const FOOTER_H = 330;
 const ROW_H = 140;
@@ -51,7 +51,9 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
     const out = {};
     let y = 0;
     out.header = { x: 0, y, w, h: 250 };
-    y += 250 + 30;
+    y += 250 + 20;
+    out.speech = { x: 0, y, w, h: 150 };
+    y += 150 + 24;
     for (const kind of ['robot', 'pilot']) {
       out[`${kind}Label`] = y;
       y += 50;
@@ -92,7 +94,9 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
   function defaults(eventId) {
     const e = COMPETITIONS_BY_ID[eventId];
     const rs = robots();
-    const best = rs.reduce((b, r) => (!b || eventRating(e, r.result.stats) > eventRating(e, b.result.stats) ? r : b), null);
+    const wts = campaign.competitionWeights(e.id);
+    const rating = (r) => eventRating(wts, entrantOf(r).stats);
+    const best = rs.reduce((b, r) => (!b || rating(r) > rating(b) ? r : b), null);
     return { eventId, robotNumber: best?.number ?? null, pilotId: pilots()[0]?.id ?? null, tuningId: DEFAULT_TUNING, strategyId: DEFAULT_STRATEGY };
   }
 
@@ -166,6 +170,7 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
       scroll.contentHeight = s.height;
       scroll.begin(ctx);
       drawHeader(ctx, s.header);
+      drawRivalTalk(ctx, s.speech);
       drawPickSection(ctx, s, 'robot', 'Robot');
       drawPickSection(ctx, s, 'pilot', 'Pilot');
       text(ctx, 'Tuning package', 4, s.tuningLabel, { size: 32, bold: true });
@@ -184,10 +189,20 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
     const x = r.x + 314;
     const mw = r.w - 334;
     text(ctx, ev.name, x, r.y + 20, { size: 38, bold: true, maxWidth: mw });
-    text(ctx, weightsLine(ev), x, r.y + 72, { size: 26, bold: true, color: '#4FC3F7', maxWidth: mw });
+    text(ctx, weightsLine(campaign.competitionWeights(ev.id), { hidden: !campaign.weightsKnown(ev.id) }), x, r.y + 72, { size: 26, bold: true, color: '#4FC3F7', maxWidth: mw });
     text(ctx, `Rival field ≈ ${ev.target} · Entry ${ev.entry ? fmt(ev.entry) : 'free'}`, x, r.y + 114, { size: 26, maxWidth: mw });
     text(ctx, `1st place: ${fmt(ev.rewards.credits)} + ${ev.rewards.rep} Rep`, x, r.y + 152, { size: 26, color: '#FFD166', maxWidth: mw });
     text(ctx, `3 segments: ${ev.segments.join(' → ')}`, x, r.y + 192, { size: 22, color: '#9AA8B5', maxWidth: mw });
+  }
+
+  // The strongest rival in this field says something before the event (flavour, seeded by the next entry).
+  function drawRivalTalk(ctx, r) {
+    const shown = (id) => campaign.rivalShown(id);
+    const field = campaign.rivals.fieldFor(ev, { ...campaign.competitionContext, weights: campaign.competitionWeights(ev.id) });
+    const top = field.reduce((b, x) => (!b || x.base > b.base ? x : b), null);
+    const rv = rivalOf(top.id, shown);
+    const line = rivalLine(rv, 'before', campaign.competitionSeed(ev.id), { event: ev.name }) ?? '…';
+    drawSpeech(ctx, assets, rv, line, r);
   }
 
   function drawPickSection(ctx, s, kind, label) {
@@ -210,7 +225,7 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
     const mw = r.w - 160 - rightPad;
     const st = rec.result.stats;
     text(ctx, `#${rec.number} ${rec.name}`, x, r.y + 16, { size: 32, bold: true, maxWidth: mw });
-    text(ctx, `Event rating ${eventRating(ev, st)} · REL ${st.REL}${rec.result.faults ? ` · ${rec.result.faults} open fault${rec.result.faults === 1 ? '' : 's'}` : ''}`, x, r.y + 58, { size: 25, color: rec.result.faults ? '#FFB74D' : '#C9D3DD', maxWidth: mw });
+    text(ctx, `Event rating ${campaign.weightsKnown(ev.id) ? eventRating(campaign.competitionWeights(ev.id), entrantOf(rec).stats) : '???'} · REL ${st.REL}${rec.result.faults ? ` · ${rec.result.faults} open fault${rec.result.faults === 1 ? '' : 's'}` : ''}`, x, r.y + 58, { size: 25, color: rec.result.faults ? '#FFB74D' : '#C9D3DD', maxWidth: mw });
     const c = rec.competitions;
     text(ctx, `${rec.result.purposeName}${rec.launchedProductId ? ' · on sale' : ''}${c ? ` · raced ${c.entries}, won ${c.wins}` : ''}`, x, r.y + 96, { size: 22, color: '#9AA8B5', maxWidth: mw });
   }
@@ -262,7 +277,8 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
       text(ctx, cw2.riskLine, f.x + 20, f.y + 60, { size: 24, color: cw2.riskColor, maxWidth: f.w - 40 });
       const best = Math.max(...pv.rivals.map((r) => r.expected));
       text(ctx, `Expected score ≈ ${pv.expected.toFixed(0)} · best rival ≈ ${best.toFixed(0)} · cost ${cost ? fmt(cost) : 'free'}`, f.x + 20, f.y + 98, { size: 24, color: '#9AA8B5', maxWidth: f.w - 40 });
-      text(ctx, block ?? 'A hint only: each run has its own luck.', f.x + 20, f.y + 134, { size: block ? 24 : 20, bold: !!block, color: block ? '#FFB74D' : '#6E7B88', maxWidth: f.w - 40 });
+      const behind = behindHint(pv.expected, best);
+      text(ctx, block ?? behind ?? 'A hint only: each run has its own luck.', f.x + 20, f.y + 134, { size: block || behind ? 22 : 20, bold: !!block, color: block ? '#FFB74D' : behind ? '#FFD166' : '#6E7B88', maxWidth: f.w - 40 });
     } else text(ctx, 'Pick a robot and a pilot.', f.x + 20, f.y + 20, { size: 28, color: '#FFD166' });
     drawButton(ctx, backRect(), 'Back', { font: 'bold 34px system-ui, sans-serif' });
     drawButton(ctx, enterRect(), `Enter${cost ? ` · ${fmt(cost)}` : ''}`, { active: !block, disabled: !!block, accent: '#7CFFB2', font: 'bold 38px system-ui, sans-serif' });

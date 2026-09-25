@@ -1,6 +1,7 @@
 // One Robot Workshop run: seeded RNG, calendar, staff, robot projects, history, money, products,
 // reputation, market, contracts, the workshop layout (facilities + expansions), research, hiring, training,
-// career records (Milestone 11), competitions (Milestone 12) and saving/loading.
+// career records (Milestone 11), competitions (Milestone 12), the competition ladder, rivals, rankings and
+// trophies (Milestone 13) and saving/loading.
 // Random numbers: the main stream drives staff, projects and sales; the market and the contracts each
 // have their own seeded stream, so contract offers never change how a robot build rolls.
 // Everything that must come back identical after a reload lives here.
@@ -25,8 +26,13 @@ import { TrainingSystem } from '../../../../core/TrainingSystem.js';
 import { StoreStub } from '../../../../core/StoreStub.js';
 import { StaffModel } from '../../../../core/StaffModel.js';
 import { CareerRecords } from '../../../../core/CareerRecords.js';
-import { CompetitionSystem } from '../../../../core/CompetitionSystem.js';
-import { COMPETITIONS, COMPETITIONS_BY_ID, RIVALS, COMPETITION_RULES } from '../../data/competitions.js';
+import { CompetitionSystem, rotatingWeights } from '../../../../core/CompetitionSystem.js';
+import { RivalSystem } from '../../../../core/RivalSystem.js';
+import { Rankings } from '../../../../core/Rankings.js';
+import { TrophyCase } from '../../../../core/TrophyCase.js';
+import { competitionRuleMet } from '../../../../core/CompetitionPrereqs.js';
+import { COMPETITIONS, COMPETITIONS_BY_ID, COMPETITION_RULES, TROPHIES, RANKING_POINTS } from '../../data/competitions.js';
+import { RIVALS, RIVAL_RULES } from '../../data/rivals.js';
 import { TUNINGS, STRATEGIES } from '../../data/tuning.js';
 import { entrantOf, pilotMods, pilotOf, ordinal } from '../systems/CompetitionRules.js';
 import { CHANNELS, RECRUIT_RULES, STORE_ITEMS, TUTORIAL_HIRES } from '../../data/recruitment.js';
@@ -37,7 +43,7 @@ import { AI_HEAVY } from '../../data/unlocks.js';
 import { SIGNATURE_HOOKS } from '../systems/signatureHooks.js';
 import { TRAITS } from '../../data/traits.js';
 import { STAT_KEYS } from '../../data/stats.js';
-import { PHASES, BUDGET_FOCUS } from '../../data/phases.js';
+import { PHASES, BUDGET_FOCUS, PROJECT_TIERS } from '../../data/phases.js';
 import { STARTER_PARTS, COMPONENTS } from '../../data/components.js';
 import { PURPOSES, PURPOSE_ORDER } from '../../data/purposes.js';
 import { SEGMENTS, MARKET_RULES } from '../../data/segments.js';
@@ -91,12 +97,16 @@ export const SAVE_MIGRATIONS = {
   8: (record) => ({ ...record, data: { ...record.data, careers: null } }),
   // v9 (Milestone 11) had no competitions: null = no entries yet; invitations open on the next game day.
   9: (record) => ({ ...record, data: { ...record.data, competitions: null } }),
+  // v10 (Milestone 12) had no rankings or trophies: null = rebuilt from the results and records kept (Campaign.loadData).
+  10: (record) => ({ ...record, data: { ...record.data, rankings: null, trophies: null } }),
 };
 
 // Things research unlock actions name ("part:CH02", "facility:F07"…): for these, the research part of their
 // unlock rule is met only by that action having fired (see data/research.js).
 const PROMISED = new Set(RESEARCH_NODES.flatMap((n) => n.actions.map((a) => `${a.type}:${a.id}`)));
 const QUEUE_RULES = new Set(RESEARCH_QUEUES.map((q) => q.rule));
+// Project tiers that count as an "advanced robot" (C09 needs 5): Advanced and above.
+const ADVANCED_TIERS = PROJECT_TIERS.slice(PROJECT_TIERS.findIndex((t) => t.id === 'advanced')).map((t) => t.id);
 
 export class Campaign {
   constructor({ bus, saveManager = null }) {
@@ -272,7 +282,10 @@ export class Campaign {
       },
     });
     // Competitions (§21): the shared engine scores; entry, prizes and invitations are here (enterCompetition).
-    this.competitions = new CompetitionSystem({ bus, events: COMPETITIONS, tunings: TUNINGS, strategies: STRATEGIES, rivals: RIVALS, rules: COMPETITION_RULES });
+    this.rivals = new RivalSystem({ rivals: RIVALS, rules: RIVAL_RULES });
+    this.competitions = new CompetitionSystem({ bus, events: COMPETITIONS, tunings: TUNINGS, strategies: STRATEGIES, rivalSystem: this.rivals, rules: COMPETITION_RULES });
+    this.rankings = new Rankings({ bus, points: RANKING_POINTS, focusId: 'player' });
+    this.trophies = new TrophyCase({ bus, trophies: TROPHIES });
     // A robot built for a contract is checked against it as soon as it is finished.
     bus.on('robot:joined', ({ staffId }) => this.careers.bump(staffId, 'projects'));
     bus.on('project:complete', ({ job, record }) => {
@@ -436,6 +449,13 @@ export class Campaign {
         return this.history.records.some((r) => r.result?.purpose === rule.purpose);
       case 'competition':
         return this.competitionProgress(rule);
+      case 'yearReached':
+        return this.clock.year >= rule.year;
+      case 'eventWins':
+      case 'eventEntered':
+      case 'totalWins':
+      case 'trophy':
+        return competitionRuleMet(rule, { competitions: this.competitions, trophies: this.trophies });
       case 'all':
         return rule.of.every((r) => this.ruleMet(r, subject));
       default:
@@ -453,6 +473,8 @@ export class Campaign {
         return recs.filter((r) => r.launchedProductId).length;
       case 'zeroFaultProjects':
         return recs.filter((r) => r.result && r.result.faults === 0).length;
+      case 'advancedRobots':
+        return recs.filter((r) => ADVANCED_TIERS.includes(r.result?.tier)).length;
       case 'aiHeavyProjects':
         return recs.filter((r) => (COMPONENTS[r.result?.components?.[AI_HEAVY.slot]]?.cx ?? 0) >= AI_HEAVY.minCx).length;
       default:
@@ -831,7 +853,7 @@ export class Campaign {
   }
 
   // --- competitions (§21) ---
-  // Unlock rules about competition progress (data/unlocks.js COMPETITION_EVENTS).
+  // Unlock rules about competition progress: the words staff and parts use (data/unlocks.js COMPETITION_EVENTS).
   competitionProgress(rule) {
     const recs = this.competitions.records;
     switch (rule.event) {
@@ -842,10 +864,20 @@ export class Campaign {
       case 'wins':
         return this.competitions.totalWins >= (rule.min ?? 1);
       case 'regionalCup':
-        return (recs.C07?.wins ?? 0) >= 1;
+        return this.trophies.has('regionalCup');
+      case 'nationalCup':
+        return this.trophies.has('nationalCup');
+      case 'worldTier':
+        return this.competitionOpen('C09');
       default:
-        return false; // nationalCup, worldTier: Milestone 13
+        return false;
     }
+  }
+
+  // Can this event invite the company? Its own unlock rule (debug "unlock all" does NOT open events, so the ladder's
+  // rules are what gets tested), or the ?debug=1 competition override — the only way into C11/C12 before secrets exist.
+  competitionUnlocked(ev) {
+    return !!this.flags.debugCompetitions || this.ruleMet(ev.unlock);
   }
 
   // Invitations: an event opens once its unlock rule has held for its delay. The Local Trial also brings Kai West.
@@ -854,7 +886,7 @@ export class Campaign {
     const day = this.clock.totalDays;
     const opened = [];
     for (const ev of COMPETITIONS) {
-      if (this.competitionOpen(ev.id) || !this.unlockMet(ev.unlock)) continue;
+      if (this.competitionOpen(ev.id) || !this.competitionUnlocked(ev)) continue;
       const met = (this.flags[`compMet_${ev.id}`] ??= day);
       if (day - met < (ev.inviteDelayDays ?? 0)) continue;
       this.flags[`compOpen_${ev.id}`] = day;
@@ -866,6 +898,12 @@ export class Campaign {
     return opened;
   }
 
+  // Debug (?debug=1): open every event, secret ones included.
+  setDebugCompetitions(on) {
+    this.flags.debugCompetitions = !!on;
+    if (on) this._competitionInvites();
+  }
+
   competitionOpen(id) {
     return this.flags[`compOpen_${id}`] != null;
   }
@@ -874,9 +912,36 @@ export class Campaign {
     return COMPETITIONS.filter((e) => this.competitionOpen(e.id));
   }
 
-  // Game month number (each event runs once a month, M12 choice).
+  // Game month number (each event runs once a month, M12 choice): one "running" of every event.
   get monthIndex() {
     return Math.floor(this.clock.totalDays / CALENDAR.daysPerMonth);
+  }
+
+  // This month's weights for an event (C08 / C12 rotate every running; the rest are fixed).
+  competitionWeights(eventId) {
+    const ev = COMPETITIONS_BY_ID[eventId];
+    return ev.rotate ? rotatingWeights(ev, `${this.seed}|running|${eventId}|${this.monthIndex}`) : { ...ev.weights };
+  }
+
+  // C12's weights stay hidden until the first attempt (§21.5).
+  weightsKnown(eventId) {
+    return !COMPETITIONS_BY_ID[eventId]?.hiddenWeights || (this.competitions.records[eventId]?.entries ?? 0) > 0;
+  }
+
+  // Where the campaign is, for the rivals' fixed curves (never the player's scores).
+  get competitionContext() {
+    return { year: this.clock.year, ngPlusRuns: this.ngPlusRuns };
+  }
+
+  // A hidden rival (R08) shows only once its secret chain reveals it (Milestones 16–17).
+  rivalShown(id) {
+    const r = this.rivals.get(id);
+    return !!r && (!r.hidden || !!this.flags[`rivalRevealed_${id}`]);
+  }
+
+  // Who appears in the rankings table: the player and every rival the player may see.
+  rankingIds() {
+    return ['player', ...this.rivals.visible((id) => this.rivalShown(id)).map((r) => r.id)];
   }
 
   // Finished robots that can still race (a robot handed to a contract customer has gone).
@@ -902,7 +967,7 @@ export class Campaign {
     const s = this.staff.get(pilotId);
     if (!rec?.result || !s || !COMPETITIONS_BY_ID[eventId]) return null;
     const { mods, signatures } = pilotMods(this.staff, s);
-    return { eventId, tuningId, strategyId, entrant: entrantOf(rec), pilot: pilotOf(s), mods, signatures, prepBonus: this.fx('competitionPrep') };
+    return { eventId, tuningId, strategyId, weights: this.competitionWeights(eventId), entrant: entrantOf(rec), pilot: pilotOf(s), mods, signatures, prepBonus: this.fx('competitionPrep') };
   }
 
   // Credits this entry costs: entry fee + tuning.
@@ -938,11 +1003,12 @@ export class Campaign {
 
   previewCompetition(choice) {
     const setup = this.competitionSetup(choice);
-    return setup ? this.competitions.preview(setup, { ngPlusRuns: this.ngPlusRuns }) : null;
+    return setup ? this.competitions.preview(setup, this.competitionContext) : null;
   }
 
-  // Enter: pay, run the whole event now (seeded), keep the result and hand out prizes. The watch view only plays
-  // the stored result back, so watching and skipping end the same way. Returns { ok, reason, result }.
+  // Enter: pay, run the whole event now (seeded), keep the result and hand out prizes, ranking points and trophies.
+  // The watch view only plays the stored result back, so watching and skipping end the same way.
+  // Returns { ok, reason, result }.
   enterCompetition(choice) {
     const block = this.competitionBlock(choice);
     if (block) return { ok: false, reason: block };
@@ -952,13 +1018,19 @@ export class Campaign {
     const day = this.clock.totalDays;
     if (ev.entry) this.economy.add('credits', -ev.entry, `Entry fee: ${ev.name}`, 'competition');
     if (tuning.cost) this.economy.add('credits', -tuning.cost, `Tuning: ${tuning.name} (${ev.name})`, 'competition');
-    const run = this.competitions.run(setup, this.competitionSeed(ev.id), { ngPlusRuns: this.ngPlusRuns });
-    const result = this.competitions.commit(run, { day, period: this.monthIndex, costs: { entry: ev.entry, tuning: tuning.cost }, signatures: setup.signatures, robotNumber: choice.robotNumber });
+    const run = this.competitions.run(setup, this.competitionSeed(ev.id), this.competitionContext);
+    const ranking = this.rankings.record(run.standings, ev.rankWeight ?? 1); // { before, after } positions
+    const result = this.competitions.commit(run, { day, period: this.monthIndex, costs: { entry: ev.entry, tuning: tuning.cost }, signatures: setup.signatures, robotNumber: choice.robotNumber, ranking });
     const w = result.rewards;
     if (w.credits) this.economy.add('credits', w.credits, `Prize: ${ev.name} (${ordinal(result.place)})`, 'competition');
     w.rep = Math.round(w.rep * this.celebrityMult());
     if (w.rep) this.reputation.add(w.rep, `Competition: ${ev.name}`, { quiet: true }); // shown on the result screen
     if (w.rp) this.research.addRp(w.rp, `Competition: ${ev.name}`, day);
+    // Prestige Tokens (C10–C12): counted now, paid out when the currency arrives with New Game+.
+    if (result.won && ev.rewards.prestigeTokens) {
+      w.prestigeTokens = ev.rewards.prestigeTokens;
+      this.flags.prestigeTokensEarned = (this.flags.prestigeTokensEarned ?? 0) + w.prestigeTokens;
+    }
     const pilot = this.staff.get(choice.pilotId);
     this.staff.addXp(pilot, w.xp);
     if (w.morale) this.staff.changeMorale(pilot, w.morale);
@@ -966,8 +1038,21 @@ export class Campaign {
     if (result.won) this.careers.bump(pilot.id, 'eventsWon');
     const rec = this.history.get(choice.robotNumber);
     rec.competitions = { entries: (rec.competitions?.entries ?? 0) + 1, wins: (rec.competitions?.wins ?? 0) + (result.won ? 1 : 0) };
+    // Trophies (§21.6): awarded once, shown on the result screen.
+    result.trophies = this.trophies.check((r) => this.ruleMet(r), { day, resultId: result.id, eventId: ev.id }).map((t) => t.id);
+    // A rival finished ahead of the player (the guide's "rivals get stronger" step).
+    const beatenBy = result.standings.find((s) => s.id !== 'player' && (result.player.dnf || s.place < result.place));
+    if (beatenBy) this.bus.emit('competition:beaten', { result, rivalId: beatenBy.id });
     this.bus.emit('competition:enter', { result });
     return { ok: true, reason: null, result };
+  }
+
+  // Saves from before Milestone 13: rankings from the results kept, trophies from the records.
+  _rebuildLadder() {
+    this.rankings.reset();
+    for (const r of this.competitions.results) this.rankings.record(r.standings, COMPETITIONS_BY_ID[r.eventId]?.rankWeight ?? 1);
+    this.trophies.reset();
+    this.trophies.check((rule) => this.ruleMet(rule), { day: this.clock.totalDays, rebuilt: true });
   }
 
   // --- training (§17, §39.2) ---
@@ -1105,6 +1190,8 @@ export class Campaign {
     this.research.reset();
     this.training.reset();
     this.competitions.reset();
+    this.rankings.reset();
+    this.trophies.reset();
     this.recruitment.reset();
     this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'start');
     this.applyFeatures();
@@ -1135,6 +1222,8 @@ export class Campaign {
       training: this.training.serialize(),
       careers: this.careers.serialize(),
       competitions: this.competitions.serialize(),
+      rankings: this.rankings.serialize(),
+      trophies: this.trophies.serialize(),
       guide: this.guideState ?? null,
       flags: { ...this.flags },
     };
@@ -1169,6 +1258,9 @@ export class Campaign {
     this.training.load(data.training);
     if (!this.careers.load(data.careers)) this._rebuildCareers(); // saves from before Milestone 11
     this.competitions.load(data.competitions); // null before Milestone 12: no entries yet
+    const hasRankings = this.rankings.load(data.rankings);
+    const hasTrophies = this.trophies.load(data.trophies);
+    if (!hasRankings || !hasTrophies) this._rebuildLadder(); // saves from before Milestone 13
     this.applyFeatures();
     this.guideState = data.guide ?? null;
     this.assignments.refresh();

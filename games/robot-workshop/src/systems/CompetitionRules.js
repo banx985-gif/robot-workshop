@@ -2,9 +2,11 @@
 // setup core/CompetitionSystem.js scores. Robot stats, faults and part complexity come from the robot's
 // history record; the pilot's traits (§9.8) and signature traits (§15) become the setup's mods.
 import { COMPONENTS } from '../../data/components.js';
-import { COMPETITION_RULES } from '../../data/competitions.js';
+import { COMPETITION_RULES, QUALITY_STAT_SCALE } from '../../data/competitions.js';
+import { Rng } from '../../../../core/Rng.js';
 
-// The entrant: a finished robot (its saved stats and the faults still open when it was finished).
+// The entrant: a finished robot (its saved stats and the faults still open when it was finished). QLT / INN are its
+// Quality and Innovation on the stat scale, for the events that judge them (C10).
 export function entrantOf(record) {
   const r = record.result;
   const hc = COMPETITION_RULES.highComplexity;
@@ -12,7 +14,7 @@ export function entrantOf(record) {
   return {
     id: record.number,
     name: `#${record.number} ${record.name}`,
-    stats: { ...r.stats },
+    stats: { ...r.stats, QLT: Math.min(999, Math.round((r.quality ?? 0) * QUALITY_STAT_SCALE)), INN: Math.min(999, Math.round((r.innovation ?? 0) * QUALITY_STAT_SCALE)) },
     faults: r.faults ?? 0,
     extraBreakdownPct: complexParts * hc.pctEach, // componentHighComplexityPenalty (§21.3)
   };
@@ -56,4 +58,23 @@ export function ordinal(n) {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+// A rival's flavour line (data/rivals.js lines[kind]), picked by a seed so the same moment always says the same thing.
+// vars: { event, robot, pilot }
+export function rivalLine(rival, kind, seed, vars = {}) {
+  const list = rival?.lines?.[kind];
+  if (!list?.length) return null;
+  const line = new Rng(`${seed}|${rival.id}|${kind}`).pick(list);
+  return line.replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
+}
+
+// The honest "falling behind" hint (§22.1): what to improve, never a quiet nerf to the rivals.
+// Returns null when the player is in the running.
+export function behindHint(expected, bestRival) {
+  if (expected >= bestRival * 0.97) return null;
+  const gap = Math.round((1 - expected / bestRival) * 100);
+  return gap >= 15
+    ? `About ${gap}% behind this field: research better parts, build a stronger robot and train your pilot's TST.`
+    : `A little behind (about ${gap}%): train your pilot's TST or try a tuning package.`;
 }

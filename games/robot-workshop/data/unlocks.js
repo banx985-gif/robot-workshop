@@ -7,10 +7,12 @@
 //   { type: 'flag', flag }  a first-time milestone of the run (first launch, first contract…)
 //   { type: 'role', role }  the company employs someone in that role (e.g. its first Designer)
 //   { type: 'purposeBuilt', purpose }  a robot of that purpose has been finished (competition unlocks, Milestone 12)
-//   { type: 'competition', event }     competition progress (Milestone 12): firstEntry, localTrial (entered C01),
-//                                      wins (min), regionalCup (won C07); nationalCup / worldTier arrive in Milestone 13
+//   { type: 'competition', event }     competition progress: firstEntry, localTrial (entered C01), wins (min),
+//                                      regionalCup / nationalCup (own that trophy), worldTier (the World Championship is open)
+//   { type: 'yearReached', year }      the campaign has reached that year (Milestone 13)
+//   eventWins / eventEntered / totalWins / trophy   competition prerequisites, see core/CompetitionPrereqs.js (Milestone 13)
 
-export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'researchCount', 'feature', 'purposeBuilt', 'all'];
+export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'researchCount', 'feature', 'purposeBuilt', 'yearReached', 'eventWins', 'eventEntered', 'totalWins', 'trophy', 'all'];
 
 export const RESEARCH_BRANCHES = {
   mechanical: 'Mechanical Research',
@@ -40,6 +42,7 @@ export const COUNTERS = {
   commercialLaunches: 'Launch {n} commercial models',
   aiHeavyProjects: 'Complete {n} AI-heavy projects',
   zeroFaultProjects: 'Finish {n} projects with zero faults',
+  advancedRobots: '{n} advanced robots', // robots of the Advanced project tier or above (C09, Milestone 13)
 };
 
 export const COMPETITION_EVENTS = {

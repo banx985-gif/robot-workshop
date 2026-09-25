@@ -4,6 +4,9 @@ import { FACILITIES } from '../../data/facilities.js';
 import { ROLES } from '../../data/staff.js';
 import { FEATURES } from '../../data/research.js';
 import { PURPOSES } from '../../data/purposes.js';
+import { COMPETITIONS_BY_ID, TROPHIES_BY_ID } from '../../data/competitions.js';
+
+const eventName = (id) => COMPETITIONS_BY_ID[id]?.name ?? id;
 
 // Plain words for a rule, e.g. "Mechanical Research 3" or "Materials Lab + Mechanical Research 5".
 export function describeUnlock(rule) {
@@ -34,6 +37,16 @@ export function describeUnlock(rule) {
       return FLAG_NAMES[rule.flag] ?? rule.flag;
     case 'role':
       return `First ${ROLES[rule.role]?.name ?? rule.role} hired`;
+    case 'yearReached':
+      return `Year ${rule.year}`;
+    case 'eventWins':
+      return rule.events.length === 1 ? `Win the ${eventName(rule.events[0])}` : `Win any ${rule.min ?? rule.events.length} of ${rule.events.join(', ')}`;
+    case 'eventEntered':
+      return rule.event ? `Enter the ${eventName(rule.event)}` : 'Enter a competition';
+    case 'totalWins':
+      return `Win ${rule.min} competitions`;
+    case 'trophy':
+      return `Own the ${TROPHIES_BY_ID[rule.id]?.name ?? rule.id}`;
     case 'purposeBuilt':
       return `A finished ${PURPOSES[rule.purpose]?.name ?? rule.purpose} robot`;
     case 'all':

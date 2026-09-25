@@ -230,9 +230,9 @@ export function createCompetitionWatchScreen({ renderer, layout, assets, campaig
         ctx.moveTo(x0, y);
         ctx.lineTo(x1, y);
         ctx.stroke();
-        const name = isMe ? `${result.setup.entrantName} · ${result.setup.pilotName}` : rivalOf(r.id).name;
+        const name = isMe ? `${result.setup.entrantName} · ${result.setup.pilotName}` : rivalOf(r.id, (id) => campaign.rivalShown(id)).name;
         text(ctx, name, x0, y - LANE_H / 2 + 4, { size: 21, color: isMe ? PLAYER_COLOR : '#7F8C99', maxWidth: x1 - x0 - 60 });
-        drawMarker(ctx, assets, markerX(r.done), y + 16, 56, { player: isMe, rivalId: r.id, robotArt, dim: r.stopped });
+        drawMarker(ctx, assets, markerX(r.done), y + 16, 56, { player: isMe, rivalId: r.id, robotArt, dim: r.stopped, shown: (id) => campaign.rivalShown(id) });
         const pace = t > 0.02 ? r.done / t : 0;
         text(ctx, pace ? pace.toFixed(1) : '—', l.x + l.w - 24, y, { size: 30, bold: true, align: 'right', baseline: 'middle', color: isMe ? PLAYER_COLOR : '#E8EEF2' });
       });

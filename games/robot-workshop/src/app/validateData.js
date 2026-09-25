@@ -22,7 +22,9 @@ import { CHANNELS, RECRUIT_RULES, STORE_ITEMS, SIGNING_FEE, TUTORIAL_HIRES, TIER
 import { COURSES, TRAINING_SLOTS } from '../../data/training.js';
 import { RECRUITABLE_TIERS } from '../../data/staff.js';
 import { CURRENCIES } from '../../data/economy.js';
-import { COMPETITIONS, RIVALS, COMPETITION_RULES, TROPHIES, COMPETITION_ART } from '../../data/competitions.js';
+import { COMPETITIONS, COMPETITION_RULES, TROPHIES, COMPETITION_ART, RANKING_POINTS } from '../../data/competitions.js';
+import { RIVALS } from '../../data/rivals.js';
+import { COMPETITION_RULE_TYPES } from '../../../../core/CompetitionPrereqs.js';
 import { TUNINGS, STRATEGIES, DEFAULT_TUNING, DEFAULT_STRATEGY } from '../../data/tuning.js';
 import { RESEARCH_NODES, RESEARCH_BRANCH_ORDER, RESEARCH_BRANCH_INFO, RESEARCH_MILESTONES, RESEARCH_QUEUES, FEATURES, RP_SOURCES, researchNodeId } from '../../data/research.js';
 
@@ -38,6 +40,7 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   const WORK_STAT_KEYS = new Set(STAT_KEYS);
 
   // --- unlock rules ---
+  for (const t of COMPETITION_RULE_TYPES) v.check(UNLOCK_TYPES.includes(t), `unlock types: core competition rule "${t}" missing`);
   const checkUnlock = (owner, rule) => {
     if (!v.check(rule && UNLOCK_TYPES.includes(rule.type), `${owner}: unlock rule missing or of unknown type "${rule?.type}"`)) return;
     switch (rule.type) {
@@ -68,6 +71,21 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
         break;
       case 'competition':
         v.check(rule.event in COMPETITION_EVENTS, `${owner}: unknown competition "${rule.event}"`);
+        break;
+      case 'yearReached':
+        v.check(Number.isInteger(rule.year) && rule.year >= 1 && rule.year <= CALENDAR.campaignYears, `${owner}: year ${rule.year} outside the campaign`);
+        break;
+      case 'eventWins':
+        v.check(Array.isArray(rule.events) && rule.events.length > 0 && rule.events.every((id) => COMPETITIONS.some((e) => e.id === id)) && (rule.min ?? 1) <= rule.events.length, `${owner}: bad eventWins rule`);
+        break;
+      case 'eventEntered':
+        v.check(!rule.event || COMPETITIONS.some((e) => e.id === rule.event), `${owner}: unknown event ${rule.event}`);
+        break;
+      case 'totalWins':
+        v.check(rule.min > 0, `${owner}: bad totalWins rule`);
+        break;
+      case 'trophy':
+        v.check(TROPHIES.some((t) => t.id === rule.id), `${owner}: unknown trophy ${rule.id}`);
         break;
       case 'purposeBuilt':
         v.ref(owner, 'purpose', rule.purpose, new Set(PURPOSE_ORDER));
@@ -399,34 +417,76 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   v.check(TRAINING_SLOTS.find((s) => s.id === 'general')?.base === 1, 'training: one general slot to start (§39.2)');
   v.check(TRAINING_SLOTS.every((s) => s.max >= s.base && (!s.roles || s.roles.every((r) => roleSet.has(r)))), 'training: bad slot data');
 
-  // --- competitions (§21, Milestone 12: C01, C02, C07 only) ---
+  // --- competitions (§21: all 12 events, Milestone 13) ---
+  const W6 = (n) => ({ SPD: n, PWR: n, CTL: n, INT: n, END: n, REL: n });
   const BIBLE_EVENTS = {
     C01: { target: 75, entry: 0, credits: 1500, rep: 50, weights: { REL: 30, CTL: 25, INT: 20, PWR: 15, SPD: 10 } },
     C02: { target: 115, entry: 500, credits: 3000, rep: 80, weights: { SPD: 30, CTL: 25, INT: 20, REL: 15, END: 10 } },
+    C03: { target: 145, entry: 700, credits: 4000, rep: 100, weights: { PWR: 35, END: 25, REL: 20, CTL: 10, INT: 10 } },
+    C04: { target: 180, entry: 1000, credits: 5500, rep: 130, weights: { CTL: 30, SPD: 25, INT: 20, REL: 15, END: 10 } },
+    C05: { target: 215, entry: 1300, credits: 7000, rep: 160, weights: { REL: 30, INT: 20, CTL: 15, PWR: 15, END: 15, SPD: 5 } },
+    C06: { target: 245, entry: 1600, credits: 8500, rep: 190, weights: { PWR: 30, REL: 25, END: 20, CTL: 15, INT: 10 } },
     C07: { target: 275, entry: 2000, credits: 11000, rep: 250, weights: { SPD: 40, CTL: 30, REL: 15, INT: 10, END: 5 } },
+    C08: { target: 325, entry: 3000, credits: 16000, rep: 400, weights: W6(10) },
+    C09: { target: 395, entry: 5000, credits: 28000, rep: 800, weights: { SPD: 15, PWR: 15, CTL: 15, INT: 20, END: 15, REL: 20 } },
+    C10: { target: 455, entry: 7500, credits: 40000, rep: 0, tokens: 1 },
+    C11: { target: 520, entry: 10000, credits: 60000, rep: 0, tokens: 2, weights: { END: 25, INT: 20, REL: 20, CTL: 15, SPD: 10, PWR: 10 } },
+    C12: { target: 590, entry: 15000, credits: 100000, rep: 0, tokens: 4, weights: W6(8) },
   };
+  const scoreKeys = new Set([...ROBOT_STAT_KEYS, 'QLT', 'INN']);
   v.uniqueIds('competitions', COMPETITIONS);
-  v.check(COMPETITIONS.map((e) => e.id).join() === 'C01,C02,C07', 'competitions: Milestone 12 builds only C01, C02 and C07');
+  v.check(COMPETITIONS.map((e) => e.id).join() === Object.keys(BIBLE_EVENTS).join(), 'competitions: expected the 12 events of §21.5 in order');
   const rivalIds = new Set(RIVALS.map((r) => r.id));
-  v.uniqueIds('rivals', RIVALS);
+  const trophyIds = new Set(TROPHIES.map((t) => t.id));
+  let lastBeat = 0;
   for (const e of COMPETITIONS) {
     const o = `competition ${e.id}`;
     const b = BIBLE_EVENTS[e.id];
     if (!v.check(!!b, `${o}: not in §21.5`)) continue;
-    v.check(e.target === b.target && e.entry === b.entry && e.rewards.credits === b.credits && e.rewards.rep === b.rep, `${o}: target/entry/prize differ from §21.5`);
-    v.check(JSON.stringify(e.weights) === JSON.stringify(b.weights), `${o}: weights differ from §21.5`);
-    v.check(Object.values(e.weights).reduce((t, x) => t + x, 0) === 100 && Object.keys(e.weights).every((k) => statSet.has(k)), `${o}: weights must be robot stats adding to 100`);
+    v.check(e.target === b.target && e.entry === b.entry && e.rewards.credits === b.credits && (e.rewards.rep ?? 0) === b.rep && (e.rewards.prestigeTokens ?? 0) === (b.tokens ?? 0), `${o}: target/entry/prize differ from §21.5`);
+    if (b.weights) v.check(JSON.stringify(e.weights) === JSON.stringify(b.weights), `${o}: weights differ from §21.5`);
+    v.check((e.rotate || Object.values(e.weights).reduce((t, x) => t + x, 0) === 100) && Object.keys(e.weights).every((k) => scoreKeys.has(k)), `${o}: weights must be robot stats (or QLT/INN) adding to 100 (rotating events: base weights, checked below)`);
+    if (e.rotate) {
+      v.check(e.rotate.pool.every((k) => statSet.has(k)) && e.rotate.base * e.rotate.pool.length + e.rotate.boosts.reduce((t, x) => t + x, 0) === 100, `${o}: rotating weights must add to 100`);
+      v.check(e.rotate.pool.length >= e.rotate.boosts.length, `${o}: more boosts than stats`);
+    }
     checkUnlock(o, e.unlock);
     v.check(e.field.length >= 3 && e.field.every(([id]) => rivalIds.has(id)), `${o}: unknown rival in the field`);
     v.check(e.segments?.length === COMPETITION_RULES.stressPct.length, `${o}: needs one name per segment`);
     v.check(e.rp >= 15 && e.rp <= 150, `${o}: RP ${e.rp} outside §19.7 (15–150)`);
-    if (e.rewards.trophy) v.check(e.rewards.trophy in TROPHIES, `${o}: unknown trophy`);
+    v.check(e.beatYear >= 1 && e.beatYear <= CALENDAR.campaignYears && e.beatYear >= lastBeat, `${o}: beat year must sit inside the 16-year campaign, in ladder order`);
+    lastBeat = e.beatYear;
+    v.check(e.rankWeight > 0, `${o}: needs a rank weight`);
+    if (e.rewards.trophy) v.check(trophyIds.has(e.rewards.trophy), `${o}: unknown trophy`);
     v.art(`${o} backdrop`, `assets/images/backdrops/${e.art}.png`);
   }
+  // §4.3 beats: Local/Delivery/Warehouse early, Regional Years 6–9, National 10–14, World 15–16.
+  const beat = (id) => COMPETITIONS.find((e) => e.id === id)?.beatYear;
+  v.check(beat('C03') <= 5 && beat('C07') >= 6 && beat('C07') <= 9 && beat('C08') >= 10 && beat('C08') <= 14 && beat('C09') >= 15, 'competitions: ladder beats do not match §4.3');
+  // C11 / C12 need secrets (Milestones 16–17): they must never open in normal play.
+  const secretIn = (r) => r?.type === 'secret' || (r?.type === 'all' && r.of.some(secretIn));
+  for (const id of ['C11', 'C12']) v.check(secretIn(COMPETITIONS.find((e) => e.id === id)?.unlock), `competition ${id}: must stay behind its secret`);
+  v.check(COMPETITIONS.find((e) => e.id === 'C12')?.hiddenWeights && COMPETITIONS.find((e) => e.id === 'C08')?.rotate?.boosts.length === 2, 'competitions: C08 rotates two boosted stats; C12 hides its weights');
+  // §22 rivals.
+  v.uniqueIds('rivals', RIVALS);
+  v.check(RIVALS.map((r) => r.id).join() === 'R01,R02,R03,R04,R05,R06,R07,R08', 'rivals: expected R01–R08 (§22)');
+  v.check(RIVALS.filter((r) => r.manager).map((r) => r.id).join() === 'R01,R02,R03,R04,R05', 'rivals: managers for R01–R05 only; R06–R08 speak through their logo (§22)');
+  v.check(RIVALS.find((r) => r.id === 'R08')?.hidden === true, 'rivals: R08 Nocturne Systems stays hidden until its secret chain');
   for (const r of RIVALS) {
-    v.check(r.strengths.every((k) => statSet.has(k)), `rival ${r.id}: unknown strength`);
+    v.check(r.strengths.every((k) => statSet.has(k)) && r.growthPctPerYear >= 0, `rival ${r.id}: bad strengths / growth`);
+    for (const k of ['before', 'theyWon', 'youWon', 'youDnf']) v.check(r.lines?.[k]?.length > 0, `rival ${r.id}: needs "${k}" lines`);
     v.art(`rival ${r.id} logo`, `assets/images/logos/${r.logo}.png`);
+    if (r.manager) v.art(`rival ${r.id} manager`, `assets/images/npc/${r.manager}.png`);
   }
+  // §21.6 trophies.
+  v.uniqueIds('trophies', TROPHIES);
+  v.check(TROPHIES.map((t) => t.id).join() === 'localCup,regionalCup,nationalCup,worldCup,eliteMasters,prestigeCrown', 'trophies: expected the six of §21.6 in order');
+  for (const [i, t] of TROPHIES.entries()) {
+    checkUnlock(`trophy ${t.id}`, t.rule);
+    v.check(t.art === `trophy_0${i + 1}`, `trophy ${t.id}: should use trophy_0${i + 1}`);
+    v.art(`trophy ${t.id}`, `assets/images/trophies/${t.art}.png`);
+  }
+  v.check(RANKING_POINTS.every((p, i) => i === 0 || p <= RANKING_POINTS[i - 1]), 'rankings: points must not go up with a worse place');
   const BIBLE_TUNING = { reliability: 600, performance: 900, control: 900, power: 900, fullPrep: 2000 };
   v.uniqueIds('tunings', TUNINGS);
   for (const [id, cost] of Object.entries(BIBLE_TUNING)) v.check(TUNINGS.find((t) => t.id === id)?.cost === cost, `tuning ${id}: cost differs from §21.1 (${cost})`);

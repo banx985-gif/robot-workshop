@@ -41,7 +41,10 @@ import { createCompetitionListScreen } from './screens/CompetitionListScreen.js'
 import { createCompetitionSetupScreen } from './screens/CompetitionSetupScreen.js';
 import { createCompetitionWatchScreen } from './screens/CompetitionWatchScreen.js';
 import { createCompetitionResultScreen } from './screens/CompetitionResultScreen.js';
-import { COMPETITIONS, COMPETITION_ART, RIVALS, TROPHIES } from '../data/competitions.js';
+import { createRankingsScreen } from './screens/RankingsScreen.js';
+import { createTrophyScreen } from './screens/TrophyScreen.js';
+import { COMPETITIONS, COMPETITION_ART, TROPHIES } from '../data/competitions.js';
+import { RIVALS } from '../data/rivals.js';
 import { TUTORIAL_HIRES } from '../data/recruitment.js';
 import { RECRUIT_ART, PORTRAITS, PORTRAIT_FOLDER } from '../data/recruitment.js';
 import { TRAINING_ART } from '../data/training.js';
@@ -108,11 +111,14 @@ const ASSETS = {
   [RESEARCH_ART.icon]: `assets/images/ui/${RESEARCH_ART.icon}.png`,
   [RESEARCH_ART.rp]: `assets/images/rewards/${RESEARCH_ART.rp}.png`,
   [RESEARCH_ART.glow]: `assets/images/vfx/${RESEARCH_ART.glow}.png`,
-  // Competitions (Milestone 12): the three event backdrops, icon, win/loss effects, Local Cup trophy, first-event art, rival logos.
+  // Competitions (Milestones 12–13): all 12 event backdrops, icons, win/loss/rank-up effects, the 6 trophies, the first-event
+  // and World Championship art, rival logos and the five rival managers.
   ...Object.fromEntries(COMPETITIONS.map((c) => art('backdrops', c.art))),
   ...Object.fromEntries([art('ui', COMPETITION_ART.icon), art('vfx', COMPETITION_ART.winBurst), art('vfx', COMPETITION_ART.lossPuff), art('events', COMPETITION_ART.firstMoment)]),
-  ...Object.fromEntries(Object.values(TROPHIES).filter((t) => t.art).map((t) => art('trophies', t.art))),
+  ...Object.fromEntries([art('ui', COMPETITION_ART.rankingsIcon), art('ui', COMPETITION_ART.trophiesIcon), art('vfx', COMPETITION_ART.rankUpBurst), art('events', COMPETITION_ART.worldMoment)]),
+  ...Object.fromEntries(TROPHIES.map((t) => art('trophies', t.art))),
   ...Object.fromEntries(RIVALS.map((r) => art('logos', r.logo))),
+  ...Object.fromEntries(RIVALS.filter((r) => r.manager).map((r) => art('npc', r.manager))),
   // Deliberately missing file: proves the placeholder fallback.
   placeholderTest: 'assets/m0-missing-test.png',
 };
@@ -551,7 +557,9 @@ const makeSandbox = () => {
 };
 const debugBuilderScreen = createDebugBuilderScreen({ renderer, layout, assets, campaign, router, makeSandbox });
 // Competitions (Milestone 12). The watch view holds still while a guide step is showing.
-const competitionsScreen = createCompetitionListScreen({ renderer, layout, assets, campaign, router, goProject, hud });
+const competitionsScreen = createCompetitionListScreen({ renderer, layout, assets, campaign, router, goProject, hud, debugEnabled: debug.enabled });
+const rankingsScreen = createRankingsScreen({ renderer, layout, assets, campaign, router });
+const trophyScreen = createTrophyScreen({ renderer, layout, assets, campaign, router });
 const compSetupScreen = createCompetitionSetupScreen({ renderer, layout, assets, bus, campaign, router });
 const compWatchScreen = createCompetitionWatchScreen({ renderer, layout, assets, campaign, router, vfx, held: () => guide.active || major.active });
 const compResultScreen = createCompetitionResultScreen({ renderer, layout, assets, campaign, router, vfx });
@@ -561,6 +569,23 @@ bus.on('competition:invite', ({ event, first }) => {
   if (!campaignReady) return;
   audio.play('levelUp');
   campaign.save().catch(() => {});
+  // The World Championship arrives as a big moment of its own (§24.1 "World Championship Arrival").
+  if (event.id === 'C09') {
+    major.show({
+      title: 'The World Robotics Championship!',
+      subtitle: 'Your workshop is invited to the world stage. See Compete.',
+      accent: '#FFD166',
+      drawFn: (ctx, t) => {
+        const s = Math.min(1, t / 0.4);
+        ctx.save();
+        ctx.globalAlpha = s;
+        assets.drawContained(ctx, COMPETITION_ART.worldMoment, { x: W / 2 - 380, y: H / 2 - 520 + (1 - s) * 60, w: 760, h: 760 });
+        ctx.restore();
+      },
+      onAck: () => router.go('competitions', { eventId: 'C09' }),
+    });
+    return;
+  }
   if (!first) {
     floatNumber(`New event: ${event.name}!`, FLOAT_COLORS.info, COMPETITION_ART.icon, 0.5);
     return;
@@ -582,6 +607,7 @@ bus.on('competition:invite', ({ event, first }) => {
 });
 // The guide's "hire Kai" steps end when Kai joins (the Tessa steps already used staff:hired).
 bus.on('staff:hired', ({ staff }) => staff.id === TUTORIAL_HIRES.kai.staffId && bus.emit('guide:pilotReady', {}));
+bus.on('trophy:awarded', ({ trophy }) => debug.log(`trophy: ${trophy.name}`));
 bus.on('competition:result', ({ result }) => debug.log(`${result.eventId}: ${result.won ? 'WON' : result.player.dnf ? 'DNF' : `place ${result.place}`} · ${result.player.final} · seed ${result.seed}`));
 
 bus.on('economy:closure', () => router.go('closed'));
@@ -729,6 +755,7 @@ if (debug.enabled) {
   window.__m10 = { ...window.__m9, recruit: recruitScreen, training: trainingScreen, recruitment: campaign.recruitment, trainingSystem: campaign.training, roster: rosterScreen };
   window.__m11 = { ...window.__m10, staffDetail: staffDetailScreen, staffDebug: staffDebugScreen, careers: campaign.careers, STAFF };
   window.__m12 = { ...window.__m11, competitions: competitionsScreen, compSetup: compSetupScreen, compWatch: compWatchScreen, compResult: compResultScreen, competitionSystem: campaign.competitions };
+  window.__m13 = { ...window.__m12, rankings: rankingsScreen, trophiesScreen: trophyScreen, rankingSystem: campaign.rankings, trophyCase: campaign.trophies, rivalSystem: campaign.rivals };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
   bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));
@@ -758,6 +785,8 @@ router
   .register('compSetup', compSetupScreen)
   .register('compWatch', compWatchScreen)
   .register('compResult', compResultScreen)
+  .register('rankings', rankingsScreen)
+  .register('trophies', trophyScreen)
   .register('debugbuilder', debugBuilderScreen);
 if (debug.enabled) router.register('staffdebug', staffDebugScreen); // ?debug=1 only: spawn any of the 50
 router.go('boot');

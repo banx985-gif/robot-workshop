@@ -3,15 +3,16 @@
 // run() is a pure function, so watching the event play out and skipping straight to the result are the same thing.
 //
 // Content is plain data from the game:
-//   events:     [{ id, name, weights: { stat: % }, target, entry, rewards: { credits, rep }, field: [[rivalId, offsetPct]], segments: [names] }]
+//   events:     [{ id, name, weights: { stat: % }, target, beatYear, entry, rewards: { credits, rep }, field: [[rivalId, offsetPct]], segments: [names],
+//                  rotate?: { pool, base, boosts: [%…] } }]   rotate: the weights change every running (rotatingWeights below)
 //   tunings:    [{ id, name, cost, stats: { stat: +n }, scorePct, breakdownPct }]
 //   strategies: [{ id, name, scorePct, relBonus, breakdownMult, aggressive?, moralePenalty? }]
-//   rivals:     [{ id, name, strengths: [stat] }]
-//   rules:      entrantScale, pilotWeights, reliabilityStat, statCap, form, stressPct[], stressedPilotPct, breakdown {…},
+//   rivalSystem: a core/RivalSystem (rival identities and their fixed strength curves)
+//   rules:      entrantScale, entrantOffset, pilotWeights, reliabilityStat, statCap, form, stressPct[], stressedPilotPct, breakdown {…},
 //               rivals {…}, prizeShares, entryRep, xp, winMorale, resultsKept   (see the game's data file for meanings)
 //
 // Segment score (per segment i):
-//   weighted = Σ effectiveStat × weight% × entrantScale × (1 + tuning score%)
+//   weighted = max(0, Σ effectiveStat × weight% − entrantOffset) × entrantScale × (1 + tuning score%)
 //   pilot    = Σ pilot stat × pilotWeights
 //   base     = (weighted + pilot + prepBonus) × (1 + mods.basePct%)
 //   score    = base × (1 + strategy%) × form(seeded) × (1 − stress%)  − breakdown losses
@@ -21,7 +22,7 @@
 //   catastrophic (DNF) — catastrophic only when effective REL < catastrophicRelBelow or faults ≥ catastrophicFaults.
 //
 // setup (built by the game):
-//   { eventId, tuningId, strategyId, prepBonus,
+//   { eventId, tuningId, strategyId, prepBonus, weights? (this running's weights, when they rotate),
 //     entrant: { id, name, stats, faults, extraBreakdownPct },
 //     pilot:   { id, name, stats, stressed },
 //     mods:    { tuningPct, stressPct, aggressiveCeilingPct, breakdownRiskPct, basePct, aggressiveScorePct, noMoralePenalty } }
@@ -32,12 +33,12 @@ const round1 = (v) => Math.round(v * 10) / 10;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 export class CompetitionSystem {
-  constructor({ bus = null, events, tunings, strategies, rivals = [], rules }) {
+  constructor({ bus = null, events, tunings, strategies, rivalSystem, rules }) {
     this.bus = bus;
     this.events = events;
     this.tunings = tunings;
     this.strategies = strategies;
-    this.rivals = rivals;
+    this.rivalSystem = rivalSystem;
     this.rules = rules;
     this.reset();
   }
@@ -58,7 +59,7 @@ export class CompetitionSystem {
     return this.strategies.find((s) => s.id === id) ?? null;
   }
   rival(id) {
-    return this.rivals.find((r) => r.id === id) ?? null;
+    return this.rivalSystem.get(id);
   }
 
   record(eventId) {
@@ -95,9 +96,10 @@ export class CompetitionSystem {
 
     const stats = { ...setup.entrant.stats };
     for (const [k, v] of Object.entries(tuning.stats ?? {})) stats[k] = clamp((stats[k] ?? 0) + v * tuneMult, 0, R.statCap);
-    let weighted = 0;
-    for (const [k, w] of Object.entries(ev.weights)) weighted += ((stats[k] ?? 0) * w) / 100;
-    weighted *= R.entrantScale * (1 + ((tuning.scorePct ?? 0) * tuneMult) / 100);
+    const weights = setup.weights ?? ev.weights;
+    let rawWeighted = 0;
+    for (const [k, w] of Object.entries(weights)) rawWeighted += ((stats[k] ?? 0) * w) / 100;
+    const weighted = Math.max(0, rawWeighted - (R.entrantOffset ?? 0)) * R.entrantScale * (1 + ((tuning.scorePct ?? 0) * tuneMult) / 100);
     let pilot = 0;
     for (const [k, w] of Object.entries(R.pilotWeights)) pilot += (setup.pilot.stats[k] ?? 0) * w;
     const prep = setup.prepBonus ?? 0;
@@ -118,23 +120,17 @@ export class CompetitionSystem {
     const catastrophicAllowed = rel < B.catastrophicRelBelow || faults >= B.catastrophicFaults;
 
     const stress = R.stressPct.map((s) => (s + (setup.pilot.stressed ? R.stressedPilotPct : 0)) * Math.max(0, 1 + mods.stressPct / 100));
-    return { ev, tuning, strat, mods, stats, weighted, pilot, prep, base, scorePct, formMax, breakdownPct: pct, effectiveRel: rel, catastrophicAllowed, stress };
+    return { ev, weights, tuning, strat, mods, stats, rawWeighted, weighted, pilot, prep, base, scorePct, formMax, breakdownPct: pct, effectiveRel: rel, catastrophicAllowed, stress };
   }
 
-  // Rival base scores for an event (no dice): target × (1 + offset%) + specialty + NG+.
-  rivalBases(ev, ngPlusRuns = 0) {
-    const RR = this.rules.rivals;
-    return ev.field.map(([id, offset]) => {
-      const r = this.rival(id) ?? { id, name: id, strengths: [] };
-      const overlap = (r.strengths ?? []).reduce((t, k) => t + (ev.weights[k] ?? 0), 0);
-      const specialty = r.strengths?.length ? (overlap - RR.specialtyBase) * RR.specialtyPctPerPoint : 0;
-      const base = ev.target * (1 + (offset + specialty + ngPlusRuns * RR.ngPlusPct) / 100);
-      return { id, name: r.name, base };
-    });
+  // Rival base scores for an event (no dice), from their fixed curves — never from the player's setup.
+  // ctx: { weights, year, ngPlusRuns }
+  rivalBases(ev, ctx = {}) {
+    return this.rivalSystem.fieldFor(ev, { weights: ctx.weights ?? ev.weights, year: ctx.year ?? 1, ngPlusRuns: ctx.ngPlusRuns ?? 0 });
   }
 
   // The "your chances" numbers: expected score with average dice, the rivals' expected scores, the likely place.
-  preview(setup, { ngPlusRuns = 0 } = {}) {
+  preview(setup, ctx = {}) {
     const a = this.analyse(setup);
     const B = this.rules.breakdown;
     const p = a.breakdownPct / 100;
@@ -144,14 +140,15 @@ export class CompetitionSystem {
     const formAvg = (this.rules.form.min + a.formMax) / 2;
     const per = a.stress.map((s) => a.base * (1 + a.scorePct / 100) * formAvg * (1 - s / 100) * (1 - (p * avgLoss) / 100));
     const expected = round1(per.reduce((t, v) => t + v, 0) / per.length);
-    const rivals = this.rivalBases(a.ev, ngPlusRuns).map((r) => ({ ...r, expected: round1(r.base) }));
+    const rivals = this.rivalBases(a.ev, { ...ctx, weights: a.weights }).map((r) => ({ ...r, expected: round1(r.base) }));
     const place = 1 + rivals.filter((r) => r.expected > expected).length;
     const anyBreakdownPct = round1((1 - Math.pow(1 - p, per.length)) * 100);
     return { expected, rivals, place, breakdownPct: round1(a.breakdownPct), anyBreakdownPct, catastrophicPossible: a.catastrophicAllowed, analysis: a };
   }
 
   // Run the event. Pure: same seed + same setup → the same result, every time.
-  run(setup, seed, { ngPlusRuns = 0 } = {}) {
+  // ctx: { year, ngPlusRuns } — where the campaign is (the rivals' curves read it).
+  run(setup, seed, ctx = {}) {
     const R = this.rules;
     const B = R.breakdown;
     const a = this.analyse(setup);
@@ -201,7 +198,7 @@ export class CompetitionSystem {
     const player = { total, final: round1(total / n), dnf, breakdowns: segs.filter((s) => s.breakdown).length };
 
     // Rivals: seeded variance per entry, then a form roll per segment.
-    const rivals = this.rivalBases(ev, ngPlusRuns).map((r) => {
+    const rivals = this.rivalBases(ev, { ...ctx, weights: a.weights }).map((r) => {
       const v = rivalRng.range(-R.rivals.variancePct, R.rivals.variancePct);
       const base = r.base * (1 + v / 100);
       const scores = Array.from({ length: n }, () => round1(base * rivalRng.range(R.form.min, R.form.max)));
@@ -232,6 +229,8 @@ export class CompetitionSystem {
     return {
       eventId: ev.id,
       eventName: ev.name,
+      weights: { ...a.weights },
+      year: ctx.year ?? 1,
       seed,
       setup: {
         entrantId: setup.entrant.id,
@@ -241,7 +240,7 @@ export class CompetitionSystem {
         tuningId: setup.tuningId,
         strategyId: setup.strategyId,
       },
-      numbers: { weighted: round1(a.weighted), pilot: round1(a.pilot), prep: round1(a.prep), base: round1(a.base), breakdownPct: round1(a.breakdownPct), effectiveRel: Math.round(a.effectiveRel) },
+      numbers: { rawWeighted: round1(a.rawWeighted), weighted: round1(a.weighted), pilot: round1(a.pilot), prep: round1(a.prep), base: round1(a.base), breakdownPct: round1(a.breakdownPct), effectiveRel: Math.round(a.effectiveRel) },
       segments: segs,
       player,
       rivals,
@@ -298,6 +297,18 @@ export class CompetitionSystem {
 // Where each entrant is at time t of a played-back result (0 … segments count; segment i runs from i to i+1).
 // Pure: the watch view only reads this, so it can never change the result. Returns
 //   { segment, rows: [{ id, done (score so far), place, stopped, breakdown? }] }, rows sorted by place.
+// Weights for one running of a rotating event: base weight on every stat in the pool, plus the boosts on stats picked
+// by the running's seed (e.g. C08: two boosted stats a month). Pure: same event + seed → same weights.
+export function rotatingWeights(ev, seed) {
+  const r = ev.rotate;
+  if (!r) return { ...ev.weights };
+  const rng = new Rng(`${seed}|weights`);
+  const picked = rng.shuffle(r.pool).slice(0, r.boosts.length);
+  const out = Object.fromEntries(r.pool.map((k) => [k, r.base]));
+  picked.forEach((k, i) => (out[k] += r.boosts[i]));
+  return out;
+}
+
 const REPAIR = 0.12; // share of a segment the entrant stands still for a repair (watch view only)
 
 export function playback(result, t) {
