@@ -25,6 +25,7 @@ import { ROOM, LAYOUT, SIZES, ROUTINE, ROOM_ART } from '../../data/workshop.js';
 import { VFX_ART, STATUS_ART, STATUS_ORDER, FLOAT_COLORS } from '../../data/feedback.js';
 import { createTopBar } from '../ui/TopBar.js';
 import { RESEARCH_ART } from '../../data/research.js';
+import { COMPETITION_ART } from '../../data/competitions.js';
 
 const TASK_LABELS = {
   home: 'At home spot',
@@ -905,6 +906,31 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     ctx.fillText(sub, r.x + 104, r.y + 80, r.w - 116);
   }
 
+  // Competitions shortcut, bottom left: shows once an event has invited the company (Milestone 12).
+  function competeButtonRect() {
+    if (!campaign.openCompetitions.length) return null;
+    const b = buildButtonRect();
+    const sr = layout.safeRect;
+    return { x: sr.x + 28, y: b.y, w: 250, h: b.h };
+  }
+
+  // An open event that can be entered this month.
+  function competeReady() {
+    return campaign.openCompetitions.some((e) => campaign.competitions.records[e.id]?.lastPeriod !== campaign.monthIndex) && campaign.competitionRobots.length > 0;
+  }
+
+  function drawCompeteButton(ctx) {
+    const r = competeButtonRect();
+    if (!r) return;
+    drawButton(ctx, r, '', { accent: '#FFD166', badge: competeReady() ? '!' : null });
+    assets.drawContained(ctx, COMPETITION_ART.icon, { x: r.x + 10, y: r.y + 14, w: 84, h: 84 });
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 34px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Compete', r.x + 100, r.y + r.h / 2 - 2, r.w - 110);
+  }
+
   function drawBuildButton(ctx) {
     const r = buildButtonRect();
     drawButton(ctx, r, '', { accent: '#FFB74D' });
@@ -1069,6 +1095,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     },
     buildButtonRect,
     researchButtonRect,
+    competeButtonRect,
     celebrateTraining,
     stripRect,
 
@@ -1201,6 +1228,11 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
         router.go('research');
         return;
       }
+      const cb = competeButtonRect();
+      if (cb && hitRect(p, cb)) {
+        router.go('competitions');
+        return;
+      }
       const w = camera.screenToWorld(p.x, p.y);
       const picked = selection.handleTap(w.x, w.y);
       screen.taps.push({ screen: { x: p.x, y: p.y }, world: w, picked: picked ? picked.staffId || picked.item?.def || picked.kind : null });
@@ -1209,7 +1241,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
 
     onDragStart(p) {
       const start = { x: p.startX, y: p.startY };
-      if (dragId !== null || card.contains(start) || topBar.contains(start) || hitRect(start, stripRect()) || hitRect(start, buildButtonRect()) || hitRect(start, researchButtonRect() ?? { x: 0, y: 0, w: -1, h: -1 })) return;
+      if (dragId !== null || card.contains(start) || topBar.contains(start) || hitRect(start, stripRect()) || hitRect(start, buildButtonRect()) || hitRect(start, researchButtonRect() ?? { x: 0, y: 0, w: -1, h: -1 }) || hitRect(start, competeButtonRect() ?? { x: 0, y: 0, w: -1, h: -1 })) return;
       dragId = p.id;
       camera.beginDrag(p.startX, p.startY);
       camera.dragTo(p.x, p.y);
@@ -1269,6 +1301,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
       drawStrip(ctx);
       drawBuildButton(ctx);
       drawResearchButton(ctx);
+      drawCompeteButton(ctx);
       card.render(ctx);
     },
   };

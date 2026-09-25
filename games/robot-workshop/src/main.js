@@ -37,6 +37,12 @@ import { createRecruitmentScreen } from './screens/RecruitmentScreen.js';
 import { createTrainingScreen } from './screens/TrainingScreen.js';
 import { createStaffDetailScreen } from './screens/StaffDetailScreen.js';
 import { createStaffDebugScreen } from './screens/StaffDebugScreen.js';
+import { createCompetitionListScreen } from './screens/CompetitionListScreen.js';
+import { createCompetitionSetupScreen } from './screens/CompetitionSetupScreen.js';
+import { createCompetitionWatchScreen } from './screens/CompetitionWatchScreen.js';
+import { createCompetitionResultScreen } from './screens/CompetitionResultScreen.js';
+import { COMPETITIONS, COMPETITION_ART, RIVALS, TROPHIES } from '../data/competitions.js';
+import { TUTORIAL_HIRES } from '../data/recruitment.js';
 import { RECRUIT_ART, PORTRAITS, PORTRAIT_FOLDER } from '../data/recruitment.js';
 import { TRAINING_ART } from '../data/training.js';
 import { RESEARCH_ART, FEATURES } from '../data/research.js';
@@ -102,6 +108,11 @@ const ASSETS = {
   [RESEARCH_ART.icon]: `assets/images/ui/${RESEARCH_ART.icon}.png`,
   [RESEARCH_ART.rp]: `assets/images/rewards/${RESEARCH_ART.rp}.png`,
   [RESEARCH_ART.glow]: `assets/images/vfx/${RESEARCH_ART.glow}.png`,
+  // Competitions (Milestone 12): the three event backdrops, icon, win/loss effects, Local Cup trophy, first-event art, rival logos.
+  ...Object.fromEntries(COMPETITIONS.map((c) => art('backdrops', c.art))),
+  ...Object.fromEntries([art('ui', COMPETITION_ART.icon), art('vfx', COMPETITION_ART.winBurst), art('vfx', COMPETITION_ART.lossPuff), art('events', COMPETITION_ART.firstMoment)]),
+  ...Object.fromEntries(Object.values(TROPHIES).filter((t) => t.art).map((t) => art('trophies', t.art))),
+  ...Object.fromEntries(RIVALS.map((r) => art('logos', r.logo))),
   // Deliberately missing file: proves the placeholder fallback.
   placeholderTest: 'assets/m0-missing-test.png',
 };
@@ -539,6 +550,39 @@ const makeSandbox = () => {
   return c;
 };
 const debugBuilderScreen = createDebugBuilderScreen({ renderer, layout, assets, campaign, router, makeSandbox });
+// Competitions (Milestone 12). The watch view holds still while a guide step is showing.
+const competitionsScreen = createCompetitionListScreen({ renderer, layout, assets, campaign, router, goProject, hud });
+const compSetupScreen = createCompetitionSetupScreen({ renderer, layout, assets, bus, campaign, router });
+const compWatchScreen = createCompetitionWatchScreen({ renderer, layout, assets, campaign, router, vfx, held: () => guide.active || major.active });
+const compResultScreen = createCompetitionResultScreen({ renderer, layout, assets, campaign, router, vfx });
+// An event invites the company. The very first one (the Local Trial, §26) is a big moment with Kai West on the Roster.
+bus.on('competition:invite', ({ event, first }) => {
+  debug.log(`competition open: ${event.id} ${event.name}`);
+  if (!campaignReady) return;
+  audio.play('levelUp');
+  campaign.save().catch(() => {});
+  if (!first) {
+    floatNumber(`New event: ${event.name}!`, FLOAT_COLORS.info, COMPETITION_ART.icon, 0.5);
+    return;
+  }
+  const kai = campaign.recruitment.special?.staffId === TUTORIAL_HIRES.kai.staffId;
+  if (!kai) bus.emit('guide:pilotReady', {}); // Kai is here already (or not coming): no hiring steps
+  major.show({
+    title: `You're invited: ${event.name}!`,
+    subtitle: kai ? 'Kai West, a test pilot, wants to join (cheap) — see Roster. Then tap Compete.' : 'Tap Compete in the workshop to enter.',
+    accent: '#FFD166',
+    drawFn: (ctx, t) => {
+      const s = Math.min(1, t / 0.4);
+      ctx.save();
+      ctx.globalAlpha = s;
+      assets.drawContained(ctx, COMPETITION_ART.firstMoment, { x: W / 2 - 380, y: H / 2 - 520 + (1 - s) * 60, w: 760, h: 760 });
+      ctx.restore();
+    },
+  });
+});
+// The guide's "hire Kai" steps end when Kai joins (the Tessa steps already used staff:hired).
+bus.on('staff:hired', ({ staff }) => staff.id === TUTORIAL_HIRES.kai.staffId && bus.emit('guide:pilotReady', {}));
+bus.on('competition:result', ({ result }) => debug.log(`${result.eventId}: ${result.won ? 'WON' : result.player.dnf ? 'DNF' : `place ${result.place}`} · ${result.player.final} · seed ${result.seed}`));
 
 bus.on('economy:closure', () => router.go('closed'));
 bus.on('product:sales', ({ product, sale }) => debug.log(`${product.name}: ${sale.units} sold, +${sale.revenue}`));
@@ -684,6 +728,7 @@ if (debug.enabled) {
   window.__m9 = { ...window.__m8, research: researchScreen, researchSystem: campaign.research, unlocks: campaign.unlocks };
   window.__m10 = { ...window.__m9, recruit: recruitScreen, training: trainingScreen, recruitment: campaign.recruitment, trainingSystem: campaign.training, roster: rosterScreen };
   window.__m11 = { ...window.__m10, staffDetail: staffDetailScreen, staffDebug: staffDebugScreen, careers: campaign.careers, STAFF };
+  window.__m12 = { ...window.__m11, competitions: competitionsScreen, compSetup: compSetupScreen, compWatch: compWatchScreen, compResult: compResultScreen, competitionSystem: campaign.competitions };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
   bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));
@@ -709,6 +754,10 @@ router
   .register('recruit', recruitScreen)
   .register('training', trainingScreen)
   .register('staffDetail', staffDetailScreen)
+  .register('competitions', competitionsScreen)
+  .register('compSetup', compSetupScreen)
+  .register('compWatch', compWatchScreen)
+  .register('compResult', compResultScreen)
   .register('debugbuilder', debugBuilderScreen);
 if (debug.enabled) router.register('staffdebug', staffDebugScreen); // ?debug=1 only: spawn any of the 50
 router.go('boot');

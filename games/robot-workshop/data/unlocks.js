@@ -6,8 +6,11 @@
 //   { type: 'feature', id }              a research feature has switched on (data/research.js FEATURES)
 //   { type: 'flag', flag }  a first-time milestone of the run (first launch, first contract…)
 //   { type: 'role', role }  the company employs someone in that role (e.g. its first Designer)
+//   { type: 'purposeBuilt', purpose }  a robot of that purpose has been finished (competition unlocks, Milestone 12)
+//   { type: 'competition', event }     competition progress (Milestone 12): firstEntry, localTrial (entered C01),
+//                                      wins (min), regionalCup (won C07); nationalCup / worldTier arrive in Milestone 13
 
-export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'researchCount', 'feature', 'all'];
+export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'researchCount', 'feature', 'purposeBuilt', 'all'];
 
 export const RESEARCH_BRANCHES = {
   mechanical: 'Mechanical Research',

@@ -4,7 +4,9 @@
 //   faultRoll      ctx { job, phase, allow }            a fault was rolled; set allow = false to stop it
 //   phaseComplete  ctx { job, phase, fixFault() }       a stage has just finished
 //   finish         ctx { job, stats, innovation, result } the robot is being finished (before Quality)
-// Points with no caller yet: 'synergy' (Milestone 14), 'competition' (Milestone 12).
+//   competition    ctx { mods }                          a pilot is being set up for an event (Milestone 12);
+//                                                        mods are core/CompetitionSystem's setup mods
+// Points with no caller yet: 'synergy' (Milestone 14).
 import { PROJECT_TIERS } from '../../data/phases.js';
 
 const ELITE_MAX_CX = PROJECT_TIERS.find((t) => t.id === 'elite').maxCx;
@@ -58,8 +60,23 @@ export const SIGNATURE_HOOKS = {
     },
   },
 
+  // Perfect Line: +pct% competition base score.
+  competitionScorePct: {
+    point: 'competition',
+    apply(ctx, p) {
+      ctx.mods.basePct += p.pct;
+    },
+  },
+
+  // Beyond Redline: Aggressive gives +bonusPct% instead of the usual, and costs no Morale.
+  aggressiveStrategy: {
+    point: 'competition',
+    apply(ctx, p) {
+      ctx.mods.aggressiveScorePct = p.bonusPct;
+      if (p.noMoralePenalty) ctx.mods.noMoralePenalty = true;
+    },
+  },
+
   // Stored until their systems exist.
   synergyBonusPct: { point: 'synergy', apply: () => false }, // Master Integrator (Milestone 14)
-  competitionScorePct: { point: 'competition', apply: () => false }, // Perfect Line (Milestone 12)
-  aggressiveStrategy: { point: 'competition', apply: () => false }, // Beyond Redline (Milestone 12)
 };

@@ -79,10 +79,10 @@ export const STORE_ITEMS = {
 export const SIGNING_FEE = { standard: 1.5, rare: 2.0, elite: 3.0, legendary: 4.0, secret: 5.0 };
 
 // §15.6 / §26 tutorial hires. Tessa: Month 1, day `day` (bible: "Day 8–12"), and the player is topped up if
-// short of her fee. Kai: when the Local Trial unlocks (competitions, later), cheap: fee × feeMult.
+// short of her fee. Kai: when the Local Trial (event C01) invitation arrives, cheap: fee × feeMult.
 export const TUTORIAL_HIRES = {
   tessa: { staffId: 'DES01', day: 8, guaranteed: true, note: 'Tutorial hire: a designer for your team' },
-  kai: { staffId: 'PIL01', feeMult: 0.5, note: 'A test pilot for the Local Trial' },
+  kai: { staffId: 'PIL01', feeMult: 0.5, event: 'C01', note: 'A test pilot for the Local Trial' },
 };
 
 // Candidate templates (M10 choice, fitted to the §15 roster): level range (higher main stat → higher level), main stat range, the role's

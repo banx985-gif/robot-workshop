@@ -3,6 +3,7 @@ import { RESEARCH_BRANCHES, FACILITY_NAMES, COUNTERS, COMPETITION_EVENTS, FLAG_N
 import { FACILITIES } from '../../data/facilities.js';
 import { ROLES } from '../../data/staff.js';
 import { FEATURES } from '../../data/research.js';
+import { PURPOSES } from '../../data/purposes.js';
 
 // Plain words for a rule, e.g. "Mechanical Research 3" or "Materials Lab + Mechanical Research 5".
 export function describeUnlock(rule) {
@@ -33,6 +34,8 @@ export function describeUnlock(rule) {
       return FLAG_NAMES[rule.flag] ?? rule.flag;
     case 'role':
       return `First ${ROLES[rule.role]?.name ?? rule.role} hired`;
+    case 'purposeBuilt':
+      return `A finished ${PURPOSES[rule.purpose]?.name ?? rule.purpose} robot`;
     case 'all':
       return rule.of.map(describeUnlock).join(' + ');
     default:

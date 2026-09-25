@@ -8,9 +8,10 @@
 //              breakthroughPct, gainPct { robot stat: % }, fitPct, phaseFaultPct { phase: % },
 //              mentorXpPct (lower-level teammates), noPushStreakPenalty
 //     company: reputationPct (anyone on staff)
+//     pilot:   stressPenaltyPct, tuningPct, aggressiveCeilingPct, breakdownRiskPct — read for the pilot of a competition
+//              entry (Milestone 12, src/systems/CompetitionRules.js)
 //   later        the system that reads the rest of this trait isn't built yet (words for the detail screen);
-//                its numbers are stored now: stressPenaltyPct, tuningPct, aggressiveCeilingPct, breakdownRiskPct
-//                (competitions, Milestone 12), sponsorRewardPct (sponsors), loyaltyWeight (secrets)
+//                its numbers are stored now: sponsorRewardPct (sponsors), loyaltyWeight (secrets)
 //   signature    { hook, params }: a named rule written once in src/systems/signatureHooks.js
 export const TRAITS = {
   quickLearner: {
@@ -50,9 +51,8 @@ export const TRAITS = {
   },
   calmUnderPressure: {
     name: 'Calm Under Pressure',
-    description: 'Keeps a cool head: competition stress hurts only half as much.',
+    description: 'As a pilot: keeps a cool head, so competition stress hurts only half as much.',
     effects: { stressPenaltyPct: -50 },
-    later: 'competitions',
   },
   reliabilityNut: {
     name: 'Reliability Nut',
@@ -81,9 +81,8 @@ export const TRAITS = {
   },
   tuner: {
     name: 'Tuner',
-    description: 'Gets 10% more out of competition tuning.',
+    description: 'As a pilot: gets 10% more out of competition tuning.',
     effects: { tuningPct: 10 },
-    later: 'competitions',
   },
   mentor: {
     name: 'Mentor',
@@ -97,9 +96,8 @@ export const TRAITS = {
   },
   riskTaker: {
     name: 'Risk Taker',
-    description: 'Aggressive strategy can reach 10% higher, but breakdowns are 5% more likely.',
+    description: 'As a pilot: Aggressive runs can reach 10% higher, but breakdowns are 5% more likely.',
     effects: { aggressiveCeilingPct: 10, breakdownRiskPct: 5 },
-    later: 'competitions',
   },
   allRounder: {
     name: 'All-Rounder',
@@ -163,13 +161,11 @@ export const TRAITS = {
     name: 'Perfect Line',
     description: 'Signature: +8% competition base score.',
     signature: { hook: 'competitionScorePct', params: { pct: 8 } },
-    later: 'competitions',
   },
   beyondRedline: {
     name: 'Beyond Redline',
     description: 'Signature: Aggressive strategy gives +14% instead of +8%, with no extra Morale cost.',
     signature: { hook: 'aggressiveStrategy', params: { bonusPct: 14, noMoralePenalty: true } },
-    later: 'competitions',
   },
 };
 
@@ -178,6 +174,5 @@ export const NORMAL_TRAITS = Object.keys(TRAITS).filter((t) => !TRAITS[t].signat
 
 // Words for "later" systems on the detail screen.
 export const LATER_WORDS = {
-  competitions: 'Works once competitions open',
   synergies: 'Works once synergies are discovered',
 };

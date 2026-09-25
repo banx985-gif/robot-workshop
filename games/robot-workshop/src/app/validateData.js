@@ -22,6 +22,8 @@ import { CHANNELS, RECRUIT_RULES, STORE_ITEMS, SIGNING_FEE, TUTORIAL_HIRES, TIER
 import { COURSES, TRAINING_SLOTS } from '../../data/training.js';
 import { RECRUITABLE_TIERS } from '../../data/staff.js';
 import { CURRENCIES } from '../../data/economy.js';
+import { COMPETITIONS, RIVALS, COMPETITION_RULES, TROPHIES, COMPETITION_ART } from '../../data/competitions.js';
+import { TUNINGS, STRATEGIES, DEFAULT_TUNING, DEFAULT_STRATEGY } from '../../data/tuning.js';
 import { RESEARCH_NODES, RESEARCH_BRANCH_ORDER, RESEARCH_BRANCH_INFO, RESEARCH_MILESTONES, RESEARCH_QUEUES, FEATURES, RP_SOURCES, researchNodeId } from '../../data/research.js';
 
 const SLOT_COUNTS = { chassis: 10, mobility: 8, ai: 8, tool: 8, power: 8, special: 8 }; // §11
@@ -66,6 +68,9 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
         break;
       case 'competition':
         v.check(rule.event in COMPETITION_EVENTS, `${owner}: unknown competition "${rule.event}"`);
+        break;
+      case 'purposeBuilt':
+        v.ref(owner, 'purpose', rule.purpose, new Set(PURPOSE_ORDER));
         break;
       case 'secret':
         v.check(/^SEC-[A-Z]+-([A-Z]\d|\d\d)$/.test(rule.id), `${owner}: bad secret id "${rule.id}"`);
@@ -393,6 +398,52 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   v.check(COURSES.at(-1).requires?.type === 'all', 'training: Prestige Seminar must stay locked (NG+ and Rank S)');
   v.check(TRAINING_SLOTS.find((s) => s.id === 'general')?.base === 1, 'training: one general slot to start (§39.2)');
   v.check(TRAINING_SLOTS.every((s) => s.max >= s.base && (!s.roles || s.roles.every((r) => roleSet.has(r)))), 'training: bad slot data');
+
+  // --- competitions (§21, Milestone 12: C01, C02, C07 only) ---
+  const BIBLE_EVENTS = {
+    C01: { target: 75, entry: 0, credits: 1500, rep: 50, weights: { REL: 30, CTL: 25, INT: 20, PWR: 15, SPD: 10 } },
+    C02: { target: 115, entry: 500, credits: 3000, rep: 80, weights: { SPD: 30, CTL: 25, INT: 20, REL: 15, END: 10 } },
+    C07: { target: 275, entry: 2000, credits: 11000, rep: 250, weights: { SPD: 40, CTL: 30, REL: 15, INT: 10, END: 5 } },
+  };
+  v.uniqueIds('competitions', COMPETITIONS);
+  v.check(COMPETITIONS.map((e) => e.id).join() === 'C01,C02,C07', 'competitions: Milestone 12 builds only C01, C02 and C07');
+  const rivalIds = new Set(RIVALS.map((r) => r.id));
+  v.uniqueIds('rivals', RIVALS);
+  for (const e of COMPETITIONS) {
+    const o = `competition ${e.id}`;
+    const b = BIBLE_EVENTS[e.id];
+    if (!v.check(!!b, `${o}: not in §21.5`)) continue;
+    v.check(e.target === b.target && e.entry === b.entry && e.rewards.credits === b.credits && e.rewards.rep === b.rep, `${o}: target/entry/prize differ from §21.5`);
+    v.check(JSON.stringify(e.weights) === JSON.stringify(b.weights), `${o}: weights differ from §21.5`);
+    v.check(Object.values(e.weights).reduce((t, x) => t + x, 0) === 100 && Object.keys(e.weights).every((k) => statSet.has(k)), `${o}: weights must be robot stats adding to 100`);
+    checkUnlock(o, e.unlock);
+    v.check(e.field.length >= 3 && e.field.every(([id]) => rivalIds.has(id)), `${o}: unknown rival in the field`);
+    v.check(e.segments?.length === COMPETITION_RULES.stressPct.length, `${o}: needs one name per segment`);
+    v.check(e.rp >= 15 && e.rp <= 150, `${o}: RP ${e.rp} outside §19.7 (15–150)`);
+    if (e.rewards.trophy) v.check(e.rewards.trophy in TROPHIES, `${o}: unknown trophy`);
+    v.art(`${o} backdrop`, `assets/images/backdrops/${e.art}.png`);
+  }
+  for (const r of RIVALS) {
+    v.check(r.strengths.every((k) => statSet.has(k)), `rival ${r.id}: unknown strength`);
+    v.art(`rival ${r.id} logo`, `assets/images/logos/${r.logo}.png`);
+  }
+  const BIBLE_TUNING = { reliability: 600, performance: 900, control: 900, power: 900, fullPrep: 2000 };
+  v.uniqueIds('tunings', TUNINGS);
+  for (const [id, cost] of Object.entries(BIBLE_TUNING)) v.check(TUNINGS.find((t) => t.id === id)?.cost === cost, `tuning ${id}: cost differs from §21.1 (${cost})`);
+  v.check(TUNINGS.find((t) => t.id === 'fullPrep')?.requires?.rank === 'B', 'tuning: Full Race Prep needs Rank B (§21.1)');
+  for (const t of TUNINGS) {
+    if (t.requires) checkUnlock(`tuning ${t.id}`, t.requires);
+    v.check(Object.keys(t.stats).every((k) => statSet.has(k)), `tuning ${t.id}: unknown stat`);
+  }
+  const BIBLE_STRAT = { conservative: [-4, 25, 0.55], balanced: [0, 0, 1], aggressive: [8, -20, 1.55] };
+  v.check(STRATEGIES.map((x) => x.id).join() === Object.keys(BIBLE_STRAT).join(), 'strategies: expected the three of §21.2');
+  for (const x of STRATEGIES) v.check(JSON.stringify([x.scorePct, x.relBonus, x.breakdownMult]) === JSON.stringify(BIBLE_STRAT[x.id]), `strategy ${x.id}: numbers differ from §21.2`);
+  v.check(TUNINGS.some((t) => t.id === DEFAULT_TUNING) && STRATEGIES.find((x) => x.id === DEFAULT_STRATEGY)?.recommended, 'competition defaults: Balanced must be the recommended default (§26)');
+  const CB = COMPETITION_RULES.breakdown;
+  v.check(CB.basePct === 8 && CB.minPct === 0.5 && CB.relDivisor === 55 && CB.perFaultPct === 2 && CB.minorPct === 12 && CB.majorPct === 30 && CB.majorNextPct === 8 && CB.catastrophicRelBelow === 120 && CB.catastrophicFaults === 3, 'competition breakdowns: numbers differ from §21.3');
+  v.check(JSON.stringify(COMPETITION_RULES.pilotWeights) === JSON.stringify({ tst: 0.28, eng: 0.04, prg: 0.04 }) && COMPETITION_RULES.form.min === 0.97 && COMPETITION_RULES.form.max === 1.03, 'competition formula: pilot weights / form differ from §21.3');
+  v.check(COMPETITION_RULES.winMorale.min === 5 && COMPETITION_RULES.winMorale.max === 12, 'competition win morale must be +5 to +12 (§9.5)');
+  for (const k of Object.values(COMPETITION_ART)) v.check(typeof k === 'string', 'competition art: bad key');
 
   // --- every image the game loads ---
   for (const [key, path] of Object.entries(manifest)) v.art(`image "${key}"`, path, { placeholder: placeholders.includes(key) });

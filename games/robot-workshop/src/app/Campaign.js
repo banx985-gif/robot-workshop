@@ -1,6 +1,6 @@
 // One Robot Workshop run: seeded RNG, calendar, staff, robot projects, history, money, products,
 // reputation, market, contracts, the workshop layout (facilities + expansions), research, hiring, training,
-// career records (Milestone 11) and saving/loading.
+// career records (Milestone 11), competitions (Milestone 12) and saving/loading.
 // Random numbers: the main stream drives staff, projects and sales; the market and the contracts each
 // have their own seeded stream, so contract offers never change how a robot build rolls.
 // Everything that must come back identical after a reload lives here.
@@ -25,6 +25,10 @@ import { TrainingSystem } from '../../../../core/TrainingSystem.js';
 import { StoreStub } from '../../../../core/StoreStub.js';
 import { StaffModel } from '../../../../core/StaffModel.js';
 import { CareerRecords } from '../../../../core/CareerRecords.js';
+import { CompetitionSystem } from '../../../../core/CompetitionSystem.js';
+import { COMPETITIONS, COMPETITIONS_BY_ID, RIVALS, COMPETITION_RULES } from '../../data/competitions.js';
+import { TUNINGS, STRATEGIES } from '../../data/tuning.js';
+import { entrantOf, pilotMods, pilotOf, ordinal } from '../systems/CompetitionRules.js';
 import { CHANNELS, RECRUIT_RULES, STORE_ITEMS, TUTORIAL_HIRES } from '../../data/recruitment.js';
 import { COURSES, TRAINING_SLOTS, TRAINING_DURATION_EFFECTS, TRAINING_RULES } from '../../data/training.js';
 import { candidateMaker, namedCandidate, signingFee } from '../systems/Candidates.js';
@@ -85,6 +89,8 @@ export const SAVE_MIGRATIONS = {
   7: (record) => ({ ...record, data: { ...record.data, recruitment: null, training: null } }),
   // v8 (Milestone 10) had no career records: null = rebuild them from the roster and the robot history (Campaign.loadData).
   8: (record) => ({ ...record, data: { ...record.data, careers: null } }),
+  // v9 (Milestone 11) had no competitions: null = no entries yet; invitations open on the next game day.
+  9: (record) => ({ ...record, data: { ...record.data, competitions: null } }),
 };
 
 // Things research unlock actions name ("part:CH02", "facility:F07"…): for these, the research part of their
@@ -265,6 +271,8 @@ export class Campaign {
         onFail: (c, reason) => this.reputation.add(c.failReputation, `Contract failed (${reason}): ${c.title}`),
       },
     });
+    // Competitions (§21): the shared engine scores; entry, prizes and invitations are here (enterCompetition).
+    this.competitions = new CompetitionSystem({ bus, events: COMPETITIONS, tunings: TUNINGS, strategies: STRATEGIES, rivals: RIVALS, rules: COMPETITION_RULES });
     // A robot built for a contract is checked against it as soon as it is finished.
     bus.on('robot:joined', ({ staffId }) => this.careers.bump(staffId, 'projects'));
     bus.on('project:complete', ({ job, record }) => {
@@ -301,6 +309,7 @@ export class Campaign {
     this._tutorialHires();
     this._pushStreaks();
     this.contracts.dailyTick(this.clock.totalDays); // deadlines
+    this._competitionInvites();
     this._displayReputation();
   }
 
@@ -423,10 +432,14 @@ export class Campaign {
         return this.feature(rule.id);
       case 'counter':
         return this.counter(rule.counter) >= rule.min;
+      case 'purposeBuilt':
+        return this.history.records.some((r) => r.result?.purpose === rule.purpose);
+      case 'competition':
+        return this.competitionProgress(rule);
       case 'all':
         return rule.of.every((r) => this.ruleMet(r, subject));
       default:
-        return false; // competitions, secrets: later milestones (the rules are stored already)
+        return false; // secrets: later milestones (the rules are stored already)
     }
   }
 
@@ -807,7 +820,7 @@ export class Campaign {
     this.recruitment.addSpecial({ ...namedCandidate(t.staffId), guaranteed: t.guaranteed }, { day: this.clock.totalDays, days: RECRUIT_RULES.specialDays, note: t.note });
   }
 
-  // §15.6: Kai West arrives, cheap, when the Local Trial unlocks (competitions will call this; debug can too).
+  // §15.6: Kai West arrives, cheap, when the Local Trial unlocks (the competition invitation calls this).
   localTrialUnlocked() {
     const k = TUTORIAL_HIRES.kai;
     if (this.flags.kaiOffered) return false;
@@ -815,6 +828,146 @@ export class Campaign {
     if (this.staff.get(k.staffId)) return false;
     this.recruitment.addSpecial({ ...namedCandidate(k.staffId), feeMult: k.feeMult }, { day: this.clock.totalDays, days: RECRUIT_RULES.specialDays, note: k.note });
     return true;
+  }
+
+  // --- competitions (§21) ---
+  // Unlock rules about competition progress (data/unlocks.js COMPETITION_EVENTS).
+  competitionProgress(rule) {
+    const recs = this.competitions.records;
+    switch (rule.event) {
+      case 'firstEntry':
+        return this.competitions.totalEntries >= 1;
+      case 'localTrial':
+        return (recs.C01?.entries ?? 0) >= 1;
+      case 'wins':
+        return this.competitions.totalWins >= (rule.min ?? 1);
+      case 'regionalCup':
+        return (recs.C07?.wins ?? 0) >= 1;
+      default:
+        return false; // nationalCup, worldTier: Milestone 13
+    }
+  }
+
+  // Invitations: an event opens once its unlock rule has held for its delay. The Local Trial also brings Kai West.
+  // Returns the events opened today.
+  _competitionInvites() {
+    const day = this.clock.totalDays;
+    const opened = [];
+    for (const ev of COMPETITIONS) {
+      if (this.competitionOpen(ev.id) || !this.unlockMet(ev.unlock)) continue;
+      const met = (this.flags[`compMet_${ev.id}`] ??= day);
+      if (day - met < (ev.inviteDelayDays ?? 0)) continue;
+      this.flags[`compOpen_${ev.id}`] = day;
+      if (ev.id === TUTORIAL_HIRES.kai.event) this.localTrialUnlocked();
+      opened.push(ev);
+      this.bus.emit('competition:invite', { event: ev, first: !this.flags.firstInvite });
+      this.flags.firstInvite = true;
+    }
+    return opened;
+  }
+
+  competitionOpen(id) {
+    return this.flags[`compOpen_${id}`] != null;
+  }
+
+  get openCompetitions() {
+    return COMPETITIONS.filter((e) => this.competitionOpen(e.id));
+  }
+
+  // Game month number (each event runs once a month, M12 choice).
+  get monthIndex() {
+    return Math.floor(this.clock.totalDays / CALENDAR.daysPerMonth);
+  }
+
+  // Finished robots that can still race (a robot handed to a contract customer has gone).
+  get competitionRobots() {
+    return this.history.records.filter((r) => r.result && !r.deliveredContractId).reverse();
+  }
+
+  // Everyone who could pilot today: Test Pilots first (best TST first), then the rest. Training = away.
+  get competitionPilots() {
+    const pilots = this.staff.staff.filter((s) => !this.training.trainingOf(s.id));
+    const pil = (s) => (s.role === 'pilot' ? 1 : 0);
+    return pilots.sort((a, b) => pil(b) - pil(a) || b.stats.tst - a.stats.tst);
+  }
+
+  tuningOpen(id) {
+    const t = this.competitions.tuning(id);
+    return !!t && (!t.requires || this.unlockMet(t.requires));
+  }
+
+  // The setup CompetitionSystem scores, from the player's picks. null if a pick is missing.
+  competitionSetup({ eventId, robotNumber, pilotId, tuningId, strategyId }) {
+    const rec = this.history.get(robotNumber);
+    const s = this.staff.get(pilotId);
+    if (!rec?.result || !s || !COMPETITIONS_BY_ID[eventId]) return null;
+    const { mods, signatures } = pilotMods(this.staff, s);
+    return { eventId, tuningId, strategyId, entrant: entrantOf(rec), pilot: pilotOf(s), mods, signatures, prepBonus: this.fx('competitionPrep') };
+  }
+
+  // Credits this entry costs: entry fee + tuning.
+  competitionCost(eventId, tuningId) {
+    return (COMPETITIONS_BY_ID[eventId]?.entry ?? 0) + (this.competitions.tuning(tuningId)?.cost ?? 0);
+  }
+
+  // Why this entry can't go ahead, or null.
+  competitionBlock({ eventId, robotNumber, pilotId, tuningId, strategyId }) {
+    const ev = COMPETITIONS_BY_ID[eventId];
+    if (!ev) return 'Unknown event';
+    if (!this.competitionOpen(eventId)) return `Not open yet: ${describeUnlock(ev.unlock)}`;
+    if (COMPETITION_RULES.oncePerMonth && this.competitions.records[eventId]?.lastPeriod === this.monthIndex) return 'Already raced this month — it runs again next month';
+    const rec = this.history.get(robotNumber);
+    if (!rec?.result) return 'Pick a robot';
+    if (rec.deliveredContractId) return 'That robot went to a customer';
+    if (!this.staff.get(pilotId)) return 'Pick a pilot';
+    if (this.training.trainingOf(pilotId)) return 'That pilot is away training';
+    const t = this.competitions.tuning(tuningId);
+    if (!t) return 'Pick a tuning package';
+    if (!this.tuningOpen(tuningId)) return `${t.name} needs ${describeUnlock(t.requires)}`;
+    if (!this.competitions.strategy(strategyId)) return 'Pick a strategy';
+    const cost = this.competitionCost(eventId, tuningId);
+    if (cost > 0 && this.economy.balance('credits') < cost) return `Not enough credits (needs ${cost.toLocaleString('en-US')})`;
+    return null;
+  }
+
+  // The seed for the next entry into an event: the run's seed + the event + how many times it has been entered.
+  // Reloading a save and entering again gives the same dice; only the setup changes the result.
+  competitionSeed(eventId) {
+    return `${this.seed}|competition|${eventId}|${this.competitions.records[eventId]?.entries ?? 0}`;
+  }
+
+  previewCompetition(choice) {
+    const setup = this.competitionSetup(choice);
+    return setup ? this.competitions.preview(setup, { ngPlusRuns: this.ngPlusRuns }) : null;
+  }
+
+  // Enter: pay, run the whole event now (seeded), keep the result and hand out prizes. The watch view only plays
+  // the stored result back, so watching and skipping end the same way. Returns { ok, reason, result }.
+  enterCompetition(choice) {
+    const block = this.competitionBlock(choice);
+    if (block) return { ok: false, reason: block };
+    const ev = COMPETITIONS_BY_ID[choice.eventId];
+    const tuning = this.competitions.tuning(choice.tuningId);
+    const setup = this.competitionSetup(choice);
+    const day = this.clock.totalDays;
+    if (ev.entry) this.economy.add('credits', -ev.entry, `Entry fee: ${ev.name}`, 'competition');
+    if (tuning.cost) this.economy.add('credits', -tuning.cost, `Tuning: ${tuning.name} (${ev.name})`, 'competition');
+    const run = this.competitions.run(setup, this.competitionSeed(ev.id), { ngPlusRuns: this.ngPlusRuns });
+    const result = this.competitions.commit(run, { day, period: this.monthIndex, costs: { entry: ev.entry, tuning: tuning.cost }, signatures: setup.signatures, robotNumber: choice.robotNumber });
+    const w = result.rewards;
+    if (w.credits) this.economy.add('credits', w.credits, `Prize: ${ev.name} (${ordinal(result.place)})`, 'competition');
+    w.rep = Math.round(w.rep * this.celebrityMult());
+    if (w.rep) this.reputation.add(w.rep, `Competition: ${ev.name}`, { quiet: true }); // shown on the result screen
+    if (w.rp) this.research.addRp(w.rp, `Competition: ${ev.name}`, day);
+    const pilot = this.staff.get(choice.pilotId);
+    this.staff.addXp(pilot, w.xp);
+    if (w.morale) this.staff.changeMorale(pilot, w.morale);
+    this.careers.bump(pilot.id, 'eventsEntered');
+    if (result.won) this.careers.bump(pilot.id, 'eventsWon');
+    const rec = this.history.get(choice.robotNumber);
+    rec.competitions = { entries: (rec.competitions?.entries ?? 0) + 1, wins: (rec.competitions?.wins ?? 0) + (result.won ? 1 : 0) };
+    this.bus.emit('competition:enter', { result });
+    return { ok: true, reason: null, result };
   }
 
   // --- training (§17, §39.2) ---
@@ -951,6 +1104,7 @@ export class Campaign {
     this.unlocks.reset();
     this.research.reset();
     this.training.reset();
+    this.competitions.reset();
     this.recruitment.reset();
     this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'start');
     this.applyFeatures();
@@ -980,6 +1134,7 @@ export class Campaign {
       recruitment: this.recruitment.serialize(),
       training: this.training.serialize(),
       careers: this.careers.serialize(),
+      competitions: this.competitions.serialize(),
       guide: this.guideState ?? null,
       flags: { ...this.flags },
     };
@@ -1013,6 +1168,7 @@ export class Campaign {
     if (!this.recruitment.load(data.recruitment)) this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'start'); // saves from before Milestone 10
     this.training.load(data.training);
     if (!this.careers.load(data.careers)) this._rebuildCareers(); // saves from before Milestone 11
+    this.competitions.load(data.competitions); // null before Milestone 12: no entries yet
     this.applyFeatures();
     this.guideState = data.guide ?? null;
     this.assignments.refresh();

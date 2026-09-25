@@ -5,7 +5,7 @@
 // unlock — when this person can first turn up (read by Campaign.namedPool / src/systems/Candidates.js):
 //   { type: 'starter' }                   in the team at the start (§15.6)
 //   { type: 'tutorial', when }            a guaranteed special arrival (§15.6: Tessa in Month 1, Kai at the Local Trial)
-//   any rule from data/unlocks.js         rank, counters (projects, launches…), competitions (hook stored for M12)
+//   any rule from data/unlocks.js         rank, counters (projects, launches…), competitions (Milestone 12)
 //   { type: 'secret', id }                legendary/secret staff: never in normal pools (§9.4); only their own
 //                                         arrival events (Milestones 16–17) or the ?debug=1 override bring them
 // channels — only these recruitment channels can find them (the §15 "Local Ad", "+ Agency", "+ Head Hunt" rows).
@@ -138,7 +138,7 @@ export const RECRUITABLE_TIERS = ['standard', 'rare', 'elite'];
 export const NOT_IN_POOL = ['starter', 'tutorial'];
 
 // Career record counters (core/CareerRecords.js), with their words for the staff detail screen.
-// eventsEntered / eventsWon are counted once competitions arrive (Milestone 12).
+// eventsEntered / eventsWon: the worker piloted in a competition (Milestone 12).
 export const CAREER_COUNTERS = [
   { key: 'projects', label: 'Projects worked on' },
   { key: 'robots', label: 'Robots finished' },

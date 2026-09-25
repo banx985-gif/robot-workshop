@@ -8,6 +8,7 @@ const CATEGORY_NAMES = {
   start: 'Starting money',
   sales: 'Sales',
   contract: 'Contracts',
+  competition: 'Competitions',
   salary: 'Salaries',
   projectBuild: 'Build costs',
   projectDaily: 'Running costs',

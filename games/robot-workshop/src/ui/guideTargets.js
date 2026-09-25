@@ -71,6 +71,17 @@ export function createGuideTargets({ router, campaign }) {
     trainingButton: () => (on('roster') ? cur().headerButton(1) : null),
     coursePick: () => (on('training') ? cur().pickTargetRect('codeCamp') : null),
     trainingStart: () => (on('training') ? cur().startButtonRect() : null),
+    // Competitions (Milestone 12)
+    kaiHire: () => {
+      if (!on('recruit')) return null;
+      const c = campaign.recruitment.cards.find((x) => x.staffId === 'PIL01');
+      return c ? cur().hireRectOf(c.id) : null;
+    },
+    competeButton: () => (on('workshop') && !cur().card.isOpen ? cur().competeButtonRect() : null),
+    compEnterC01: () => (on('competitions') ? cur().enterRectOf('C01') : null),
+    compBalanced: () => (on('compSetup') ? cur().strategyRect(1) : null),
+    compEnterButton: () => (on('compSetup') ? cur().enterRect() : null),
+    compResultDone: () => (on('compResult') ? cur().doneRect() : null),
   };
 
   return (name) => {
