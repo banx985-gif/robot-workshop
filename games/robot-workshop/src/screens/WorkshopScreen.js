@@ -1505,6 +1505,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
       drawGhostFloor(ctx);
       drawSelection(ctx);
       drawPaths(ctx);
+      if (campaign.monetisation?.vip) drawVipPlaque(ctx); // Milestone 23: a small plaque on the back wall
 
       // Soft floor shadows (Canvas-drawn; the art has none baked in).
       ctx.save();
@@ -1547,6 +1548,36 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
       if (!sheet?.active) bottomBar.render(ctx); // an open menu sheet covers it
     },
   };
+
+  // §32.4 the VIP plaque: drawn in code (no art), a small gold plate on the back wall near the corner, following the
+  // wall's 2:1 slope. Purely for looks.
+  function drawVipPlaque(ctx) {
+    const base = iso.corner(0, 1.5);
+    ctx.save();
+    ctx.translate(base.x - 46, base.y - 92);
+    ctx.transform(1, -0.5, 0, 1, 0, 0); // along the left-hand back wall, beside the corner
+    const w = 92;
+    const h = 40;
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(3, 4, w, h);
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(0, 0, w, h, 8);
+    else ctx.rect(0, 0, w, h);
+    ctx.fillStyle = '#E8B730';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = COL.outline;
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(5, 5, w - 10, h - 10);
+    ctx.fillStyle = COL.outline;
+    ctx.font = font(24, true);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('★ VIP', w / 2, h / 2 + 1);
+    ctx.restore();
+  }
 
   const ghostView = { kind: 'ghost', g: null, fp: null, depth: 0 };
   function ghostDrawable(g) {

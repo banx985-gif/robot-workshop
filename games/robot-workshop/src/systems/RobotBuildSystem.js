@@ -278,10 +278,12 @@ export class RobotBuildSystem {
       progressModifier: (job, phase) => this.progressMultiplier(phase, job) / (1 + this.teamPct(job, 'phaseTimePct') / 100),
       statModifier: (job, phase, s, k) => this.statMultiplier(k) * this.traitStatMultiplier(s, k),
 
-      // §9.7: a worker whose role matches the phase → +8% for the whole team.
+      // §9.7: a worker whose role matches the phase → +8% for the whole team. The VIP Support Staff slot (a slot past
+      // the 5 core ones, Milestone 23) works at supportShare (35%) and doesn't count for the role match.
       workerModifier: (job, phase, s) => {
-        const match = job.slots.some((id) => id && this.staff.get(id)?.role === phase.roleMatch);
-        return (match ? 1 + R.roleMatchBonusPct / 100 : 1) * this.traitWorkerMultiplier(job, phase, s);
+        const match = job.slots.some((id, i) => id && i < R.teamSlots && this.staff.get(id)?.role === phase.roleMatch);
+        const support = job.slots.indexOf(s.id) >= R.teamSlots ? (this.supportShare ?? 0.35) : 1;
+        return (match ? 1 + R.roleMatchBonusPct / 100 : 1) * this.traitWorkerMultiplier(job, phase, s) * support;
       },
 
       onDay: (job, phase, { score }) => {

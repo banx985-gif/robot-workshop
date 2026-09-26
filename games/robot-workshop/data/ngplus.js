@@ -63,6 +63,7 @@ export const NG_PLUS = {
       { id: 'rngState', label: 'Random state', hidden: true },
       { id: 'ngplus', label: 'Last run’s NG+ picks', hidden: true },
       { id: 'pendingEntry', label: 'A race set up but not run', hidden: true }, // Milestone 22
+      { id: 'adUses', label: 'Rewarded-ad uses this run', hidden: true }, // Milestone 23 (Remove Ads and VIP belong to the account and always stay)
     ],
   },
   // §30.4 Legacy Staff: 1 / 2 / 3 picks; Level 5; 60% of their work stats, never below their normal starting stats.

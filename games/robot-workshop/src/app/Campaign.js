@@ -84,6 +84,8 @@ import { NgPlusSystem } from '../../../../core/NgPlusSystem.js';
 import { NG_PLUS, NG_PLUS_SCALING } from '../../data/ngplus.js';
 import { ngPlusOptions, ngPlusSnapshot } from '../systems/ngPlusRun.js';
 import { COMPANY } from '../../data/menu.js';
+import { GameMonetisation } from './Monetisation.js';
+import { VIP } from '../../data/monetisation.js';
 
 // Save migrations (bible §37.6): each step upgrades one version.
 export const SAVE_MIGRATIONS = {
@@ -139,13 +141,18 @@ export const SAVE_MIGRATIONS = {
   16: (record) => ({ ...record, data: { ...record.data, company: null } }),
   // v17 (Milestone 21) did not keep a race that was set up but not run: none waiting.
   17: (record) => ({ ...record, data: { ...record.data, pendingEntry: null } }),
+  // v18 (Milestone 22) had no rewarded-ad counts: none used yet this run.
+  18: (record) => ({ ...record, data: { ...record.data, monetisation: null } }),
 };
 
 // The account record's own versions (a separate slot, §37.2). v1: everything, the archived endings included; v2
 // (Milestone 22): the endings have their own slot — a v1 record's endings are still read from it once.
-export const ACCOUNT_VERSION = 2;
+// v3 (Milestone 23): the account also keeps entitlements (Remove Ads, VIP), processed purchase ids and ad timing —
+// a v2 record simply has none yet.
+export const ACCOUNT_VERSION = 3;
 export const ACCOUNT_MIGRATIONS = {
   1: (record) => ({ ...record }),
+  2: (record) => ({ ...record, data: { ...record.data, entitlements: null, processedTransactions: [], ads: null } }),
 };
 
 // A company identity (§6.3 Company Setup): names trimmed and capped, an accent from the six (default otherwise).
@@ -167,7 +174,7 @@ let runCounter = 0; // keeps two runs started in the same millisecond apart (tes
 const ADVANCED_TIERS = PROJECT_TIERS.slice(PROJECT_TIERS.findIndex((t) => t.id === 'advanced')).map((t) => t.id);
 
 export class Campaign {
-  constructor({ bus, saveManager = null, accountManager = null, debugAllowed = false }) {
+  constructor({ bus, saveManager = null, accountManager = null, debugAllowed = false, now = () => Date.now() }) {
     this.bus = bus;
     this.saveManager = saveManager;
     this.accountManager = accountManager; // account-wide record (combo archive), survives new runs
@@ -179,6 +186,9 @@ export class Campaign {
     this.company = companyOf(null); // Milestone 21: name, manager, accent colour (no stat effect)
     this.pendingEntry = null; // Milestone 22: a race set up but not run yet (§37.4)
     this.accountStatus = { fallback: false, lost: false, blocked: false };
+    // Milestone 23 (§32): ads, the store and entitlements (Remove Ads, VIP). With no provider nothing changes at all.
+    this.monetisation = new GameMonetisation({ campaign: this, bus, now });
+    this._perkVip = false; // VIP as the perks last saw it (applyPerks runs again when it changes)
     this.synergyArchive = new DiscoveryArchive({ bus });
     this.campaignId = null;
     this.seed = CAMPAIGN_SEED;
@@ -242,7 +252,7 @@ export class Campaign {
       rules: RESEARCH_RULES,
       hooks: {
         // Queue rules are never opened by debug "unlock all"; node conditions are.
-        conditionMet: (rule) => (QUEUE_RULES.has(rule) ? this.ruleMet(rule) : this.unlockMet(rule)),
+        conditionMet: (rule) => (QUEUE_RULES.has(rule) ? this.ruleMet(rule) || this.vipQueueOpen(rule) : this.unlockMet(rule)),
         workerStat: (s, node) => s.stats[RESEARCH_BRANCH_INFO[node.branch].stat] ?? 0,
         bonusPerDay: () => fx('researchPerDay'),
         // §30.5 NG+ advantages: research −5% cost and +5% speed per completed campaign (up to NG+3).
@@ -341,6 +351,7 @@ export class Campaign {
       synergyEnv: () => ({ hooks: { discovered: (key) => this.discoveredKey(key), ruleMet: (r) => this.ruleMet(r) }, ngPlus: this.ngPlusRuns }),
     });
     this.projects.hooks = this.robots.hooks();
+    this.robots.supportShare = VIP.supportSlot.sharePct / 100; // §9.7 the VIP Support Staff slot works at 35%
 
     this.economy = new EconomySystem({ bus, currencies: CURRENCIES, debt: DEBT_RULES, now: () => this.clock.totalDays });
     this.store.economy = this.economy;
@@ -821,7 +832,44 @@ export class Campaign {
 
   // Things the NG+ level changes in other systems; re-applied on a new run, a load and the debug setter.
   applyNgPlus() {
-    this.recruitment.freeManualPerYear = RECRUIT_RULES.freeManualPerYear + this.ngPlusAdvantages.freeRefreshes; // §30.5
+    // §30.5 NG+ refreshes; §32.4 VIP adds one more free ordinary refresh a game year while it is active.
+    this.recruitment.freeManualPerYear = RECRUIT_RULES.freeManualPerYear + this.ngPlusAdvantages.freeRefreshes + (this.monetisation.vip ? VIP.extraFreeRefreshPerYear : 0);
+  }
+
+  // --- VIP perks (Milestone 23, §32.4) ---
+  // Re-applied whenever VIP starts or stops (a purchase, a store check, the offline grace running out): the extra free
+  // refresh, the Support Staff slot, and the 2nd research queue (which stops, progress kept, when VIP ends).
+  applyPerks() {
+    this._perkVip = this.monetisation.vip;
+    this.applyNgPlus();
+    this.syncSupportSlots();
+    this.research.closeLockedQueues();
+    this.assignments.refresh();
+  }
+
+  // Robot projects have 5 core team slots; VIP adds one Support Staff slot (a 6th, working at 35%).
+  get teamSlotCount() {
+    return PROJECT_RULES.teamSlots + (this.monetisation.vip ? 1 : 0);
+  }
+
+  syncSupportSlots() {
+    const core = PROJECT_RULES.teamSlots;
+    const want = this.teamSlotCount;
+    for (const job of this.projects.jobs) {
+      if (job.type !== 'robot') continue;
+      while (job.slots.length < want) job.slots.push(null);
+      while (job.slots.length > want && job.slots.length > core) {
+        const id = job.slots[job.slots.length - 1];
+        if (id) this.assignments.unassign(job, id);
+        job.slots.pop();
+      }
+    }
+  }
+
+  // §32.4: with VIP the 2nd research queue opens from Rank C (instead of Rank A + Server Rack) — never a 3rd.
+  vipQueueOpen(rule) {
+    if (rule !== RESEARCH_QUEUES[1]?.rule || !this.monetisation.vip) return false;
+    return rankAtLeast(RANKS, this.reputation.highestRankIndex, VIP.researchQueue2Rank) && this.ruleMet(RESEARCH_QUEUES[0].rule);
   }
 
   // §30.8 Small Workshop: Expansion 3/4 cost more.
@@ -891,6 +939,7 @@ export class Campaign {
 
   // Order inside a day: running costs for today, project work (uses today's Energy), then staff condition.
   _day() {
+    if (this._perkVip !== this.monetisation.vip) this.applyPerks(); // VIP's offline grace ran out (or came back)
     for (const job of this.projects.jobs) {
       this.economy.add('credits', -this.operatingCostPerDay(job), `Running cost: ${job.name}`, 'projectDaily');
     }
@@ -1963,6 +2012,7 @@ export class Campaign {
     job.data.contractId = contractId;
     job.data.paidCost = this.buildCostFor(components); // after facility discounts
     this.projects.start(job);
+    this.syncSupportSlots(); // VIP: the Support Staff slot (Milestone 23)
     this.economy.add('credits', -job.data.paidCost, `Build cost: ${job.name}`, 'projectBuild');
     for (const id of teamIds) this.assignments.assign(job, id);
     return job;
@@ -2024,8 +2074,11 @@ export class Campaign {
     this.secrets.resetRun(); // clues and unlocks start again; the account history stays (repeat easing)
     this.ending.reset();
     this.recruitment.reset();
+    this.monetisation.loadRun(null); // rewarded-ad uses start again with the run (Milestone 23)
     if (carry) this._applyCarry(carry); // New Game+: the account half, Legacy Staff, blueprints, the challenge
     this.applyNgPlus();
+    this._perkVip = this.monetisation.vip;
+    this.monetisation.payHeld(); // Tech Chips bought with no run open (Milestone 23)
     this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'start');
     // §30.7 NG+1: the Secret Lab's clue is there from day 1 (the guaranteed clue route).
     for (const sc of NG_PLUS_SCALING.startClues) if (this.ngPlusRuns >= sc.fromLevel) this._secretClue({ id: sc.id, stage: sc.stage });
@@ -2073,6 +2126,7 @@ export class Campaign {
       ngplus: this.ngPlusRun ? JSON.parse(JSON.stringify(this.ngPlusRun)) : null, // Milestone 20
       company: { ...this.company }, // Milestone 21
       pendingEntry: this.pendingEntry ? { ...this.pendingEntry } : null, // Milestone 22: a race set up, not run yet
+      monetisation: this.monetisation.serializeRun(), // Milestone 23: rewarded-ad uses this run
     };
   }
 
@@ -2120,13 +2174,17 @@ export class Campaign {
     this.ngPlusRun = data.ngplus ?? null; // null on a first run and before Milestone 20
     this.company = companyOf(data.company); // null before Milestone 21: the default name
     this.pendingEntry = data.pendingEntry ?? null; // Milestone 22
+    this.monetisation.loadRun(data.monetisation); // Milestone 23 (null before: nothing used yet)
     this.applyNgPlus();
+    this._perkVip = this.monetisation.vip;
+    this.syncSupportSlots();
     this._payStoredPrestige();
     this._backfillAchievementFlags();
     if (this.sponsors.active || this.sponsors.history.length) this.flags.firstSponsor = true; // saves from before Milestone 19
     this.applyFeatures();
     this.guideState = data.guide ?? null;
     this.assignments.refresh();
+    this.monetisation.payHeld();
     this.bus.emit('campaign:ready', { fresh: false });
   }
 
@@ -2145,7 +2203,7 @@ export class Campaign {
       this.syncSecretFacts();
       syncRecords(this);
       if (this.accountManager && !this.accountStatus?.blocked) {
-        const account = { synergies: this.synergyArchive.serializeAccount(), secrets: this.secrets.serializeAccount(), achievements: this.achievements.serialize(), records: this.records.serialize(), ngPlus: { ...this.ngPlusAccount } };
+        const account = this.accountData();
         if (!this.archiveManager) account.archive = this.archive.serialize(); // one slot only (tests / older tools)
         await this.accountManager.save(account);
       }
@@ -2162,11 +2220,28 @@ export class Campaign {
     }
   }
 
+  // The account record (§37.5 account/meta). Milestone 23 adds entitlements, processed purchases and ad timing.
+  accountData() {
+    return { synergies: this.synergyArchive.serializeAccount(), secrets: this.secrets.serializeAccount(), achievements: this.achievements.serialize(), records: this.records.serialize(), ngPlus: { ...this.ngPlusAccount }, ...this.monetisation.serializeAccount() };
+  }
+
+  // Only the account slot (a purchase made with no run open, a reset). Chained with the full saves.
+  saveAccount() {
+    const run = (this._saveChain ?? Promise.resolve()).then(async () => {
+      if (!this.accountManager || this.accountStatus?.blocked) return null;
+      const account = this.accountData();
+      if (!this.archiveManager) account.archive = this.archive.serialize();
+      return this.accountManager.save(account);
+    });
+    this._saveChain = run.catch(() => {});
+    return run;
+  }
+
   // What changes whenever anything worth saving changes (the 30-second autosave skips when this hasn't moved).
   changeStamp() {
     if (!this.campaignId) return 'none';
     const c = this.clock;
-    return [this.campaignId, c.totalDays, Math.round((c.dayProgress ?? 0) * 1000), this.economy.nextLine, this.history.count, this.facilities.version, this.staff.staff.length, this.research.doneCount, this.notes.inbox.length, JSON.stringify(this.pendingEntry)].join('|');
+    return [this.campaignId, c.totalDays, Math.round((c.dayProgress ?? 0) * 1000), this.economy.nextLine, this.history.count, this.facilities.version, this.staff.staff.length, this.research.doneCount, this.notes.inbox.length, JSON.stringify(this.pendingEntry), this.monetisation.stamp].join('|');
   }
 
   // §37.4: a race set up but not run yet is part of the save, so it comes back after the app is closed.
@@ -2210,6 +2285,7 @@ export class Campaign {
   // Settings → Reset this campaign (§37.7): only the run goes; the account (Tech Chips, Prestige Tokens, achievements,
   // records, discoveries) and the archived endings stay.
   async resetCampaign() {
+    this.monetisation.keepBoughtChips(); // bought Tech Chips still in the run go to the next one (Milestone 23)
     await this._saveChain;
     await this.saveManager?.clear();
     this.campaignId = null;
@@ -2217,6 +2293,7 @@ export class Campaign {
     this.pendingEntry = null;
     this.flags = {};
     this.clock.pause();
+    await this.saveAccount().catch(() => {});
   }
 
   // Settings → Reset everything (§37.7): the run, the account and the archived endings are deleted and nothing is in
@@ -2232,6 +2309,7 @@ export class Campaign {
     this.records.load(null);
     this.archive.load(null);
     this.ngPlusAccount = { highest: 0, starts: 0, purchases: {} };
+    this.monetisation.resetAccount(); // owned items go (Restore Purchases brings them back); processed purchase ids stay
     this.campaignId = null;
     this.ngPlusRun = null;
     this.flags = {};
@@ -2265,6 +2343,7 @@ export class Campaign {
     this.records.load(account?.records);
     this.archive.load(endings); // Milestone 19: finished runs
     this.ngPlusAccount = { highest: 0, starts: 0, purchases: {}, ...(account?.ngPlus ?? {}) }; // Milestone 20
+    this.monetisation.loadAccount(account); // Milestone 23: entitlements, processed purchases, ad timing
     for (const id of Object.keys(this.secrets.account.history)) if (id.startsWith('TEST-')) delete this.secrets.account.history[id]; // M16 test rules
   }
 

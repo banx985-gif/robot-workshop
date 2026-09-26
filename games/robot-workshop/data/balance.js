@@ -72,4 +72,4 @@ export const PROJECT_RULES = {
 };
 
 export const CAMPAIGN_SEED = 'robot-workshop-run-1';
-export const SAVE_VERSION = 18; // v2 projects + history, v3 money, products, reputation, v4 8-segment market + contracts, v5 first-time guide, v6 workshop layout, v7 research, v8 hiring + training, v9 career records, v10 competitions, v11 rankings + trophies, v12 combo archive, v13 events + sponsors + inbox, v14 secret engine, v15 all 34 secrets, v16 New Game+, v17 company setup, v18 race set-up kept (save hardening)
+export const SAVE_VERSION = 19; // v2 projects + history, v3 money, products, reputation, v4 8-segment market + contracts, v5 first-time guide, v6 workshop layout, v7 research, v8 hiring + training, v9 career records, v10 competitions, v11 rankings + trophies, v12 combo archive, v13 events + sponsors + inbox, v14 secret engine, v15 all 34 secrets, v16 New Game+, v17 company setup, v18 race set-up kept (save hardening), v19 rewarded-ad uses (monetisation)

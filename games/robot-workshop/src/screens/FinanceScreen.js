@@ -9,7 +9,8 @@ import { describeUnlock } from '../systems/unlockRules.js';
 import { sponsorIcon } from '../app/Messages.js';
 import { DEBT_RULES, BLOCK_NAMES } from '../../data/economy.js';
 import { createTopBar } from '../ui/TopBar.js';
-import { panel, text, contained, fmt, hit, wrapText } from '../ui/widgets.js';
+import { panel, text, contained, fmt, hit, wrapText, iconButton } from '../ui/widgets.js';
+import { MONETISATION_ART } from '../../data/monetisation.js';
 const COL = THEME.color;
 const BODY = THEME.size.body;
 const SMALL = THEME.size.small;
@@ -27,6 +28,9 @@ const CATEGORY_NAMES = {
   hiring: 'Hiring',
   training: 'Training',
   store: 'Store',
+  ad: 'Ad rewards', // Milestone 23: Recovery Grant, contract ad bonus
+  purchase: 'Store purchases',
+  vip: 'VIP',
   research: 'Research',
   event: 'Events',
   other: 'Other',
@@ -41,7 +45,7 @@ const OFFER_H = 330;
 const SPONSOR_ROW = 104; // a sponsor's name + status, then what it wants
 const MONEY_CATS = ['sales', 'contract', 'competition', 'event', 'reward', 'salary', 'hiring', 'training', 'projectBuild', 'projectDaily', 'interest'];
 
-export function createFinanceScreen({ renderer, layout, assets, campaign, router, goProject, hud }) {
+export function createFinanceScreen({ renderer, layout, assets, campaign, router, goProject, hud, ads = null }) {
   const W = renderer.width;
   const topBar = createTopBar({
     layout,
@@ -64,7 +68,11 @@ export function createFinanceScreen({ renderer, layout, assets, campaign, router
   }
 
   // The debt panel is taller while in debt (more rules to explain).
-  const debtH = () => (campaign.economy.inDebt ? 450 : 310);
+  // Milestone 23: while in debt, an optional "Watch ad" Recovery Grant (once per real 24 hours) sits at its foot.
+  const grant = () => ads?.placement('recoveryGrant') ?? { show: false };
+  const GRANT_H = 150;
+  const debtH = () => (campaign.economy.inDebt ? 450 + (grant().show ? GRANT_H + 20 : 0) : 310);
+  const grantRect = () => ({ x: 24, y: DEBT_Y + debtH() - 24 - GRANT_H, w: bodyRect().w - 48, h: GRANT_H });
   const sponsorY = () => DEBT_Y + debtH() + 20;
 
   // --- sponsor panel layout (content coordinates) ---
@@ -183,6 +191,12 @@ export function createFinanceScreen({ renderer, layout, assets, campaign, router
       if (topBar.handleTap(p)) return;
       if (!scroll.contains(p)) return;
       const c = scroll.toContent(p);
+      if (grant().show && hit(c, grantRect())) {
+        const pl = grant();
+        if (!pl.ok) message = { text: pl.sub, color: COL.gold, until: performance.now() + 2500 };
+        else ads.watch('recoveryGrant');
+        return;
+      }
       S().offers.forEach((o, i) => {
         const r = signRect(i);
         if (r && hit(c, r)) {
@@ -242,6 +256,8 @@ export function createFinanceScreen({ renderer, layout, assets, campaign, router
         para(`Emergency limit: ${fmt(DEBT_RULES.limit)}. Month-ends below it in a row: ${eco.badMonths} of ${DEBT_RULES.closureMonths}.`, { color: eco.badMonths ? COL.bad : COL.text });
         para(`${DEBT_RULES.closureMonths} in a row and the workshop closes for good.`);
         para(`While in debt you can't: ${DEBT_RULES.blockedWhileNegative.map((k) => BLOCK_NAMES[k]).join(', ')}.`, { size: SMALL, lineH: 38, maxLines: 3, color: COL.textMuted });
+        const pl = grant();
+        if (pl.show) iconButton(ctx, assets, grantRect(), { label: pl.label, sub: pl.sub, icon: MONETISATION_ART.ad, accent: COL.purple, disabled: !pl.ok });
       } else {
         text(ctx, 'No debt', 100, dy + 30, { size: THEME.size.button, bold: true, color: COL.good });
         wrapText(ctx, `If Credits drop below 0 you go into Emergency Credit: ${DEBT_RULES.monthlyInterestPct}% interest a month, and ${DEBT_RULES.closureMonths} month-ends in a row below ${fmt(DEBT_RULES.limit)} close the workshop.`, 24, dy + 100, w - 48, { size: BODY, lineH: LINE, maxLines: 4 });

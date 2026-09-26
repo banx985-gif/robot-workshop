@@ -40,7 +40,8 @@ import { ACHIEVEMENT_OPS } from '../../../../core/AchievementSystem.js';
 import { SECRETS, SECRET_TRIGGERS, SECRET_REWARD_TYPES, SECRET_RULES, SECRET_ART } from '../../data/secrets.js';
 import { NG_PLUS, NG_PLUS_CONTENT, NG_PLUS_SCALING, NG_PLUS_ART, FINAL_BADGE } from '../../data/ngplus.js';
 import { NgPlusSystem } from '../../../../core/NgPlusSystem.js';
-import { GAME_TITLE, MENU_ART, COMPANY, SETTINGS, SETTINGS_DEFAULTS, TEXT_SCALES, COMING_SOON } from '../../data/menu.js';
+import { GAME_TITLE, MENU_ART, COMPANY, SETTINGS, SETTINGS_DEFAULTS, TEXT_SCALES } from '../../data/menu.js';
+import { PRODUCTS, CHIP_PACKS, REWARDED, INTERSTITIAL_CAPS, VIP, MONETISATION_ART, DEBUG_STORE_CATALOGUE } from '../../data/monetisation.js';
 import { SECRET_OPS } from '../../../../core/SecretEngine.js';
 
 const SLOT_COUNTS ={ chassis: 10, mobility: 8, ai: 8, tool: 8, power: 8, special: 8 }; // §11
@@ -720,7 +721,17 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
     if (d.kind === 'steps') v.check(d.steps.includes(SETTINGS_DEFAULTS[d.id]), `settings: ${d.id} default is not a step`);
   }
   v.check(TEXT_SCALES.normal === 1 && Math.abs(TEXT_SCALES.large - 1.15) < 1e-9, 'settings: Large text = +15% (Milestone 21)');
-  v.check(COMING_SOON.store && COMING_SOON.vip, 'menu: Store and VIP "Coming soon" entries');
+  // --- monetisation (Milestone 23, §32) ---
+  const keys = Object.keys(PRODUCTS);
+  v.check(['robot_workshop_remove_ads', 'robot_workshop_chips_small', 'robot_workshop_chips_medium', 'robot_workshop_chips_large', 'robot_workshop_vip'].every((k) => PRODUCTS[k]?.key === k) && keys.length === 5, 'monetisation: the five product keys (never renamed)');
+  v.check(CHIP_PACKS.every((k) => PRODUCTS[k].kind === 'consumable' && PRODUCTS[k].grant?.currency === 'techChips' && Number.isInteger(PRODUCTS[k].grant.amount) && PRODUCTS[k].grant.amount > 0), 'monetisation: Tech Chip packs give a fixed whole amount (no loot boxes)');
+  v.check(keys.every((k) => !('price' in PRODUCTS[k])), 'monetisation: no prices in game data (they come from the store)');
+  v.check(keys.every((k) => DEBUG_STORE_CATALOGUE[k]), 'monetisation: every product is in the pretend store');
+  v.check(REWARDED.length === 5 && ['workshopBoost', 'recruitmentRefresh', 'researchAssist', 'bonusContract', 'recoveryGrant'].every((id) => REWARDED.some((r) => r.id === id && r.limit?.per)), 'monetisation: the five rewarded placements, each with a limit');
+  v.check(INTERSTITIAL_CAPS.firstInstallQuietMin === 10 && INTERSTITIAL_CAPS.minGapMin === 12 && INTERSTITIAL_CAPS.maxPerHour === 3, 'monetisation: §32.1 interstitial caps');
+  v.check(VIP.graceHours === 72 && VIP.dailyChips === 5 && VIP.supportSlot.sharePct === 35, 'monetisation: §32.4–32.5 VIP numbers');
+  for (const k of [MONETISATION_ART.store, MONETISATION_ART.vip, MONETISATION_ART.ad, MONETISATION_ART.removeAds, MONETISATION_ART.chips]) v.art(`store icon ${k}`, `assets/images/ui/${k}.png`);
+  for (const k of [MONETISATION_ART.chipsSmall, MONETISATION_ART.chipsPile]) v.art(`store reward ${k}`, `assets/images/rewards/${k}.png`);
   for (const k of [MENU_ART.keyArt, MENU_ART.logo, MENU_ART.seriesMark, MENU_ART.ngPlus]) v.art(`menu art ${k}`, `assets/images/brand/${k}.png`);
   for (const k of [MENU_ART.store, MENU_ART.vip, MENU_ART.settings, MENU_ART.audio, MENU_ART.help, MENU_ART.lock, MENU_ART.warning]) v.art(`menu icon ${k}`, `assets/images/ui/${k}.png`);
 

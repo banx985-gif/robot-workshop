@@ -1,5 +1,5 @@
 // BOTWORKS front end (Milestone 21, bible §5 app flow, §6.3): the splash, main menu, company setup, settings, the
-// pause menu and the "Coming soon" store entries — plain data for the screens in src/screens/.
+// pause menu — plain data for the screens in src/screens/.
 // The game is called BOTWORKS (locked 26 Sept); folders, code ids, the web address and the save key stay robot-workshop.
 
 export const GAME_TITLE = 'BOTWORKS';
@@ -107,7 +107,7 @@ export const SETTINGS_TEXT = {
   resetCampaign: 'Reset this campaign',
   resetCampaignSub: 'Deletes the current run only',
   resetCampaignTitle: 'Reset this campaign?',
-  resetCampaignBody: 'Your current run is deleted. Tech Chips and Prestige Tokens earned in it go with it. Achievements, records, discoveries and finished campaigns stay.',
+  resetCampaignBody: 'Your current run is deleted. Tech Chips and Prestige Tokens earned in it go with it (Tech Chips you bought are kept for your next run). Achievements, records, discoveries, purchases and finished campaigns stay.',
   resetCampaignYes: 'Delete this run',
   resetCampaignDone: 'The campaign was reset — your achievements and records are safe.',
   resetAll: 'Reset everything',
@@ -120,11 +120,7 @@ export const SETTINGS_TEXT = {
   resetDone: 'Everything was reset — starting fresh.',
 };
 
-// Store and VIP: menu entries only until Milestone 23.
-export const COMING_SOON = {
-  store: { title: 'Store — coming soon', body: 'Remove Ads, Tech Chip packs and Restore Purchases arrive in a later update.', art: 'ui_icon_21' },
-  vip: { title: 'VIP — coming soon', body: 'VIP benefits and how to manage them arrive in a later update.', art: 'ui_icon_22' },
-};
+// Store and VIP: their own screens since Milestone 23 (data/monetisation.js).
 
 // Leaving a screen with choices not kept yet (§6.2).
 export const DISCARD = {

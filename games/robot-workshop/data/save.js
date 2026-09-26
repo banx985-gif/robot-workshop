@@ -63,11 +63,14 @@ export const SAVE_SCHEMA = {
   ngplus: 'ngPlusLevel and this run’s NG+ picks (Milestone 20)',
   company: 'company name, managerName, accent (Milestone 21)',
   pendingEntry: 'a competition set up but not run (§37.4, Milestone 22)',
+  monetisation: 'rewarded-ad uses this run: per stage, topic, game month, contract (§32.1, Milestone 23)',
 };
 // The account save (§37.5 account/meta): achievements, records, discoveries (combos, secrets, staff / parts / robot
 // looks via the secret engine's account facts), NG+ record and purchases. Tech Chips and Prestige Tokens are kept in
-// the run's economy and carried by New Game+ (Milestone 20).
-export const ACCOUNT_SCHEMA = ['synergies', 'secrets', 'achievements', 'records', 'ngPlus'];
+// the run's economy and carried by New Game+ (Milestone 20). Milestone 23 (§37.5): entitlements (Remove Ads, VIP and its
+// last check / grace), processedTransactions (purchase ids already granted), ads (interstitial timing, real-time reward
+// limits) and heldTechChips (bought with no run open).
+export const ACCOUNT_SCHEMA = ['synergies', 'secrets', 'achievements', 'records', 'ngPlus', 'entitlements', 'processedTransactions', 'ads', 'heldTechChips'];
 
 export const SAVE_TEXT = {
   fallback: 'Your last save was damaged, so we loaded the one from a moment earlier.',

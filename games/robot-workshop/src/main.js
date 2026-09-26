@@ -72,13 +72,19 @@ import { createMainMenuScreen } from './screens/MainMenuScreen.js';
 import { createCompanySetupScreen } from './screens/CompanySetupScreen.js';
 import { createSettingsScreen } from './screens/SettingsScreen.js';
 import { createProjectListScreen } from './screens/ProjectListScreen.js';
-import { MENU_ART, PAUSE_MENU, COMING_SOON, SETTINGS_DEFAULTS, TEXT_SCALES, SETTINGS_TEXT } from '../data/menu.js';
+import { MENU_ART, PAUSE_MENU, SETTINGS_DEFAULTS, TEXT_SCALES, SETTINGS_TEXT } from '../data/menu.js';
 import { CAMPAIGN_SEED } from '../data/balance.js';
 // Milestone 22: hardened saves — rolling checked copies, the one-time move, autosave, the save inspector.
 import { SaveSlot, moveLegacySaves } from '../../../core/SaveStore.js';
 import { Autosave } from '../../../core/Autosave.js';
 import { SAVE_STORAGE, SAVE_SLOTS, SAVE_TRIGGERS, AUTOSAVE_RULES, SAVE_TEXT } from '../data/save.js';
 import { createSaveInspectorScreen } from './screens/SaveInspectorScreen.js';
+// Milestone 23: ads, the store and VIP — with a pretend provider in ?debug=1 builds only (no real SDKs, no real money).
+import { FakeStoreProvider } from '../../../core/FakeStoreProvider.js';
+import { PRODUCTS, DEBUG_STORE_CATALOGUE, DEBUG_STORE_KEY, MONETISATION_ART, AD_TEXT, VIP, TUTORIAL_COMPETITION } from '../data/monetisation.js';
+import { createStoreScreen } from './screens/StoreScreen.js';
+import { createVipScreen } from './screens/VipScreen.js';
+import { createMonetisationDebugScreen } from './screens/MonetisationDebugScreen.js';
 import { ENDING_ART, INVITATION } from '../data/ending.js';
 import { ACHIEVEMENT_ART, rewardLabel } from '../data/achievements.js';
 import { wireMessages, effectsText, fillText } from './app/Messages.js';
@@ -189,6 +195,9 @@ const ASSETS = {
   // The front end (Milestone 21): every menu / settings / store icon and the splash art.
   ...Object.fromEntries(['ui_icon_07_workshop', 'ui_icon_15', 'ui_icon_16', 'ui_icon_17', 'ui_icon_18', 'ui_icon_21', 'ui_icon_22', 'ui_icon_25', 'ui_icon_26', 'ui_icon_27', 'ui_icon_30'].map((k) => art('ui', k))),
   ...Object.fromEntries([MENU_ART.keyArt, MENU_ART.logo, MENU_ART.seriesMark, MENU_ART.ngPlus].map((k) => art('brand', k))),
+  // Store, VIP and ads (Milestone 23): the store / VIP / rewarded-ad / Remove Ads icons and the Tech Chip rewards.
+  ...Object.fromEntries(['ui_icon_23', 'ui_icon_24'].map((k) => art('ui', k))),
+  ...Object.fromEntries(['reward_02', 'reward_03'].map((k) => art('rewards', k))),
   // Deliberately missing file: proves the placeholder fallback.
   placeholderTest: 'assets/m0-missing-test.png',
 };
@@ -370,6 +379,7 @@ async function checkSave() {
   debug.log(res.loaded ? `save loaded${res.fallback ? ' (fallback)' : ''}` : res.error ? `save unreadable: ${res.error.message}` : 'no save yet');
   // Milestone 18: a run from before achievements catches up on everything it has already done.
   if (res.loaded) campaign.achievements.checkAll();
+  storeCheck(); // Milestone 23: re-delivered purchases and the quiet VIP / Remove Ads recheck
   return res;
 }
 function showSaveNotes() {
@@ -442,7 +452,7 @@ function openPauseMenu(saved = false) {
   const resume = () => wasRunning && campaign.clock.resume();
   dialog.show({
     title: PAUSE_MENU.title,
-    body: `${campaign.company.name} · ${campaign.clock.label?.() ?? ''}`,
+    body: `${campaign.company.name}${monet.vip ? ' ★ VIP' : ''} · ${campaign.clock.label?.() ?? ''}`,
     art: MENU_ART.logo,
     onCancel: resume,
     buttons: [
@@ -453,10 +463,85 @@ function openPauseMenu(saved = false) {
     ],
   });
 }
-function comingSoon(kind) {
-  const c = COMING_SOON[kind];
-  dialog.show({ title: c.title, body: c.body, art: c.art, buttons: [{ id: 'ok', label: 'OK', accent: COL.progress }] });
+// --- ads, the store and VIP (Milestone 23, bible §32) --------------------------------------------------------------
+// A normal build has no provider yet: ads and the store report "not available" and the game carries on. ?debug=1
+// installs the pretend provider (core/FakeStoreProvider), whose "ads" are a short stand-in dialog.
+const monet = campaign.monetisation;
+let testStore = null;
+if (debug.enabled) {
+  testStore = new FakeStoreProvider({
+    products: Object.fromEntries(Object.values(PRODUCTS).map((p) => [p.key, { ...p, ...DEBUG_STORE_CATALOGUE[p.key] }])),
+    persist: {
+      load: () => JSON.parse(localStorage.getItem(DEBUG_STORE_KEY) ?? 'null'),
+      save: (s) => localStorage.setItem(DEBUG_STORE_KEY, JSON.stringify(s)),
+    },
+    present: (kind) =>
+      new Promise((resolve) => {
+        let done = false;
+        const finish = (r) => {
+          if (done) return;
+          done = true;
+          if (dialog.spec?.pretendAd) dialog.close();
+          resolve(r);
+        };
+        dialog.show({ title: kind === 'rewarded' ? 'Pretend rewarded ad' : 'Pretend interstitial ad', body: `${AD_TEXT.playing} (test build — no real ad)`, art: MONETISATION_ART.ad, pretendAd: true, dismissible: false, buttons: [{ id: 'close', label: 'Close ad early', accent: COL.progress, onTap: () => finish('cancel') }] });
+        setTimeout(() => finish(null), 1400);
+      }),
+  });
+  monet.setProvider(testStore);
 }
+// The clock holds still while an ad plays.
+async function whilePaused(fn) {
+  const wasRunning = campaignReady && !campaign.clock.paused;
+  if (wasRunning) campaign.clock.pause();
+  try {
+    return await fn();
+  } finally {
+    if (wasRunning) campaign.clock.resume();
+  }
+}
+// A "Watch ad" button: the reward only after a finished ad; the result in a short dialog.
+async function watchAd(id, ctx = {}) {
+  if (monet.ads.showing) return null;
+  const r = await whilePaused(() => monet.watch(id, ctx));
+  if (r) dialog.show({ title: r.ok ? 'Reward added' : 'No reward', body: r.message, art: MONETISATION_ART.ad, buttons: [{ id: 'ok', label: 'OK', accent: COL.progress }] });
+  return r;
+}
+const adsUi = { placement: (id, ctx) => monet.placement(id, ctx), watch: (id, ctx) => watchAd(id, ctx), get vip() { return monet.vip; } };
+// §32.1: interstitials only at natural break points (leaving a competition or robot result), through every cap.
+function interstitialContext() {
+  return {
+    tutorial: campaign.competitions.totalEntries <= 1 && (campaign.competitions.records[TUTORIAL_COMPETITION]?.entries ?? 0) <= 1,
+    decisionPending: campaign.events.open.length > 0 || !!campaign.pendingEntry || guide.active || dialog.active,
+  };
+}
+function breakPoint(name) {
+  if (!campaignReady) return;
+  const why = monet.interstitialBlock(name, interstitialContext());
+  if (why) return debug.log(`interstitial skipped: ${why}`);
+  whilePaused(() => monet.breakPoint(name, interstitialContext())).then((r) => debug.log(`interstitial: ${r.shown ? r.status : r.reason}`));
+}
+bus.on('screen:change', ({ from, to }) => {
+  if (from === 'compResult' && to !== 'compWatch') breakPoint('competitionResult');
+  else if (from === 'result') breakPoint('robotResult');
+});
+// Start-up / back online: purchases the store delivers again (never granted twice), then a quiet recheck (§32.5).
+async function storeCheck() {
+  const before = monet.stamp;
+  try {
+    const r = await monet.startup();
+    if (r.pending.delivered || r.pending.duplicates) debug.log(`store: ${r.pending.delivered} re-delivered, ${r.pending.duplicates} already added`);
+  } catch (err) {
+    console.error('[store] check', err);
+  }
+  if (monet.stamp !== before) monet.commit().catch(() => {});
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  monet.ads.noteResume(); // §32.1: never an interstitial on resume
+  storeCheck();
+});
+setInterval(() => document.visibilityState === 'visible' && storeCheck(), VIP.recheckEveryMin * 60000);
 
 // ---------------------------------------------------------------------------
 // Splash (Milestone 21): the BOTWORKS logo over the key art while the art loads (the splash's own pictures first),
@@ -757,7 +842,7 @@ const floats = new FloatFeed({
 });
 hud.floats = floats;
 const workshopScreen = createWorkshopScreen({ renderer, layout, assets, bus, debug, campaign, router, goProject, hud, sheet, menus: menuHolder });
-menuHolder.reg = createStationMenus({ campaign, router, workshop: workshopScreen, sheet, comingSoon });
+menuHolder.reg = createStationMenus({ campaign, router, workshop: workshopScreen, sheet, ads: adsUi });
 workshopScreen.onBack = () => (openPauseMenu(), true); // §6.2: the workshop's back opens the pause menu
 // Every screen change closes the sheet and tells the guide which screen opened ('screen:builder', …).
 bus.on('screen:change', ({ to }) => {
@@ -770,7 +855,7 @@ const builderScreen = createRobotBuilderScreen({ renderer, layout, assets, campa
 const projectScreen = createProjectDetailScreen({ renderer, layout, assets, campaign, router, hud });
 const resultScreen = createProjectResultScreen({ renderer, layout, assets, campaign, router });
 const productsScreen = createProductCatalogueScreen({ renderer, layout, assets, campaign, router, goProject, hud });
-const financeScreen = createFinanceScreen({ renderer, layout, assets, campaign, router, goProject, hud });
+const financeScreen = createFinanceScreen({ renderer, layout, assets, campaign, router, goProject, hud, ads: adsUi });
 const closedScreen = createClosureScreen({ renderer, layout, assets, campaign, router });
 const componentsScreen = createComponentsScreen({ renderer, layout, assets, campaign, router });
 
@@ -785,7 +870,7 @@ const guide = new GuideSystem({
   targetRect: guideTarget,
   screen: () => router.currentName,
   // A pop-up waiting on the workshop goes first; the guide steps back until it has been read.
-  canShow: () => campaignReady && !modal.active && !(campaign.notes.pending && presentPlace()) && !campaign.closed && !buildScreen?.confirm && !['splash', 'menu', 'company', 'settings', 'test', 'debugbuilder', 'help', 'components', 'staffdebug', 'secretdebug', 'ceremony', 'credits', 'ngplus'].includes(router.currentName) && !dialog.active,
+  canShow: () => campaignReady && !modal.active && !(campaign.notes.pending && presentPlace()) && !campaign.closed && !buildScreen?.confirm && !['splash', 'menu', 'company', 'settings', 'test', 'debugbuilder', 'help', 'components', 'staffdebug', 'secretdebug', 'ceremony', 'credits', 'ngplus', 'store', 'vip', 'monetisationDebug'].includes(router.currentName) && !dialog.active,
   pause: () => {
     if (campaign.clock.paused) return false;
     campaign.clock.pause();
@@ -820,13 +905,13 @@ bus.on('campaign:ready', () => {
 // The Research Desk card is far down the Build catalogue: bring it into view for its guide step.
 bus.on('screen:change', ({ to }) => to === 'build' && guide.current?.id === 'S21' && buildScreen.scrollToCard('F11'));
 const helpScreen = createHelpScreen({ renderer, layout, assets, router, guide });
-const contractsScreen = createContractsScreen({ renderer, layout, assets, campaign, router, goProject, hud });
+const contractsScreen = createContractsScreen({ renderer, layout, assets, campaign, router, goProject, hud, ads: adsUi });
 const buildScreen = createBuildScreen({ renderer, layout, assets, campaign, router, workshop: workshopScreen, hud });
-const recruitScreen = createRecruitmentScreen({ renderer, layout, assets, bus, campaign, router });
+const recruitScreen = createRecruitmentScreen({ renderer, layout, assets, bus, campaign, router, ads: adsUi });
 const trainingScreen = createTrainingScreen({ renderer, layout, assets, bus, campaign, router });
 const staffDetailScreen = createStaffDetailScreen({ renderer, layout, assets, bus, campaign, router, workshop: workshopScreen });
 const staffDebugScreen = createStaffDebugScreen({ renderer, layout, assets, campaign, router });
-const researchScreen = createResearchScreen({ renderer, layout, assets, bus, campaign, router, debugEnabled: debug.enabled });
+const researchScreen = createResearchScreen({ renderer, layout, assets, bus, campaign, router, debugEnabled: debug.enabled, ads: adsUi });
 // A throwaway run with the three starters on its own bus: the debug builder builds robots in it.
 const makeSandbox = () => {
   const c = new Campaign({ bus: new EventBus() });
@@ -882,6 +967,10 @@ const saveInspector = createSaveInspectorScreen({
   reload: reloadFromStorage,
 });
 const projectsScreen = createProjectListScreen({ renderer, layout, assets, campaign, router });
+// Store and VIP (Milestone 23); the test store controls only with ?debug=1.
+const storeScreen = createStoreScreen({ renderer, layout, assets, router, campaign, dialog, debugEnabled: debug.enabled });
+const vipScreen = createVipScreen({ renderer, layout, assets, router, campaign, dialog });
+const monetDebugScreen = testStore ? createMonetisationDebugScreen({ renderer, layout, assets, router, campaign, provider: testStore, interstitialContext }) : null;
 // New Game+ (Milestone 20): the setup screen; once the new run is built the workshop opens on a big NG+ moment.
 const ngPlusScreen = createNgPlusSetupScreen({
   renderer,
@@ -1244,6 +1333,7 @@ if (debug.enabled) {
   window.__m19 = { ...window.__m18, ceremony: ceremonyScreen, credits: creditsScreen, ending: campaign.ending, archive: campaign.archive, rumours: rumourScreen };
   window.__m20 = { ...window.__m19, ngplus: ngPlusScreen, ngPlusSys: campaign.ngPlusSys };
   window.__m22 = { autosave, storageInfo, saveInspector, reloadFromStorage, showSaveNotes, saveNotes: () => saveNotes };
+  window.__m23 = { monet, testStore, store: storeScreen, vip: vipScreen, debugPanel: monetDebugScreen, watchAd, breakPoint, interstitialContext, storeCheck };
   window.__m21 = { ...window.__m20, splash: splashScreen, menu: menuScreen, company: companyScreen, settingsScreen, settings, projects: projectsScreen, dialog, systemBack: null, haptics, textPrompt, eventPopup, major, layout, bus };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
@@ -1287,7 +1377,10 @@ router
   .register('ceremony', ceremonyScreen)
   .register('credits', creditsScreen)
   .register('ngplus', ngPlusScreen)
+  .register('store', storeScreen)
+  .register('vip', vipScreen)
   .register('debugbuilder', debugBuilderScreen);
+if (monetDebugScreen) router.register('monetisationDebug', monetDebugScreen); // ?debug=1 only
 if (debug.enabled) router.register('staffdebug', staffDebugScreen).register('secretdebug', secretDebugScreen).register('saveinspector', saveInspector); // ?debug=1 only // ?debug=1 only: spawn any of the 50
 // The phone's / browser's back button and Escape (§6.2): the router closes the top thing, or goes back.
 const systemBack = new SystemBack({ onBack: () => (textPrompt.active ? (textPrompt.close(), true) : router.back()) });

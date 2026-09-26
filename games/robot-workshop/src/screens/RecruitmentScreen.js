@@ -11,7 +11,8 @@ import { TRAITS } from '../../data/traits.js';
 import { WORK_STATS } from '../../data/stats.js';
 import { CHANNELS, RECRUIT_RULES, RECRUIT_ART, STORE_ITEMS } from '../../data/recruitment.js';
 import { describeUnlock } from '../systems/unlockRules.js';
-import { panel, text, contained, fmt } from '../ui/widgets.js';
+import { panel, text, contained, fmt, iconButton } from '../ui/widgets.js';
+import { MONETISATION_ART } from '../../data/monetisation.js';
 const COL = THEME.color;
 
 const HEADER_H = 150;
@@ -40,7 +41,7 @@ const GREEN = COL.good;
 const GOLD = COL.gold;
 const RED = COL.bad;
 
-export function createRecruitmentScreen({ renderer, layout, assets, bus, campaign, router }) {
+export function createRecruitmentScreen({ renderer, layout, assets, bus, campaign, router, ads = null }) {
   const W = renderer.width;
   const rec = campaign.recruitment;
   let message = null;
@@ -57,11 +58,16 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
   const cw = () => bodyRect().w - 12;
   // The free-refresh panel: how refreshes work (wrapped), taps left, then the two refresh buttons.
   const infoLines = () => wrapLines('New candidates arrive free on day 1 of every odd month.', cw() - 40, SIZE.body, true);
-  const infoH = () => 20 + infoLines().length * LINE + LINE + 16 + 110 + 20;
+  // Milestone 23: an optional "Watch ad" refresh (once a game month) under the two refresh buttons.
+  const adPlacement = () => ads?.placement('recruitmentRefresh') ?? { show: false };
+  const AD_H = 150;
+  const adExtra = () => (adPlacement().show ? AD_H + 16 : 0);
+  const infoH = () => 20 + infoLines().length * LINE + LINE + 16 + 110 + adExtra() + 20;
   const infoButton = (k) => {
     const w = (cw() - 40 - 20) / 2;
-    return { x: 20 + k * (w + 20), y: infoH() - 20 - 110, w, h: 110 };
+    return { x: 20 + k * (w + 20), y: infoH() - 20 - adExtra() - 110, w, h: 110 };
   };
+  const adButtonRect = () => ({ x: 20, y: infoH() - 20 - AD_H, w: cw() - 40, h: AD_H });
   const cardRect = (i) => ({ x: 0, y: infoH() + GAP + i * (STAFF_CARD_HEIGHT + GAP), w: cw(), h: STAFF_CARD_HEIGHT });
   const channelsTop = () => infoH() + GAP + rec.cards.length * (STAFF_CARD_HEIGHT + GAP) + 10;
   // A channel row: name, who it finds (wrapped), then its tier odds or what opens it (wrapped), beside the button.
@@ -138,6 +144,7 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
     },
     channelButtonRect: (i) => inScroll(channelButton(i)),
     infoButtonRect: (k) => inScroll(infoButton(k)),
+    adButtonRect: () => (adPlacement().show ? inScroll(adButtonRect()) : null),
 
     enter(params = {}) {
       message = null;
@@ -162,6 +169,12 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
         const r = campaign.refreshBoard(kind);
         say(r.ok ? 'New candidates!' : r.reason, r.ok ? GREEN : RED);
         if (r.ok) campaign.save().catch(() => {});
+        return;
+      }
+      if (adPlacement().show && hitRect(c, adButtonRect())) {
+        const pl = adPlacement();
+        if (!pl.ok) return say(pl.sub, GOLD);
+        ads.watch('recruitmentRefresh').then((r) => r?.ok && (scroll.scrollY = 0));
         return;
       }
       for (const [i, cand] of rec.cards.entries()) {
@@ -215,6 +228,8 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
       drawButton(ctx, infoButton(0), left ? 'Free refresh' : 'Free refresh used', { disabled: !left, font: font(36, true), accent: GREEN });
       const tc = STORE_ITEMS[RECRUIT_RULES.techChipItem];
       drawButton(ctx, infoButton(1), `Refresh · ${tc.cost} Tech Chips`, { disabled: !!campaign.refreshBlock('techChips'), font: font(36, true), accent: COL.purple });
+      const pl = adPlacement();
+      if (pl.show) iconButton(ctx, assets, adButtonRect(), { label: pl.label, sub: pl.sub, icon: MONETISATION_ART.ad, accent: COL.purple, disabled: !pl.ok });
 
       rec.cards.forEach((c, i) => {
         // Legendary / secret arrivals (M17): the legendary aura behind their card.

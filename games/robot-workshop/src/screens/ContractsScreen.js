@@ -9,7 +9,8 @@ import { COMPONENTS, SLOTS } from '../../data/components.js';
 import { predictBuild } from '../systems/Capability.js';
 import { checkRecord, requirementLines, segmentOf } from '../systems/ContractRules.js';
 import { createTopBar } from '../ui/TopBar.js';
-import { panel, text, contained, hit, fmt, emptyState, stateHeight } from '../ui/widgets.js';
+import { panel, text, contained, hit, fmt, emptyState, stateHeight, iconButton } from '../ui/widgets.js';
+import { AD_TEXT } from '../../data/monetisation.js';
 const COL = THEME.color;
 
 const TABS = [
@@ -23,7 +24,7 @@ const LINE = 44; // one line of body text (34 px)
 const SMALL_LINE = 38; // one line of small secondary text (28 px)
 const ART_H = 214; // the customer picture; lines under it run the full card width
 
-export function createContractsScreen({ renderer, layout, assets, campaign, router, goProject, hud }) {
+export function createContractsScreen({ renderer, layout, assets, campaign, router, goProject, hud, ads = null }) {
   const W = renderer.width;
   const topBar = createTopBar({
     layout,
@@ -39,6 +40,8 @@ export function createContractsScreen({ renderer, layout, assets, campaign, rout
   let emptyHit = null; // the empty state's button (Milestone 21)
   const scroll = new ScrollPanel({ getRect: bodyRect, contentHeight: 0 });
   const K = () => campaign.contracts;
+  // Milestone 23: Bonus Contract Reward — an optional rewarded ad on a recent successful (non-signature) contract.
+  const adBonus = (c) => ads?.placement('bonusContract', { contractId: c.id }) ?? { show: false };
 
   function tabRect(i) {
     const sr = layout.safeRect;
@@ -128,6 +131,12 @@ export function createContractsScreen({ renderer, layout, assets, campaign, rout
           const res = campaign.acceptContract(k.id);
           message = res.ok ? { text: `Accepted: ${k.title}`, color: COL.good } : { text: res.reason, color: COL.bad };
           if (res.ok) campaign.save().catch(() => {});
+          return;
+        }
+        if (tab === 'done' && adBonus(k).show && hit(c, buttonRect(i))) {
+          const pl = adBonus(k);
+          if (!pl.ok) message = { text: pl.sub, color: COL.gold };
+          else ads.watch('bonusContract', { contractId: k.id });
           return;
         }
         if (tab === 'active') {
@@ -223,12 +232,13 @@ export function createContractsScreen({ renderer, layout, assets, campaign, rout
       h = y - r.y + Math.max(110, sug.length * SMALL_LINE) + 24;
     } else {
       const when = campaign.clock.shortLabel(c.resolvedDay);
-      if (c.status === 'success') put(`✓ Delivered ${when} · paid ${fmt(c.result?.paid ?? c.payout)}${c.result?.special ? ' + bonus Tech Chip' : ''}`, r.x + 24, full, THEME.size.body, { bold: true, color: COL.good }, 2);
+      if (c.status === 'success') put(`✓ Delivered ${when} · paid ${fmt(c.result?.paid ?? c.payout)}${c.result?.special ? ' + bonus Tech Chip' : ''}${c.result?.adBonus ? ` + ${fmt(c.result.adBonus)} ad bonus` : ''}`, r.x + 24, full, THEME.size.body, { bold: true, color: COL.good }, 2);
       else {
         const why = { deadline: 'deadline passed', cancelled: 'cancelled' }[c.result?.reason] ?? c.result?.reason;
         put(`✗ Failed ${when} (${why}) · ${c.failReputation} Rep`, r.x + 24, full, THEME.size.body, { bold: true, color: COL.bad }, 2);
       }
       h = y - r.y + 14;
+      if (adBonus(c).show) h += 110 + 24; // room for the Watch ad button
     }
     if (!draw) return h;
 
@@ -242,6 +252,11 @@ export function createContractsScreen({ renderer, layout, assets, campaign, rout
     } else if (c.status === 'active') {
       drawButton(ctx, buttonRect(i, 0), 'Build for this', { disabled: !campaign.canStartProject().ok, font: font(34, true) });
       if (hn.robot) drawButton(ctx, buttonRect(i, 1), `Deliver #${hn.robot.number}`, { active: true, accent: COL.good, font: font(34, true) });
+    } else if (c.status === 'success' && adBonus(c).show) {
+      const pl = adBonus(c);
+      const br = buttonRect(i);
+      iconButton(ctx, assets, br, { label: AD_TEXT.tag, sub: pl.ok ? '+20% cash' : pl.sub.startsWith('Bonus') ? 'Bonus added ✓' : 'Not now', accent: COL.purple, disabled: !pl.ok });
+      text(ctx, pl.ok ? 'Optional: watch an ad for +20% of the cash' : pl.sub, r.x + 24, br.y + br.h / 2, { size: THEME.size.small, color: COL.textMuted, baseline: 'middle', maxWidth: br.x - r.x - 40 });
     }
     return h;
   }

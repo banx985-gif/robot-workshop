@@ -262,7 +262,7 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       campaign.staff.staff.forEach((s, i) => {
         if (!hit(c, rowRect(i)) || onResearch(s.id)) return;
         if (state.teamIds.includes(s.id)) state.teamIds = state.teamIds.filter((x) => x !== s.id);
-        else if (state.teamIds.length < PROJECT_RULES.teamSlots) state.teamIds.push(s.id);
+        else if (state.teamIds.length < campaign.teamSlotCount) state.teamIds.push(s.id); // VIP: +1 Support Staff slot (Milestone 23)
       });
     },
 
@@ -347,10 +347,11 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       text(ctx, effects, 4, y.budget + 182, { size: 26, color: COL.textMuted, maxWidth: w });
 
       // Team
-      text(ctx, `Team (${state.teamIds.length}/${PROJECT_RULES.teamSlots}) — tap to add or remove`, 4, y.team, { size: 30, bold: true, maxWidth: w });
+      text(ctx, `Team (${state.teamIds.length}/${PROJECT_RULES.teamSlots}${campaign.teamSlotCount > PROJECT_RULES.teamSlots ? ' + 1 VIP support at 35%' : ''}) — tap to add or remove`, 4, y.team, { size: 30, bold: true, maxWidth: w });
       campaign.staff.staff.forEach((s, i) => {
         const on = state.teamIds.includes(s.id);
-        staffRow(ctx, assets, rowRect(i), s, { roleName: ROLES[s.role].name, on, tag: onResearch(s.id) ? 'On research' : on ? 'On team ✓' : 'Tap to add' });
+        const support = on && state.teamIds.indexOf(s.id) >= PROJECT_RULES.teamSlots;
+        staffRow(ctx, assets, rowRect(i), s, { roleName: ROLES[s.role].name, on, tag: onResearch(s.id) ? 'On research' : support ? 'Support 35% ✓' : on ? 'On team ✓' : 'Tap to add' });
       });
 
       // Summary

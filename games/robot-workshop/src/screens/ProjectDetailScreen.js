@@ -156,11 +156,12 @@ export function createProjectDetailScreen({ renderer, layout, assets, campaign, 
 
     // Change mid-build: the team (tap to add or remove).
     const teamCount = j.slots.filter(Boolean).length;
-    y = heading(ctx, `Team (${teamCount}/${PROJECT_RULES.teamSlots}) — tap to add or remove`, y, w);
+    y = heading(ctx, `Team (${teamCount}/${j.slots.length}${j.slots.length > PROJECT_RULES.teamSlots ? ', slot 6 VIP 35%' : ''}) — tap to add or remove`, y, w);
     campaign.staff.staff.forEach((s, i) => {
       const on = j.slots.includes(s.id);
       const busy = !on && campaign.busyReason(s.id, 'project');
-      const spec = { art: s.art, title: s.name, state: on ? 'selected' : busy ? 'locked' : 'normal', right: on ? 'Working' : busy ? '' : 'Free', rightColor: on ? COL.good : COL.textMuted, lines: [`${ROLES[s.role].name} · Level ${s.level} · Energy ${Math.round(s.energy)} · Morale ${Math.round(s.morale)}`, ...(busy ? [{ text: busy, color: COL.textMuted, size: Z.small }] : [])], artSize: 110 };
+      const support = on && j.slots.indexOf(s.id) >= PROJECT_RULES.teamSlots; // the VIP Support Staff slot (Milestone 23)
+      const spec = { art: s.art, title: s.name, state: on ? 'selected' : busy ? 'locked' : 'normal', right: support ? 'Support 35%' : on ? 'Working' : busy ? '' : 'Free', rightColor: on ? COL.good : COL.textMuted, lines: [`${ROLES[s.role].name} · Level ${s.level} · Energy ${Math.round(s.energy)} · Morale ${Math.round(s.morale)}`, ...(busy ? [{ text: busy, color: COL.textMuted, size: Z.small }] : [])], artSize: 110 };
       const h = listRowHeight(w, spec);
       const r = { x: 0, y, w, h };
       next.rows[i] = r;

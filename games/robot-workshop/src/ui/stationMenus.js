@@ -20,6 +20,7 @@ import { ACHIEVEMENTS, ACHIEVEMENT_ART } from '../../data/achievements.js';
 import { robotArtOf } from '../systems/robotVisual.js';
 import { describeUnlock } from '../systems/unlockRules.js';
 import { NG_PLUS_ART } from '../../data/ngplus.js';
+import { MONETISATION_ART } from '../../data/monetisation.js';
 
 const C = THEME.color;
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
@@ -27,7 +28,7 @@ const first = (name) => String(name).split(' ')[0];
 // Which project stage a station works (Engineering Desk → Engineering…).
 const PHASE_OF = Object.fromEntries(Object.entries(STATIONS).flatMap(([phase, ids]) => ids.map((id) => [id, phase])));
 
-export function createStationMenus({ campaign, router, workshop, sheet, comingSoon = () => {} }) {
+export function createStationMenus({ campaign, router, workshop, sheet, ads = null }) {
   const go = (screen, params) => () => {
     sheet.close();
     router.go(screen, params);
@@ -75,6 +76,13 @@ export function createStationMenus({ campaign, router, workshop, sheet, comingSo
     list.push({ id: 'components', label: 'Parts & looks', icon: SYNERGY_ART.icon, accent: C.progress, onTap: go('components', { back: 'workshop' }) });
     list.push({ id: 'combos', label: 'Combo Archive', icon: SYNERGY_ART.icon, accent: C.progress, onTap: go('combos', { back: 'workshop' }) });
     return list;
+  }
+
+  // A small, optional "Watch ad" button (Milestone 23, §32.1), or null when it doesn't belong here right now.
+  function adButton(id, ctx = {}) {
+    const pl = ads?.placement(id, ctx);
+    if (!pl?.show) return null;
+    return { id: `ad:${id}`, label: pl.label, sub: pl.sub, icon: MONETISATION_ART.ad, accent: C.purple, disabled: !pl.ok, onTap: () => ads.watch(id, ctx) };
   }
 
   // New Game+ Blueprint Memory (Milestone 20, §30.4): one tap rebuilds a remembered robot once its parts are open.
@@ -141,10 +149,11 @@ export function createStationMenus({ campaign, router, workshop, sheet, comingSo
       { id: 'products', label: 'Products', sub: `${campaign.products.active.length}/${campaign.products.slotCount} on sale${waiting ? ` · ${waiting} to launch` : ''}`, icon: 'ui_icon_13', badge: waiting && campaign.products.freeSlots ? '!' : null, onTap: go('products') },
       { id: 'contracts', label: 'Contracts', sub: `${k.active.length}/${k.maxActive} taken`, icon: 'ui_icon_14', badge: k.offers.length && k.canAccept ? k.offers.length : null, onTap: go('contracts', { tab: 'offered' }) },
       { id: 'save', label: workshop.topBar.savedNote ?? 'Save now', sub: 'It also saves every month', icon: 'ui_icon_28', accent: C.progress, onTap: () => workshop.topBar.save() },
-      // Store and VIP: menu entries only until Milestone 23. New Game+ moved to the main menu (Milestone 21).
-      { id: 'store', label: 'Store', sub: 'Coming soon', icon: 'ui_icon_21', accent: C.purple, onTap: () => comingSoon('store') },
-      { id: 'vip', label: 'VIP', sub: 'Coming soon', icon: 'ui_icon_22', accent: C.purple, onTap: () => comingSoon('vip') },
-    ];
+      // Store and VIP (Milestone 23). New Game+ moved to the main menu (Milestone 21).
+      { id: 'store', label: 'Store', sub: 'Remove Ads, Tech Chips', icon: MONETISATION_ART.store, accent: C.purple, onTap: go('store') },
+      { id: 'vip', label: 'VIP', sub: ads?.vip ? '★ Active' : 'What it gives', icon: MONETISATION_ART.vip, accent: C.purple, onTap: go('vip') },
+      adButton('recoveryGrant'), // only while in debt
+    ].filter(Boolean);
   }
 
   // --- station menus -------------------------------------------------------------
@@ -158,7 +167,8 @@ export function createStationMenus({ campaign, router, workshop, sheet, comingSo
       case 'F05':
       case 'F01':
         menu.subtitle = job() ? `Building ${job().name}` : 'The robot-building machine';
-        menu.sections.push({ title: 'Robot', lines: projectLines(), buttons: robotButtons() });
+        // Milestone 23: Workshop Boost — an optional rewarded ad on the Assembly Bay (§32.1).
+        menu.sections.push({ title: 'Robot', lines: projectLines(), buttons: [...robotButtons().slice(0, 1), adButton('workshopBoost'), ...robotButtons().slice(1)].filter(Boolean) });
         if (blueprintSection()) menu.sections.push(blueprintSection());
         break;
       case 'F11':
@@ -305,7 +315,7 @@ export function createStationMenus({ campaign, router, workshop, sheet, comingSo
     .register('compete', () => ({ title: 'Compete', subtitle: 'Events, rankings, trophies and records', art: COMPETITION_ART.icon, sections: [{ buttons: competeButtons() }] }))
     .register('money', () => {
       const e = campaign.economy;
-      return { title: 'Money', subtitle: `${fmt(e.balance('credits'))} credits · ${e.balance('techChips')} Tech Chips${e.balance('prestigeTokens') ? ` · ${e.balance('prestigeTokens')} Prestige Tokens` : ''}`, art: 'reward_01', sections: [{ buttons: moneyButtons() }] };
+      return { title: ads?.vip ? 'Money ★ VIP' : 'Money', subtitle: `${fmt(e.balance('credits'))} credits · ${e.balance('techChips')} Tech Chips${e.balance('prestigeTokens') ? ` · ${e.balance('prestigeTokens')} Prestige Tokens` : ''}`, art: 'reward_01', sections: [{ buttons: moneyButtons() }] };
     })
     .register('floor', () => ({ title: 'Workshop floor', subtitle: 'Add stations or open more floor', art: BUILD_ART.buildIcon, sections: [{ buttons: [{ id: 'build', label: 'Build mode', sub: 'Place, move and sell', icon: BUILD_ART.buildIcon, onTap: go('build') }] }] }));
   return reg;

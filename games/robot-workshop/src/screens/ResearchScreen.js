@@ -16,7 +16,8 @@ import { ROLES } from '../../data/staff.js';
 import { WORK_STATS } from '../../data/stats.js';
 import { RESEARCH_BRANCH_ORDER, RESEARCH_BRANCH_INFO, RESEARCH_MILESTONES, RESEARCH_ART, FEATURES, SECRET_RESEARCH_BRANCH } from '../../data/research.js';
 import { describeUnlock, missingParts } from '../systems/unlockRules.js';
-import { panel, text, contained, bar, fmt } from '../ui/widgets.js';
+import { panel, text, contained, bar, fmt, iconButton } from '../ui/widgets.js';
+import { AD_TEXT } from '../../data/monetisation.js';
 const COL = THEME.color;
 
 const HEADER_H = 150;
@@ -25,6 +26,7 @@ const MAP_H = 340;
 const ROW_H = 214;
 const GAP = 14;
 const PICK_ROW = 112;
+const AD_W = 220;
 const GREEN = COL.good;
 const CYAN = COL.progress;
 const GOLD = COL.gold;
@@ -43,7 +45,7 @@ for (const id of PURPOSE_ORDER) {
   for (const r of researchParts(PURPOSES[id].unlock)) (PURPOSES_BY_NODE[`${r.branch}:${r.level}`] ||= []).push(id);
 }
 
-export function createResearchScreen({ renderer, layout, assets, bus, campaign, router, debugEnabled = false }) {
+export function createResearchScreen({ renderer, layout, assets, bus, campaign, router, debugEnabled = false, ads = null }) {
   const W = renderer.width;
   const res = campaign.research;
   let branch = null; // shown branch
@@ -63,8 +65,11 @@ export function createResearchScreen({ renderer, layout, assets, bus, campaign, 
   function queueButton(i, k) {
     const q = queueRect(i);
     const w = 170;
+    if (k === 2) return { x: q.x + q.w - 20 - 2 * w - 14 - 14 - AD_W, y: q.y + q.h - 20 - 110, w: AD_W, h: 110 }; // Watch ad (Milestone 23)
     return { x: q.x + q.w - 20 - (k + 1) * w - k * 14, y: q.y + q.h - 20 - 110, w, h: 110 };
   }
+  // Milestone 23: Research Assist — an optional rewarded ad on a running topic (§32.1).
+  const assist = (i) => ads?.placement('researchAssist', { queue: i }) ?? { show: false };
   function mapRect() {
     const s = sr();
     return { x: s.x + 24, y: s.y + HEADER_H + res.queueDefs.length * (QUEUE_H + GAP), w: s.w - 48, h: MAP_H };
@@ -315,6 +320,12 @@ export function createResearchScreen({ renderer, layout, assets, bus, campaign, 
       say('Pick a topic below and tap Research…', CYAN);
       return;
     }
+    const pl = assist(i);
+    if (pl.show && hitRect(p, queueButton(i, 2))) {
+      if (!pl.ok) say(pl.sub, GOLD);
+      else ads.watch('researchAssist', { queue: i });
+      return;
+    }
     if (hitRect(p, queueButton(i, 0))) {
       res.stop(i);
       say('Stopped — progress is kept. Resume it any time for free.', GOLD, 4);
@@ -362,8 +373,10 @@ export function createResearchScreen({ renderer, layout, assets, bus, campaign, 
       return;
     }
     const s = q.staffId ? campaign.staff.get(q.staffId) : null;
-    const bw = r.w - 48 - 2 * 170 - 30;
-    text(ctx, `${node.id} · ${node.name}`, r.x + 150, r.y + 14, { size: 30, bold: true, maxWidth: r.w - 170 });
+    const pl = assist(i);
+    const adW = pl.show ? AD_W + 14 : 0;
+    const bw = r.w - 48 - 2 * 170 - 30 - adW;
+    text(ctx, `${node.id} · ${node.name}`, r.x + 150, r.y + 14, { size: 30, bold: true, maxWidth: pl.show ? queueButton(i, 2).x - r.x - 150 - 12 : r.w - 170 });
     bar(ctx, r.x + 24, r.y + 64, bw, 22, res.fraction(node.id), CYAN);
     text(ctx, `${Math.floor(res.fraction(node.id) * 100)}%`, r.x + 24 + bw, r.y + 92, { size: 24, bold: true, align: 'right', color: CYAN });
     const days = res.daysLeft(i);
@@ -371,6 +384,7 @@ export function createResearchScreen({ renderer, layout, assets, bus, campaign, 
     text(ctx, who, r.x + 24, r.y + 102, { size: 25, color: s ? COL.textMuted : RED, maxWidth: bw - 80 });
     drawButton(ctx, queueButton(i, 0), 'Stop', { font: font(30, true), accent: COL.action });
     drawButton(ctx, queueButton(i, 1), 'Worker', { font: font(30, true) });
+    if (pl.show) iconButton(ctx, assets, queueButton(i, 2), { label: AD_TEXT.tag, sub: pl.ok ? '+15% progress' : pl.sub.startsWith('Used') ? 'Used' : 'Not now', accent: COL.purple, disabled: !pl.ok });
   }
 
   // The whole tree: one column per branch, six dots each (done / active / available / locked), joined top to bottom.
