@@ -1,6 +1,7 @@
 // Records (bible §27, Milestone 18): three tabs in the bright workshop style.
 //   Achievements — the 30 visible goals, with their reward, a bar for the count-style ones, unlocked or not
-//   Records      — account records that survive every new campaign (core/AccountRecords.js)
+//   Records      — Past campaigns (the archived Year 16 endings, core/RunArchive.js — Milestone 19), then the account
+//                  records that survive every new campaign (core/AccountRecords.js)
 //   Completion   — the normal catalogue counts; Company Completion and Discovery only after the first Year 16
 //                  ending, and Discovery never shows the secret total until the full reveal (core/Completion.js)
 // Reached from the Trophy Display / Compete menu (the Compete bottom-bar button opens it too) and from Trophies.
@@ -14,6 +15,7 @@ import { PURPOSES, PURPOSE_ORDER } from '../../data/purposes.js';
 import { COMPETITIONS } from '../../data/competitions.js';
 import { CALENDAR } from '../../data/balance.js';
 import { completionFor } from '../systems/completion.js';
+import { GRADE_BANDS } from '../../data/ending.js';
 import { panel, text, bar, wrapText, fmt } from '../ui/widgets.js';
 const C = THEME.color;
 const Z = THEME.size;
@@ -48,10 +50,16 @@ function formatValue(def, v) {
     }
     case 'ngPlus':
       return v ? `NG+${v}` : 'First run';
+    case 'grade':
+      return `${gradeOf(v)} · ${fmt(v)}`;
     default:
       return fmt(v);
   }
 }
+
+const gradeOf = (score) => GRADE_BANDS.reduce((b, g) => (score >= g.min ? g.id : b), GRADE_BANDS[0].id);
+const bandColor = (id) => C[GRADE_BANDS.find((g) => g.id === id)?.color] ?? C.gold;
+const PAST_H = 250;
 
 // Who / what holds a record ("Sparky 3 · Delivery").
 function detailOf(e) {
@@ -197,10 +205,41 @@ export function createRecordsScreen({ renderer, layout, assets, campaign, router
     return rows;
   }
 
+  // Past campaigns (Milestone 19): the last few Year 16 endings (data/ending.js archiveMax), newest first.
+  function drawPast(ctx, y, w) {
+    const list = campaign.archive.list;
+    text(ctx, 'Past campaigns', 4, y + 10, { size: Z.heading, bold: true, color: C.actionDark });
+    y += 70;
+    if (!list.length) {
+      const r = { x: 0, y, w, h: 130 };
+      panel(ctx, r, { fill: C.panelDim, radius: 24 });
+      wrapText(ctx, 'Reach the end of Year 16 to see your first campaign here, with its grade.', 24, y + 24, w - 48, { size: Z.body, lineH: 42, maxLines: 2, color: C.textMuted });
+      return y + 130 + 28;
+    }
+    for (const e of list) {
+      const r = { x: 0, y, w, h: PAST_H };
+      const here = e.runId === campaign.campaignId;
+      const col = bandColor(e.grade.band);
+      panel(ctx, r, { fill: here ? C.panelGold : C.panel, stroke: col, lineWidth: 5, radius: 28 });
+      text(ctx, e.grade.band, 110, y + 70, { size: e.grade.band.length > 2 ? Z.heading : 88, bold: true, align: 'center', baseline: 'middle', color: col });
+      text(ctx, `${fmt(e.grade.total)} / ${fmt(e.grade.max)}`, 110, y + 150, { size: Z.small, bold: true, align: 'center', color: C.textMuted });
+      const x = 220;
+      const tw = w - x - 24;
+      text(ctx, `${e.ngPlus ? `NG+${e.ngPlus}` : 'First run'} · Year ${e.endedYear} ending${here ? ' · this run' : ''}`, x, y + 22, { size: Z.button, bold: true, maxWidth: tw });
+      const rc = e.recap ?? {};
+      text(ctx, `Rank ${e.rank} · ${rc.robotsBuilt ?? 0} robots · ${(rc.trophies ?? []).length} trophies${rc.worldChampion ? ' · World Champions' : ''}`, x, y + 80, { size: Z.body, maxWidth: tw });
+      text(ctx, `Best robot: ${rc.bestRobot ? `${rc.bestRobot.name} (Quality ${(Math.round(rc.bestRobot.quality * 10) / 10).toFixed(1)})` : '—'}`, x, y + 128, { size: Z.body, maxWidth: tw });
+      text(ctx, `Money made: ${fmt(rc.moneyMade ?? 0)} cr`, x, y + 176, { size: Z.small, color: C.textMuted, maxWidth: tw });
+      y += PAST_H + 12;
+    }
+    return y + 16;
+  }
+
   function drawRecords(ctx) {
     const w = cw();
-    text(ctx, 'Your bests — kept across every run', 4, 10, { size: Z.heading, bold: true, maxWidth: w });
-    let y = 80;
+    let y = drawPast(ctx, 0, w);
+    text(ctx, 'Your bests — kept across every run', 4, y + 10, { size: Z.heading, bold: true, maxWidth: w });
+    y += 80;
     for (const { group, list } of recordRows()) {
       text(ctx, group.name, 4, y + 10, { size: Z.heading, bold: true, color: C.actionDark });
       y += 70;

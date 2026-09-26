@@ -1,16 +1,19 @@
 // Debug "why not?" inspector (?debug=1, Milestone 16): pick any secret rule and see every condition — the fact it
 // reads, its live value, the value needed (and the eased value on a repeat), true / false — plus how often the
 // engine has checked it on its trigger events. "Eased view" shows the §30.4a numbers even on a first run.
-// Also the debug New Game+ level setter and the "ending reached" switch (until Milestones 19–20 build them).
+// Also the debug New Game+ level setter, the "ending reached" switch (flag + event only, no ceremony) and — Milestone
+// 19 — the Year 16 ending test setups: C / A / LEGEND fill the run, then jump to 2 days before the end of Year 16
+// (press 1× to let the real ending fire); "Jump" only jumps.
 import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { SECRETS } from '../../data/secrets.js';
 import { ruleLines } from '../systems/secretText.js';
+import { debugEndingSetup } from '../systems/endingDebug.js';
 import { panel, text, hit } from '../ui/widgets.js';
 const COL = THEME.color;
 
-const HEAD_H = 230;
+const HEAD_H = 330;
 const LINE = 40;
 
 export function createSecretDebugScreen({ renderer, layout, campaign, router }) {
@@ -34,6 +37,13 @@ export function createSecretDebugScreen({ renderer, layout, campaign, router }) 
     const xs = [0, 110, 330, 440, 520, 640, 780];
     const ws = [96, 210, 96, 70, 96, 130, 250];
     return { x: h.x + xs[k], y: h.y + 104, w: ws[k], h: 86 };
+  };
+  // Third row: Year 16 ending setups.
+  const ENDING_BTNS = ['C', 'A', 'LEGEND', 'Jump'];
+  const endBtn = (k) => {
+    const h = headRect();
+    const w = (h.w - 3 * 12) / 4;
+    return { x: h.x + k * (w + 12), y: h.y + 204, w, h: 86 };
   };
   function bodyRect() {
     const sr = layout.safeRect;
@@ -66,6 +76,12 @@ export function createSecretDebugScreen({ renderer, layout, campaign, router }) 
       if (hit(p, rowBtn(4))) campaign.setDebugNgPlus(campaign.ngPlusRuns - 1);
       if (hit(p, rowBtn(5))) campaign.setDebugNgPlus(campaign.ngPlusRuns + 1);
       if (hit(p, rowBtn(6))) campaign.setDebugEnding(!campaign.flags.endingReached);
+      const e = ENDING_BTNS.findIndex((_, k) => hit(p, endBtn(k)));
+      if (e >= 0 && !campaign.ending.reached) {
+        if (e < 3) debugEndingSetup(campaign, ENDING_BTNS[e]);
+        else campaign.debugJumpToEnd(2);
+        router.go('workshop');
+      }
     },
     onDragStart: (p) => scroll.beginDrag(p),
     onDrag: (p) => scroll.drag(p),
@@ -85,6 +101,7 @@ export function createSecretDebugScreen({ renderer, layout, campaign, router }) 
       drawButton(ctx, rowBtn(4), `− ${campaign.ngPlusRuns}`, { font: f });
       drawButton(ctx, rowBtn(5), '+', { font: f });
       drawButton(ctx, rowBtn(6), campaign.flags.endingReached ? 'Ending ✓' : 'Ending: no', { active: !!campaign.flags.endingReached, font: f });
+      ENDING_BTNS.forEach((l, k) => drawButton(ctx, endBtn(k), k < 3 ? `End: ${l}` : 'Jump Y16', { accent: COL.gold, font: f, disabled: campaign.ending.reached }));
       const { rule, res, lines } = inspect();
       const S = campaign.secrets;
       const w = bodyRect().w - 12;

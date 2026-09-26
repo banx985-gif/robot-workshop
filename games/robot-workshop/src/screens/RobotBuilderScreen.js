@@ -143,7 +143,7 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
   }
 
   function canStart() {
-    return state.teamIds.length > 0 && campaign.canStartProject().ok && (!state.contractId || !!contract());
+    return state.teamIds.length > 0 && campaign.canStartProject(state.components).ok && (!state.contractId || !!contract());
   }
 
   function start() {
@@ -360,7 +360,7 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
 
       // Footer
       const can = canStart();
-      const bay = campaign.canStartProject();
+      const bay = campaign.canStartProject(state.components);
       if (!bay.ok) text(ctx, bay.reason, sr.x + sr.w / 2, startRect().y - 42, { size: 30, bold: true, color: COL.gold, align: 'center', baseline: 'middle', maxWidth: sr.w - 48 });
       drawButton(ctx, startRect(), state.contractId ? 'Start contract build' : 'Start project', { active: can, disabled: !can, accent: COL.good, font: font(44, true) });
     },

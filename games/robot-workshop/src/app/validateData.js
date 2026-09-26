@@ -1,6 +1,8 @@
 // Robot Workshop's content rules for the shared DataValidator (bible §41.5).
 // Runs at start in debug builds (?debug=1). Returns the validator's report; never throws.
 import { DataValidator } from '../../../../core/DataValidator.js';
+import { checkGrade } from '../../../../core/GradeEngine.js';
+import { GRADE_CATEGORIES, GRADE_BANDS, ENDING_RULES, INVITATION, ENDING_ART } from '../../data/ending.js';
 import { PURPOSES, PURPOSE_ORDER } from '../../data/purposes.js';
 import { COMPONENTS, SLOTS, STARTER_PARTS } from '../../data/components.js';
 import { VISUAL_FAMILIES, VISUALS } from '../../data/visuals.js';
@@ -13,7 +15,7 @@ import { TRAITS, NORMAL_TRAITS, LATER_WORDS } from '../../data/traits.js';
 import { SIGNATURE_HOOKS } from '../systems/signatureHooks.js';
 import { RANKS } from '../../data/economy.js';
 import { UNLOCK_TYPES, RESEARCH_BRANCHES, RESEARCH_MAX_LEVEL, FACILITY_NAMES, COUNTERS, COMPETITION_EVENTS, FLAG_NAMES } from '../../data/unlocks.js';
-import { FACILITIES, FACILITY_ORDER, STATIONS, FALLBACK_STATIONS, EXPANSIONS, WORKSHOP_START, PROJECT_BAYS, BUILD_ART } from '../../data/facilities.js';
+import { FACILITIES, FACILITY_ORDER, STATIONS, FALLBACK_STATIONS, EXPANSIONS, WORKSHOP_START, PROJECT_BAYS, BUILD_ART, HEAVY_BAY } from '../../data/facilities.js';
 import { EMPLOYEE_CAP } from '../../data/staff.js';
 import { FacilitySystem } from '../../../../core/FacilitySystem.js';
 import { SEGMENTS, PURPOSE_SEGMENTS, MARKET_RULES } from '../../data/segments.js';
@@ -63,6 +65,9 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
         break;
       case 'flag':
         v.check(rule.flag in FLAG_NAMES, `${owner}: unknown flag "${rule.flag}"`);
+        break;
+      case 'partOpen':
+        v.check(rule.id in COMPONENTS, `${owner}: unknown part "${rule.id}"`);
         break;
       case 'role':
         v.ref(owner, 'role', rule.role, new Set(Object.keys(ROLES)));
@@ -317,11 +322,11 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   }
 
   // --- facilities (§18.2: F01–F15 in Milestone 8, F33 in Milestone 9), expansions (§18.1), bays (§18.3), staff caps (§39.1) ---
-  const EFFECT_KEYS = /^(progressPct\.(concept|engineering|software|assembly|testing)|stationStatPct\.(eng|des|prg|fab|tst)|gainPct\.[A-Z]{3}|robotStat\.[A-Z]{3}|commercialStat\.[A-Z]{3}|materialCostPct|contractPayoutPct|restEnergyPct|restMorale|displaySlots|projectBays|researchQueues|researchPerDay|researchSpeedPct|runningCostPerDay|salesUnitsPct|secretLab|prestigeDisplay)$/;
+  const EFFECT_KEYS = /^(progressPct\.(concept|engineering|software|assembly|testing)|stationStatPct\.(eng|des|prg|fab|tst)|gainPct\.[A-Z]{3}|robotStat\.[A-Z]{3}|commercialStat\.[A-Z]{3}|materialCostPct|contractPayoutPct|restEnergyPct|restMorale|displaySlots|projectBays|researchQueues|researchPerDay|researchSpeedPct|runningCostPerDay|salesUnitsPct|secretLab|prestigeDisplay|faultPts\.(concept|engineering|software|assembly|testing)|tierCx\.(chassis|mobility|ai|tool|power|special)|tagStat\.[a-z]+\.[A-Z]{3}|heavyBay|progressPct\.mixedTeam|competitionPrep|sponsorBenefitPct|moraleFloor|trainingSlots|pilotTrainingSlots|trainingDaysPct|pilotTrainingDaysPct|simulatorTst)$/;
   v.keysMatchIds('facilities', FACILITIES);
   const facIds = v.uniqueIds('facilities', Object.values(FACILITIES));
-  const EXPECTED_FACILITIES = [...Array.from({ length: 15 }, (_, i) => `F${String(i + 1).padStart(2, '0')}`), 'F33', 'F34', 'F35'];
-  v.check(FACILITY_ORDER.join() === EXPECTED_FACILITIES.join(), 'facilities: expected F01–F15, F33 and the secret F34–F35 in order');
+  const EXPECTED_FACILITIES = Array.from({ length: 35 }, (_, i) => `F${String(i + 1).padStart(2, '0')}`);
+  v.check(FACILITY_ORDER.join() === EXPECTED_FACILITIES.join(), 'facilities: expected all 35 (F01–F35, §18.2) in order');
   v.uniqueIds('facility art', Object.values(FACILITIES), (f) => f.art);
   for (const f of Object.values(FACILITIES)) {
     const o = `facility ${f.id}`;
@@ -332,6 +337,7 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
     for (const e of f.effects ?? []) {
       v.check(EFFECT_KEYS.test(e.key), `${o}: unknown effect key "${e.key}"`);
       if (/^(gainPct|robotStat|commercialStat)\./.test(e.key)) v.check(statSet.has(e.key.split('.')[1]), `${o}: unknown robot stat in "${e.key}"`);
+      if (/^tagStat\./.test(e.key)) v.check(statSet.has(e.key.split('.')[2]), `${o}: unknown robot stat in "${e.key}"`);
       v.check(Number.isFinite(e.value) && e.value !== 0, `${o}: effect ${e.key} needs a value`);
       if (e.cap !== undefined) v.check(Math.sign(e.cap) === Math.sign(e.value), `${o}: cap and value of ${e.key} have different signs`);
     }
@@ -340,7 +346,7 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
     if (f.floor) v.art(`${o} floor`, `assets/images/env/${f.floor}.png`);
   }
   for (const [phase, ids] of Object.entries(STATIONS)) {
-    v.ref('stations', 'phase', phase, new Set([...PHASES.map((p) => p.id), 'research']));
+    v.ref('stations', 'phase', phase, new Set([...PHASES.map((p) => p.id), 'research', 'training']));
     for (const id of ids) v.ref(`stations (${phase})`, 'facility', id, facIds);
   }
   for (const id of FALLBACK_STATIONS) v.ref('fallback stations', 'facility', id, facIds);
@@ -354,6 +360,8 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
     v.check(z.w % 2 === 0 && z.h % 2 === 0 && z.col % 2 === 0 && z.row % 2 === 0, `${o}: floor tiles cover 2×2 cells — keep zones on even cells`);
   }
   v.check(EXPANSIONS[0].buyable && EXPANSIONS[0].unlock.rank === 'D', 'expansions: Expansion 1 must be buyable at Rank D');
+  v.check(EXPANSIONS.every((z) => z.buyable), 'expansions: all four and the basement are for sale since Milestone 19');
+  for (const id of HEAVY_BAY.parts) v.check(id in COMPONENTS, `heavy bay: unknown part ${id}`);
   v.check(WORKSHOP_START.cols === 8 && WORKSHOP_START.rows === 10, 'workshop: starting grid must be 8 × 10 (§18.1)');
   // The starting layout must pass the same placement rules as the player's.
   const trial = new FacilitySystem({ defs: FACILITIES, area: WORKSHOP_START, zones: EXPANSIONS, entrance: WORKSHOP_START.entrance });
@@ -662,6 +670,14 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   for (const k of Object.values(ACHIEVEMENT_ART)) v.check(typeof k === 'string', 'achievement art: bad key');
   v.uniqueIds('records', RECORDS);
   for (const r of RECORDS) v.check(['max', 'min'].includes(r.better) && RECORD_GROUPS.some((g) => g.id === r.group) && !!r.label && !!r.icon, `record ${r.id}: needs better, a group, a label and an icon`);
+
+  // --- the Year 16 ending (Milestone 19, §45): 8 categories, 1,000 points, six bands ---
+  for (const e of checkGrade({ categories: GRADE_CATEGORIES, bands: GRADE_BANDS, total: ENDING_RULES.gradeTotal })) v.check(false, e);
+  v.check(GRADE_CATEGORIES.length === 8, `grade: expected 8 categories (§45), found ${GRADE_CATEGORIES.length}`);
+  v.check(GRADE_BANDS.map((b) => `${b.id}:${b.min}`).join() === 'C:0,B:400,A:550,S:700,S+:850,LEGEND:950', 'grade: bands must be C / B 400 / A 550 / S 700 / S+ 850 / LEGEND 950 (§45)');
+  v.check(ENDING_RULES.endYear === CALENDAR.campaignYears && ENDING_RULES.archiveMax === 3, 'ending: Year 16 and 3 archived summaries (§4.1, §37.2)');
+  v.check(SECRETS.some((s) => s.id === INVITATION.secretId), `ending: the invitation's secret ${INVITATION.secretId} is unknown`);
+  for (const k of [ENDING_ART.keyArt, ENDING_ART.logo, ENDING_ART.seriesMark]) v.art(`ending art ${k}`, `assets/images/brand/${k}.png`);
 
   // --- every image the game loads ---
   for (const [key, path] of Object.entries(manifest)) v.art(`image "${key}"`, path, { placeholder: placeholders.includes(key) });

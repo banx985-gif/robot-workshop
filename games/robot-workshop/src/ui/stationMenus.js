@@ -167,8 +167,37 @@ export function createStationMenus({ campaign, router, workshop, sheet }) {
       case 'F07':
         menu.sections.push({ title: 'Parts', buttons: robotButtons().filter((b) => b.id !== 'combos') });
         break;
+      // Milestone 19: the advanced facilities (F16–F18 and F25 also get their stage section below).
+      case 'F19':
+      case 'F20':
+        menu.sections.push({ title: 'Robot', lines: [...projectLines(), { text: `Project bays: ${campaign.projectBays}`, color: C.textMuted }], buttons: robotButtons() });
+        break;
+      case 'F21':
+      case 'F22':
+      case 'F23':
+      case 'F24':
+      case 'F26':
+        menu.sections.push({ title: 'Lab', lines: [{ text: 'Its bonus goes onto every robot you build from now on.', color: C.textMuted }], buttons: robotButtons().filter((b) => b.id !== 'combos') });
+        break;
+      case 'F25':
+        menu.sections.push({ title: 'Competitions', buttons: competeButtons() });
+        break;
+      case 'F27':
+      case 'F28':
+      case 'F30':
+        menu.sections.push({ title: 'Team', buttons: [staffButtons()[2], staffButtons()[0], staffButtons()[1]] });
+        break;
+      case 'F29':
+        menu.sections.push({ title: 'Rest', lines: [{ text: resting.length ? `Resting here: ${resting.join(', ')}` : 'Nobody is resting here right now.', color: C.textMuted }], buttons: [staffButtons()[0], staffButtons()[2]] });
+        break;
+      case 'F31':
+        menu.sections.push({ title: 'Products', buttons: [moneyButtons().find((b) => b.id === 'products'), { id: 'launch', label: 'Launch a robot', icon: 'ui_icon_06_robot', accent: C.good, onTap: go('products') }] });
+        break;
+      case 'F32':
+        menu.sections.push({ title: 'Sponsors', lines: [{ text: campaign.sponsors.activeDef ? `Sponsor: ${campaign.sponsors.activeDef.name}` : 'No sponsor right now.', color: C.textMuted }], buttons: [moneyButtons().find((b) => b.id === 'finance')] });
+        break;
     }
-    if (phase && !['assembly', 'research'].includes(phase)) {
+    if (phase && !['assembly', 'research', 'training'].includes(phase)) {
       const j = job();
       const now = j && PHASES[j.phaseIndex].id === phase;
       menu.sections.unshift({

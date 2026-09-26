@@ -36,7 +36,7 @@ const ROWS = [
   ['mechanical', 2, 'Heavy Frames', 140, [part('CH03')]],
   ['mechanical', 3, 'Aero Frames', 220, [part('CH04')]],
   ['mechanical', 4, 'Rugged Frames', 320, [part('CH05'), facility('F21')]],
-  ['mechanical', 5, 'Precision Frames', 480, [part('CH06')], { type: 'facility', id: 'F21' }],
+  ['mechanical', 5, 'Precision Frames', 480, [part('CH06'), facility('F19')], { type: 'facility', id: 'F21' }], // F19: §18.2 "Mechanical Research 5" (M19)
   ['mechanical', 6, 'Modular Frames', 700, [part('CH07'), feature('titaniumOption')], { type: 'rank', rank: 'B' }],
   // §19.2 Mobility
   ['mobility', 1, 'Performance Wheels', 80, [part('MO02')]],

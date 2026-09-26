@@ -12,6 +12,7 @@
 //   planActivity(staff) → 'working' | 'resting' | other   optional: decides each worker's day (other: no Energy change)
 //   energyLossMultiplier(staff) → number                   optional: extra multiplier on working Energy loss
 //   restModifier(staff) → { energyMult, morale }           optional: resting bonuses (e.g. a break room)
+//   moraleFloorBonus(staff) → number                       optional: raises everyone's Morale floor (e.g. a staff lounge)
 //   signatureHooks: { hookName: { point, apply(ctx, params, staff) } }   optional: what each signature trait does
 //
 // Signature traits (the one-of-a-kind rule a legendary/secret worker brings, e.g. "software faults can't
@@ -43,7 +44,7 @@ export const DEFAULT_RULES = {
 // (sets of numbers such as { REL: 10 }).
 
 export class StaffSystem {
-  constructor({ rng, bus = null, statKeys, roles = {}, tiers = {}, traits = {}, rules = {}, planActivity = null, energyLossMultiplier = null, restModifier = null, signatureHooks = {} }) {
+  constructor({ rng, bus = null, statKeys, roles = {}, tiers = {}, traits = {}, rules = {}, planActivity = null, energyLossMultiplier = null, restModifier = null, moraleFloorBonus = null, signatureHooks = {} }) {
     this.rng = rng;
     this.bus = bus;
     this.statKeys = statKeys;
@@ -54,6 +55,7 @@ export class StaffSystem {
     this.planActivity = planActivity;
     this.energyLossMultiplier = energyLossMultiplier;
     this.restModifier = restModifier;
+    this.moraleFloorBonus = moraleFloorBonus;
     this.signatureHooks = signatureHooks;
     this.staff = [];
   }
@@ -253,7 +255,7 @@ export class StaffSystem {
   }
 
   _applyMoraleFloor(s) {
-    const floor = this.traitEffect(s, 'moraleFloor');
+    const floor = this.traitEffect(s, 'moraleFloor') + (this.moraleFloorBonus?.(s) ?? 0);
     if (s.morale < floor) s.morale = floor;
   }
 

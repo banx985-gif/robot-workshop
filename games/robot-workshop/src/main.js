@@ -57,6 +57,9 @@ import { drawToasts } from '../../../core/ui/Toast.js';
 import { FloatFeed } from '../../../core/FloatFeed.js';
 import { createRecordsScreen } from './screens/RecordsScreen.js';
 import { createAchievementMoment } from './ui/achievementMoment.js';
+import { createCeremonyScreen } from './screens/CeremonyScreen.js';
+import { createCreditsScreen } from './screens/CreditsScreen.js';
+import { ENDING_ART, INVITATION } from '../data/ending.js';
 import { ACHIEVEMENT_ART, rewardLabel } from '../data/achievements.js';
 import { wireMessages, effectsText, fillText } from './app/Messages.js';
 import { EVENTS_BY_ID, EVENT_ICONS, MILESTONE_EVENTS } from '../data/events.js';
@@ -157,6 +160,10 @@ const ASSETS = {
   // Achievements and records (Milestone 18): records icon, trophies icon, reward badge, rank-up burst, reputation stars.
   ...Object.fromEntries([art('ui', ACHIEVEMENT_ART.records), art('ui', ACHIEVEMENT_ART.icon), art('rewards', ACHIEVEMENT_ART.badge), art('vfx', ACHIEVEMENT_ART.burst), art('vfx', ACHIEVEMENT_ART.stars)]),
   ...Object.fromEntries(['ui_icon_04_research', 'ui_icon_08_competition', 'ui_icon_10_secret', 'ui_icon_12'].map((k) => art('ui', k))),
+  // The Year 16 ending (Milestone 19): key art, logo and series end-card; the World Championship / national
+  // moments, trophies, burst and stars are loaded above.
+  ...Object.fromEntries([ENDING_ART.keyArt, ENDING_ART.logo, ENDING_ART.seriesMark].map((k) => art('brand', k))),
+  ...Object.fromEntries([art('events', ENDING_ART.worldMoment), art('events', ENDING_ART.nationalMoment), art('vfx', ENDING_ART.burst), art('vfx', ENDING_ART.stars)]),
   // Deliberately missing file: proves the placeholder fallback.
   placeholderTest: 'assets/m0-missing-test.png',
 };
@@ -290,7 +297,7 @@ const bootScreen = {
     assets
       .loadImages(ASSETS, (done, total) => (this.progress = done / total))
       .then(startCampaign)
-      .then(() => router.go(campaign.closed && START_SCREEN !== 'test' ? 'closed' : START_SCREEN))
+      .then(() => router.go(START_SCREEN === 'test' ? 'test' : campaign.closed ? 'closed' : campaign.ending.pending ? 'ceremony' : START_SCREEN)) // an unfinished ending ceremony picks up again
       .catch((err) => {
         console.error('[boot] failed', err);
         debug.log(`boot failed: ${err.message}`);
@@ -549,7 +556,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key !== 'p' && e.key !== 'P' && e.key !== ' ') return;
   if (modal.active) return;
   if (router.currentName === 'test') loop.togglePause();
-  else if (campaignReady && !campaign.closed) campaign.clock.togglePause();
+  else if (campaignReady && !campaign.closed && !['ceremony', 'credits'].includes(router.currentName)) campaign.clock.togglePause();
 });
 
 // Test hook for automated checks (debug builds only).
@@ -614,7 +621,7 @@ const guide = new GuideSystem({
   targetRect: guideTarget,
   screen: () => router.currentName,
   // A pop-up waiting on the workshop goes first; the guide steps back until it has been read.
-  canShow: () => campaignReady && !modal.active && !(campaign.notes.pending && presentPlace()) && !campaign.closed && !buildScreen?.confirm && !['boot', 'test', 'debugbuilder', 'help', 'components', 'staffdebug', 'secretdebug'].includes(router.currentName),
+  canShow: () => campaignReady && !modal.active && !(campaign.notes.pending && presentPlace()) && !campaign.closed && !buildScreen?.confirm && !['boot', 'test', 'debugbuilder', 'help', 'components', 'staffdebug', 'secretdebug', 'ceremony', 'credits'].includes(router.currentName),
   pause: () => {
     if (campaign.clock.paused) return false;
     campaign.clock.pause();
@@ -691,6 +698,21 @@ function flushAchievements() {
   }
   campaign.save().catch(() => {});
 }
+// The Year 16 ending (Milestone 19): the real ending event opens the Global Robotics Awards straight away, over
+// whatever screen is showing (the calendar is already paused). The M18 debug switch sends the same event without
+// reaching the ending, so it still opens no ceremony.
+const ceremonyScreen = createCeremonyScreen({ renderer, layout, assets, campaign, router, vfx, audio });
+const creditsScreen = createCreditsScreen({ renderer, layout, assets, campaign, router });
+bus.on('campaign:ending', () => {
+  if (!campaignReady || !campaign.ending.reached) return;
+  const s = campaign.endingSummary;
+  debug.log(`ENDING: grade ${s?.grade.band} ${s?.grade.total}/${s?.grade.max}`);
+  sheet.close();
+  router.go('ceremony');
+});
+bus.on('ending:invitation', ({ readable }) => {
+  campaign.notes.post({ kind: 'invitation', level: 'medium', day: campaign.clock.totalDays, icon: ENDING_ART.invitation, title: INVITATION.title, body: readable ? INVITATION.readNote : INVITATION.toastNote });
+});
 const inboxScreen = createInboxScreen({ renderer, layout, assets, campaign, router, goProject, hud, openEntry });
 bus.on('event:fired', ({ instance, def }) => debug.log(`event ${def.id} (${def.kind}) day ${instance.day}`));
 bus.on('sponsor:signed', ({ def }) => debug.log(`sponsor signed: ${def.name}`));
@@ -1006,6 +1028,7 @@ if (debug.enabled) {
   window.__m16 = { ...window.__m15, rumours: rumourScreen, secretDebug: secretDebugScreen, secrets: campaign.secrets, research: researchScreen, build: buildScreen, recruit: recruitScreen };
   window.__m17b = { ...window.__m16, sheet, menus: menuHolder, bottomBar: workshopScreen.bottomBar, debug, guideTarget };
   window.__m18 = { ...window.__m17b, records: recordsScreen, achievements: campaign.achievements, accountRecords: campaign.records, floats, achMoment };
+  window.__m19 = { ...window.__m18, ceremony: ceremonyScreen, credits: creditsScreen, ending: campaign.ending, archive: campaign.archive, rumours: rumourScreen };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
   bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));
@@ -1041,6 +1064,8 @@ router
   .register('inbox', inboxScreen)
   .register('rumours', rumourScreen)
   .register('records', recordsScreen)
+  .register('ceremony', ceremonyScreen)
+  .register('credits', creditsScreen)
   .register('debugbuilder', debugBuilderScreen);
 if (debug.enabled) router.register('staffdebug', staffDebugScreen).register('secretdebug', secretDebugScreen); // ?debug=1 only // ?debug=1 only: spawn any of the 50
 router.go('boot');

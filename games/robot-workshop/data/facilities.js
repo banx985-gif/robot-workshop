@@ -1,5 +1,5 @@
-// Workshop facilities F01–F15 plus the Server Rack F33 (bible §18.2), expansions (§18.1) and project bays (§18.3).
-// Plain data only. The other facilities (F16–F32, F34–F35) arrive in later milestones.
+// Workshop facilities F01–F35 (bible §18.2), expansions (§18.1) and project bays (§18.3). Plain data only.
+// F01–F15 Milestone 8, F33 Milestone 9, the secret F34–F35 Milestone 17, F16–F32 Milestone 19.
 //
 // w × h: footprint in grid cells (rotating swaps them and mirrors the picture).
 // effects: summed over every owned copy by core/FacilitySystem.js, and read by the game systems:
@@ -15,7 +15,16 @@
 //   displaySlots          finished robots on show (each earns reputation, see DISPLAY_RULES)
 //   projectBays           physical project bays (see PROJECT_BAYS)
 //   researchQueues        research queues this facility can open (the rules are RESEARCH_QUEUES in data/research.js)
-//   runningCostPerDay     added to each project's daily running cost (§20.5; advanced facilities, later)
+//   runningCostPerDay     added to each project's daily running cost (§20.5)
+//   faultPts.<phase>      percentage points on the daily fault chance in that stage (F18)
+//   tierCx.<slot>         complexity added to that slot's part when the project tier is worked out (F22)
+//   tagStat.<tag>.<STAT>  flat stat on robots with a part carrying that tag (F26: hover / rocket / aero)
+//   heavyBay              lets CH08–CH10 robots be built (F20, HEAVY_BAY)
+//   progressPct.mixedTeam +% stage progress when the team has MEETING_ROOM.minRoles roles (F30)
+//   competitionPrep       added to every competition score (F25)
+//   salesUnitsPct         +% units sold (F31)       sponsorBenefitPct  +% on the active sponsor's benefits (F32)
+//   moraleFloor           nobody's Morale drops below this (F29)
+//   trainingSlots / pilotTrainingSlots / trainingDaysPct / pilotTrainingDaysPct / simulatorTst  training (F27, F28)
 // maxCount: how many copies count towards the bonus (a second desk gives another work spot, not a second bonus).
 // cap: limit on that facility's total (Parts Racks: -3% each, three stack to -7%).
 // unlock: see data/unlocks.js. art: picture in assets/images/facilities/ (feet: where its legs end, 0–1 down the image).
@@ -204,6 +213,40 @@ export const FACILITIES = {
   },
 };
 
+// F16–F32 (Milestone 19, from the fixes queue — bible §18.2): the advanced facilities. Numbers are the bible's;
+// "M19 reading" marks how a line of §18.2 became an effect key.
+const advanced = (id, name, cost, w, h, effects, blurb, unlock, art, extra = {}) => ({ id, name, cost, w, h, effects, blurb, unlock, art, ...extra });
+const research = (branch, level) => ({ type: 'research', branch, level });
+const rank = (r) => ({ type: 'rank', rank: r });
+Object.assign(FACILITIES, {
+  F16: advanced('F16', 'Advanced Engineering', 4000, 2, 2, [{ key: 'progressPct.engineering', value: 15, maxCount: 1 }, { key: 'robotStat.PWR', value: 4, maxCount: 1 }, { key: 'robotStat.END', value: 4, maxCount: 1 }], '+15% Engineering, +4 PWR and END.', rank('C'), 'facility_16_advanced_engineering'),
+  F17: advanced('F17', 'Advanced CAD', 4000, 2, 2, [{ key: 'progressPct.concept', value: 15, maxCount: 1 }, { key: 'robotStat.APL', value: 4, maxCount: 1 }], '+15% Concept stage, +4 APL.', rank('C'), 'facility_17_advanced_cad'),
+  // M19 reading of "-1% software fault chance": one point off the 2.5% daily fault chance in the Software stage.
+  F18: advanced('F18', 'AI Lab', 5000, 3, 2, [{ key: 'progressPct.software', value: 15, maxCount: 1 }, { key: 'faultPts.software', value: -1, maxCount: 1 }], '+15% Software, fewer software faults.', research('ai', 4), 'facility_18_ai_lab'),
+  // With Rank C, F19 or F20 opens the second project bay (PROJECT_BAYS below).
+  F19: advanced('F19', 'Precision Assembly', 5500, 3, 2, [{ key: 'progressPct.assembly', value: 15, maxCount: 1 }, { key: 'robotStat.REL', value: 5, maxCount: 1 }], '+15% Assembly, +5 REL; a second bay.', research('mechanical', 5), 'facility_19_precision_assembly'),
+  F20: advanced('F20', 'Heavy Assembly Bay', 6500, 4, 3, [{ key: 'heavyBay', value: 1, maxCount: 1 }], 'Builds CH08–CH10 robots; a second bay.', { type: 'all', of: [rank('B'), { type: 'partOpen', id: 'CH08' }] }, 'facility_20_heavy_assembly'),
+  F21: advanced('F21', 'Materials Lab', 5500, 3, 2, [{ key: 'robotStat.END', value: 6, maxCount: 1 }, { key: 'robotStat.REL', value: 6, maxCount: 1 }], '+6 END and REL. Needed for CH06.', research('mechanical', 4), 'facility_21_materials_lab'),
+  // M19 reading of "-1 complexity for PO components for tier calc": the power part counts 1 less when the project tier is worked out.
+  F22: advanced('F22', 'Power Lab', 5500, 3, 2, [{ key: 'robotStat.PWR', value: 6, maxCount: 1 }, { key: 'robotStat.END', value: 6, maxCount: 1 }, { key: 'tierCx.power', value: -1, maxCount: 1 }], '+6 PWR and END; power parts count −1.', research('power', 4), 'facility_22_power_lab'),
+  F23: advanced('F23', 'Sensor Lab', 5000, 3, 2, [{ key: 'robotStat.INT', value: 6, maxCount: 1 }, { key: 'robotStat.CTL', value: 6, maxCount: 1 }], '+6 INT and CTL on every robot.', research('ai', 3), 'facility_23_sensor_lab'),
+  F24: advanced('F24', 'Drive Test Bench', 5000, 3, 2, [{ key: 'robotStat.SPD', value: 6, maxCount: 1 }, { key: 'robotStat.CTL', value: 6, maxCount: 1 }], '+6 SPD and CTL on every robot.', research('mobility', 4), 'facility_24_drive_test_bench'),
+  // M19 reading of "+12 Testing phase score for competition prototypes": +12 to the preparation part of every competition score.
+  F25: advanced('F25', 'Dyno Test Rig', 6500, 3, 2, [{ key: 'competitionPrep', value: 12, maxCount: 1 }], '+12 on every competition score.', rank('B'), 'facility_25_dyno_test_rig'),
+  // Aero / Hover / Rocket builds: a robot whose parts carry one of those tags (MO07 Hover Drive, MO08 Rocket/Skate Drive).
+  F26: advanced('F26', 'Wind Tunnel', 8000, 4, 2, ['hover', 'rocket', 'aero'].flatMap((t) => [{ key: `tagStat.${t}.SPD`, value: 10, maxCount: 1 }, { key: `tagStat.${t}.CTL`, value: 6, maxCount: 1 }]), 'Aero, hover, rocket builds: +10 SPD, +6 CTL.', research('mobility', 5), 'facility_26_wind_tunnel'),
+  // M19 reading of "+3 TST from first use/worker/year": a pilot finishing a course here gains +3 TST, once a year each.
+  F27: advanced('F27', 'Pilot Simulator', 5500, 2, 2, [{ key: 'pilotTrainingDaysPct', value: -25, maxCount: 1 }, { key: 'pilotTrainingSlots', value: 1, maxCount: 1 }, { key: 'simulatorTst', value: 3, maxCount: 1 }], 'Pilot slot, pilot courses −25%, +3 TST.', rank('C'), 'facility_27_simulator'),
+  F28: advanced('F28', 'Training Station', 4500, 2, 2, [{ key: 'trainingDaysPct', value: -20, maxCount: 1 }, { key: 'trainingSlots', value: 1, maxCount: 1 }], 'A second training slot, courses −20%.', rank('C'), 'facility_28_training_station'),
+  F29: advanced('F29', 'Staff Lounge', 4000, 3, 2, [{ key: 'restEnergyPct', value: 60, maxCount: 1 }, { key: 'moraleFloor', value: 5, maxCount: 1 }], 'Rest 60% faster; Morale never below 5.', rank('C'), 'facility_29_staff_lounge', { rest: 4 }),
+  F30: advanced('F30', 'Meeting Room', 4500, 3, 2, [{ key: 'progressPct.mixedTeam', value: 5, maxCount: 1 }], '+5% progress with 3+ roles on a team.', rank('B'), 'facility_30_meeting_room'),
+  F31: advanced('F31', 'Showroom', 7000, 4, 2, [{ key: 'salesUnitsPct', value: 8, maxCount: 1 }], 'Robots on sale sell 8% more.', rank('B'), 'facility_31_showroom'),
+  F32: advanced('F32', 'Sponsor Wall', 3500, 2, 1, [{ key: 'sponsorBenefitPct', value: 10, maxCount: 1 }], 'Sponsor benefits +10%.', { type: 'flag', flag: 'firstSponsor' }, 'facility_32_sponsor_wall'),
+});
+// F20: the chassis that need the Heavy Assembly Bay (§18.2). F30: how many roles make a "mixed" team.
+export const HEAVY_BAY = { effect: 'heavyBay', parts: ['CH08', 'CH09', 'CH10'] };
+export const MEETING_ROOM = { effect: 'progressPct.mixedTeam', minRoles: 3 };
+
 // F33 (Milestone 9): the second research queue. Built at Rank A; the queue itself needs Rank A too.
 FACILITIES.F33 = {
   id: 'F33',
@@ -252,17 +295,20 @@ export const FACILITY_ORDER = Object.keys(FACILITIES);
 
 // Where staff work in each stage (§8.2): the stage's own station if the workshop has one, else a workbench,
 // else the Assembly Bay.
+// Milestone 19: the advanced desks join their stage (both are used, whoever is free first); trainees go to the
+// Training Station or the Pilot Simulator when there is one.
 export const STATIONS = {
-  concept: ['F03'],
-  engineering: ['F02'],
-  software: ['F04'],
+  concept: ['F03', 'F17'],
+  engineering: ['F02', 'F16'],
+  software: ['F04', 'F18'],
   assembly: ['F05'],
-  testing: ['F08'],
+  testing: ['F08', 'F25'],
   research: ['F11'], // a worker on a research queue sits at the Research Desk
+  training: ['F28', 'F27'],
 };
 export const FALLBACK_STATIONS = ['F01', 'F05'];
 
-// §18.3 project bays: one bay (the Assembly Bay) to start; a second at Rank C with F19 or F20 (later milestones).
+// §18.3 project bays: one bay (the Assembly Bay) to start; a second at Rank C with F19 or F20.
 export const PROJECT_BAYS = {
   effect: 'projectBays',
   second: { rank: 'C', needsAny: ['F19', 'F20'] },
@@ -273,12 +319,12 @@ export const PROJECT_BAYS = {
 export const DISPLAY_RULES = { repPerDay: 1, capPerModel: 50 };
 
 // §18.1 expansions, as rectangles on the grid (the starting room is cols 0–7, rows 0–9).
-// Each opens next to the last. buyable: false = shown but not for sale yet in this build.
+// Each opens next to the last. buyable: false = shown but not for sale yet (all four are for sale since Milestone 19).
 export const EXPANSIONS = [
   { id: 'X1', name: 'Expansion 1', note: '+4 columns', col: 8, row: 0, w: 4, h: 10, cost: 8000, unlock: { type: 'rank', rank: 'D' }, requires: [], buyable: true },
-  { id: 'X2', name: 'Expansion 2', note: '+4 rows', col: 0, row: 10, w: 12, h: 4, cost: 18000, unlock: { type: 'rank', rank: 'C' }, requires: ['X1'], buyable: false },
-  { id: 'X3', name: 'Expansion 3', note: '+6 columns', col: 12, row: 0, w: 6, h: 14, cost: 35000, unlock: { type: 'rank', rank: 'B' }, requires: ['X2'], buyable: false },
-  { id: 'X4', name: 'Expansion 4', note: '+6 rows', col: 0, row: 14, w: 18, h: 6, cost: 60000, unlock: { type: 'rank', rank: 'A' }, requires: ['X3'], buyable: false },
+  { id: 'X2', name: 'Expansion 2', note: '+4 rows', col: 0, row: 10, w: 12, h: 4, cost: 18000, unlock: { type: 'rank', rank: 'C' }, requires: ['X1'], buyable: true },
+  { id: 'X3', name: 'Expansion 3', note: '+6 columns', col: 12, row: 0, w: 6, h: 14, cost: 35000, unlock: { type: 'rank', rank: 'B' }, requires: ['X2'], buyable: true },
+  { id: 'X4', name: 'Expansion 4', note: '+6 rows', col: 0, row: 14, w: 18, h: 6, cost: 60000, unlock: { type: 'rank', rank: 'A' }, requires: ['X3'], buyable: true },
   // §18.1 prestige basement: a separate 8×8 room (its own stairs), hidden until SEC-FAC-01 opens it; 25,000 credits
   // uncovers it and the Secret Lab (F34) comes built inside (§29.4).
   { id: 'XB', name: 'Secret basement', note: 'a hidden 8×8 room with the Secret Lab', col: 22, row: 0, w: 8, h: 8, cost: 25000, unlock: { type: 'secret', id: 'SEC-FAC-01' }, requires: [], buyable: true, secret: true, entrance: { col: 22, row: 7 }, comesWith: { def: 'F34', col: 24, row: 2 } },
@@ -317,8 +363,8 @@ export const BUILD_ART = {
 // Drawing: a footprint's picture is (w + h) × half-cell width × this wide (the M1 bench: 2×1 → 200 px).
 export const FACILITY_DRAW = { widthPerCell: 1.19, feet: 0.97 };
 
-// Milestone 17b station menus: what a station could become (bible §18.2), shown in its Upgrade section. F33–F35 are
-// real facilities; the others (F16–F32) are listed with their §18.2 price and rule but arrive in a later update.
+// Milestone 17b station menus: what a station could become (bible §18.2), shown in its Upgrade section (all real
+// facilities since Milestone 19: the menu reads their live price and unlock rule).
 export const STATION_UPGRADES = {
   F01: [{ id: 'F16', name: 'Advanced Engineering', cost: 4000, needs: 'Company Rank C', note: '+15% Engineering, +4 PWR/END' }],
   F02: [{ id: 'F16', name: 'Advanced Engineering', cost: 4000, needs: 'Company Rank C', note: '+15% Engineering, +4 PWR/END' }],

@@ -167,7 +167,23 @@ export function createTopBar({ layout, campaign, hud, home = false, back = null 
       const dateX = br ? br.x + br.w + 20 : r.x + 28;
       const dateW = inboxRect().x - 16 - dateX;
       const d = clock.dateOf(clock.totalDays);
-      text(ctx, home ? `Year ${d.year} · Month ${d.month} · Day ${d.day}` : `Y${d.year} · M${d.month} · D${d.day}`, dateX, r.y + ROW1.y + ROW1.h / 2, { size: home ? S.heading : S.body, bold: true, baseline: 'middle', maxWidth: dateW });
+      // Milestone 19: after the Year 16 ending the date carries a "Postgame" tag (core/CampaignEnding).
+      const tag = campaign.ending?.dateTag();
+      let tx = dateX;
+      if (tag) {
+        ctx.font = font(S.small, true);
+        const tw = ctx.measureText(tag).width + 32;
+        const cy = r.y + ROW1.y + ROW1.h / 2;
+        ctx.fillStyle = COL.gold;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(tx, cy - 24, tw, 48, 24);
+        else ctx.rect(tx, cy - 24, tw, 48);
+        ctx.fill();
+        text(ctx, tag, tx + tw / 2, cy, { size: S.small, bold: true, align: 'center', baseline: 'middle', color: COL.textOnDark });
+        tx += tw + 14;
+      }
+      const long = home && !tag;
+      text(ctx, long ? `Year ${d.year} · Month ${d.month} · Day ${d.day}` : home ? `Year ${d.year} · M${d.month} · D${d.day}` : `Y${d.year} · M${d.month} · D${d.day}`, tx, r.y + ROW1.y + ROW1.h / 2, { size: home ? S.heading : S.body, bold: true, baseline: 'middle', maxWidth: dateX + dateW - tx });
       const saved = bar.savedNote;
       if (saved) text(ctx, saved, dateX + dateW, r.y + ROW1.y + ROW1.h - 6, { size: S.small, bold: true, align: 'right', baseline: 'bottom', color: COL.good });
       const ir = inboxRect();

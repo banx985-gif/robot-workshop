@@ -5,6 +5,7 @@ import { ROLES } from '../../data/staff.js';
 import { FEATURES } from '../../data/research.js';
 import { PURPOSES } from '../../data/purposes.js';
 import { COMPETITIONS_BY_ID, TROPHIES_BY_ID } from '../../data/competitions.js';
+import { COMPONENTS } from '../../data/components.js';
 
 const eventName = (id) => COMPETITIONS_BY_ID[id]?.name ?? id;
 
@@ -51,6 +52,8 @@ export function describeUnlock(rule) {
       return `A finished ${PURPOSES[rule.purpose]?.name ?? rule.purpose} robot`;
     case 'contractsDone':
       return `Complete ${rule.min} ${rule.purpose ? `${PURPOSES[rule.purpose]?.name ?? rule.purpose} ` : ''}contracts`;
+    case 'partOpen':
+      return `${rule.id} found`; // short: it sits on a Build card ("Company Rank B + CH08 found")
     case 'action':
       return 'Secret';
     case 'accountFlag':

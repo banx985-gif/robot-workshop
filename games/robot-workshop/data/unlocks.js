@@ -15,7 +15,7 @@
 //   { type: 'action', kind, id }       that unlock action has fired (e.g. a Secret Lab topic appearing, M17)
 //   { type: 'accountFlag', flag }      an account-wide switch a secret set (e.g. the Black Circuit stake, M17)
 
-export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'researchCount', 'feature', 'purposeBuilt', 'yearReached', 'eventWins', 'eventEntered', 'totalWins', 'trophy', 'contractsDone', 'action', 'accountFlag', 'all'];
+export const UNLOCK_TYPES = ['start', 'research', 'facility', 'rank', 'counter', 'competition', 'secret', 'flag', 'role', 'researchCount', 'feature', 'purposeBuilt', 'yearReached', 'eventWins', 'eventEntered', 'totalWins', 'trophy', 'contractsDone', 'action', 'accountFlag', 'partOpen', 'all'];
 
 export const RESEARCH_BRANCHES = {
   mechanical: 'Mechanical Research',
@@ -68,4 +68,6 @@ export const FLAG_NAMES = {
   firstRp: 'First Research Points earned',
   ngPlus: 'New Game+',
   lunarInvite: 'The Lunar invite (Orbital Research contract)',
+  firstSponsor: 'First sponsor signed',
+  endingReached: 'The Year 16 ending',
 };

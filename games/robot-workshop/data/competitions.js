@@ -187,8 +187,8 @@ export const COMPETITIONS = [
     beatYear: 16,
     entry: 7500,
     rewards: { credits: 40000, rep: 0, prestigeTokens: 1, trophy: 'eliteMasters' },
-    // "Year 16 ending + Rank S". M13 choice until the ending exists (Milestone 19): Year 16 reached + Rank S.
-    unlock: all({ type: 'yearReached', year: 16 }, rank('S')),
+    // §21.5 "Year 16 ending + Rank S": postgame (Milestone 19 — M13 used Year 16 reached + Rank S until then).
+    unlock: all({ type: 'flag', flag: 'endingReached' }, rank('S')),
     field: [['R07', 8], ['R04', 4], ['R05', 1], ['R02', -3], ['R06', -7]],
     rankWeight: 4,
     rp: 120,

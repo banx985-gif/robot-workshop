@@ -3,7 +3,7 @@
 //   better: 'max' | 'min'     keyed: one record per purpose / robot stat / event
 //   format: how the value reads ('int', 'score1' one decimal, 'credits', 'days', 'years')
 //   group:  the section on the Records screen
-// "Best ending grade" arrives with the Year 16 ending (Milestone 19); until then it shows "—".
+// "Best ending grade" is filled in by the Year 16 ending (Milestone 19): the 1,000-point score, with its grade band.
 export const RECORD_GROUPS = [
   { id: 'company', name: 'Company' },
   { id: 'robots', name: 'Robots' },
@@ -14,7 +14,7 @@ export const RECORD_GROUPS = [
 ];
 
 export const RECORDS = [
-  { id: 'bestEnding', group: 'company', label: 'Best ending grade', better: 'max', format: 'grade', icon: 'ui_icon_09_records', later: 'Arrives with the Year 16 ending' },
+  { id: 'bestEnding', group: 'company', label: 'Best ending grade', better: 'max', format: 'grade', icon: 'ui_icon_09_records', later: 'Reach the Year 16 ending' },
   { id: 'highestCash', group: 'company', label: 'Highest cash', better: 'max', format: 'credits', icon: 'ui_icon_01_money' },
   { id: 'highestReputation', group: 'company', label: 'Highest reputation', better: 'max', format: 'int', icon: 'ui_icon_03_reputation' },
   { id: 'ngPlusCompleted', group: 'company', label: 'New Game+ level completed', better: 'max', format: 'ngPlus', icon: 'ui_icon_09_records' },

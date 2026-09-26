@@ -65,7 +65,7 @@ import { REVIEW_TEMPLATES, FIT_BANDS } from '../../data/reviews.js';
 import { CALENDAR, SPEED_UNLOCKS, STAFF_RULES, PROJECT_RULES, CAMPAIGN_SEED } from '../../data/balance.js';
 import { CURRENCIES, STARTING_MONEY, DEBT_RULES, SALARY_RULES, OPERATING_COST, TECH_CHIP_REWARDS, RANKS, REPUTATION_RULES } from '../../data/economy.js';
 import { PRODUCT_SLOT_STEPS, SALES_RULES } from '../../data/market.js';
-import { FACILITIES, EXPANSIONS, WORKSHOP_START, PROJECT_BAYS, DISPLAY_RULES, LOCKED_LATER, PRESTIGE_DISPLAY } from '../../data/facilities.js';
+import { FACILITIES, EXPANSIONS, WORKSHOP_START, PROJECT_BAYS, DISPLAY_RULES, LOCKED_LATER, PRESTIGE_DISPLAY, HEAVY_BAY } from '../../data/facilities.js';
 import { RESEARCH_NODES, RESEARCH_MILESTONES, RESEARCH_QUEUES, RESEARCH_RULES, RESEARCH_BRANCH_INFO, RP_SOURCES, NG_PLUS_RESEARCH, researchNodeId, SECRET_RESEARCH } from '../../data/research.js';
 import { describeUnlock } from '../systems/unlockRules.js';
 import { AchievementSystem } from '../../../../core/AchievementSystem.js';
@@ -74,6 +74,10 @@ import { ACHIEVEMENTS, ACHIEVEMENT_TRIGGERS } from '../../data/achievements.js';
 import { RECORDS } from '../../data/records.js';
 import { syncRecords, recordSale } from '../systems/gameRecords.js';
 import { RobotBuildSystem } from '../systems/RobotBuildSystem.js';
+import { CampaignEnding } from '../../../../core/CampaignEnding.js';
+import { RunArchive } from '../../../../core/RunArchive.js';
+import { ENDING_RULES, INVITATION } from '../../data/ending.js';
+import { runSummary } from '../systems/endingSummary.js';
 import { Sales } from '../systems/Sales.js';
 import { contractHooks, checkRecord } from '../systems/ContractRules.js';
 
@@ -159,7 +163,8 @@ export class Campaign {
       sellRefundPct: WORKSHOP_START.sellRefundPct,
       zoneShown: (z) => !z.secret || this.facilities?.isOwned(z.id) || !!this.unlocks?.has('zone', z.id), // the basement stays hidden until its secret
     });
-    const fx = (key) => this.facilities.total(key) + (this.sponsors?.total(key) ?? 0) + (this.events?.total(key) ?? 0);
+    // The Sponsor Wall (F32) makes the active sponsor's benefits bigger.
+    const fx = (key) => this.facilities.total(key) + (this.sponsors?.total(key) ?? 0) * (1 + this.facilities.total('sponsorBenefitPct') / 100) + (this.events?.total(key) ?? 0);
     this.fx = fx;
     this.staff = new StaffSystem({
       rng: this.rng,
@@ -173,7 +178,8 @@ export class Campaign {
       // On a project or research → working (Energy drains); in training → away (no change); otherwise resting (§9.5).
       planActivity: (s) => (this.training?.trainingOf(s.id) ? 'training' : s.assigned ? 'working' : 'resting'),
       energyLossMultiplier: (s) => 1 + (this.focusFor(s)?.energyDrainPct ?? 0) / 100,
-      restModifier: () => ({ energyMult: 1 + fx('restEnergyPct') / 100, morale: fx('restMorale') }), // Break Table, Charging Dock
+      restModifier: () => ({ energyMult: 1 + fx('restEnergyPct') / 100, morale: fx('restMorale') }), // Break Table, Charging Dock, Staff Lounge
+      moraleFloorBonus: () => fx('moraleFloor'), // Staff Lounge (F29)
       signatureHooks: SIGNATURE_HOOKS, // what each legendary/secret signature trait does
     });
     // Career record per worker (kept after they leave): projects, robots, zero-fault builds, events, training.
@@ -275,12 +281,14 @@ export class Campaign {
         onComplete: (s, c) => {
           this.staff.addXp(s, c.days * TRAINING_RULES.xpPerDay);
           this.careers.bump(s.id, 'training');
+          this._simulatorTst(s);
         },
       },
     });
     for (const e of ['training:start', 'training:complete', 'training:cancel']) bus.on(e, () => this.assignments.refresh());
     for (const e of ['research:start', 'research:assign', 'research:stop', 'research:complete']) bus.on(e, () => this.assignments.refresh());
     bus.on('research:rp', ({ amount }) => amount > 0 && (this.flags.firstRp = true)); // opens the Research Desk (F11, §18.2)
+    bus.on('sponsor:signed', () => (this.flags.firstSponsor = true)); // opens the Sponsor Wall (F32)
     bus.on('unlock:fired', () => this.applyFeatures());
     bus.on('facility:placed', ({ item }) => item.def === RESEARCH_QUEUES[0].rule.id && bus.emit('research:desk', { item }));
     bus.on('facility:sold', () => {
@@ -386,6 +394,10 @@ export class Campaign {
 
     bus.on('clock:day', () => this._day());
     bus.on('clock:month', () => this._month());
+    // The Year 16 ending (Milestone 19): made after the month handler above, so the last month's sales and salaries
+    // are in before the grade is worked out. The archive of finished runs lives in the account save.
+    this.ending = new CampaignEnding({ bus, clock: this.clock, endYear: ENDING_RULES.endYear, canReach: () => !this.closed && !!this.campaignId, onReach: () => this._reachEnding() });
+    this.archive = new RunArchive({ max: ENDING_RULES.archiveMax });
     bus.on('economy:closure', () => {
       this.flags.closed = true;
       this.clock.pause();
@@ -609,7 +621,54 @@ export class Campaign {
     this.flags.prestigeTokensPaid = this.flags.prestigeTokensEarned ?? 0;
   }
 
-  // Debug (?debug=1) until New Game+ (Milestone 20) and the ending (Milestone 19) exist.
+  // --- the Year 16 ending (Milestone 19, §45, §25, §30.1) ---
+  // Called by core/CampaignEnding once, as the ending fires (before 'campaign:ending' goes out): the game stops, the
+  // grade is worked out from the run as it stands and the summary goes into the account archive (3 kept).
+  _reachEnding() {
+    this.flags.endingReached = true;
+    this.clock.pause();
+    const summary = this.archive.add(runSummary(this));
+    this.records.submit('bestEnding', summary.grade.total, { grade: summary.grade.band });
+    this.save().catch(() => {});
+    return summary;
+  }
+
+  // This run's ending summary (from the archive), or null.
+  get endingSummary() {
+    return this.archive.list.find((e) => e.runId === this.campaignId) ?? null;
+  }
+
+  // §25: after the ceremony an encrypted invitation arrives (once per account); it stays scrambled in the Rumour
+  // Archive until its secret is found. Returns true the first time.
+  receiveInvitation() {
+    const f = this.secrets.account.flags;
+    if (f.invitation) return false;
+    f.invitation = { day: this.clock.totalDays, runId: this.campaignId };
+    this._secretClue({ id: INVITATION.secretId, stage: 1 });
+    this.bus.emit('ending:invitation', { readable: this.invitationReadable });
+    this.save().catch(() => {});
+    return true;
+  }
+
+  get invitationReceived() {
+    return !!this.secrets.account.flags.invitation;
+  }
+
+  get invitationReadable() {
+    return this.secrets.everUnlocked(INVITATION.secretId);
+  }
+
+  // Debug (?debug=1): jump the calendar to a few days before the end of Year 16 (the ending then fires for real).
+  debugJumpToEnd(daysBefore = 2) {
+    const perYear = CALENDAR.daysPerMonth * CALENDAR.monthsPerYear;
+    const total = ENDING_RULES.endYear * perYear - daysBefore;
+    if (total <= this.clock.totalDays) return false;
+    const d = this.clock.dateOf(total);
+    this.clock.load({ ...this.clock.serialize(), year: d.year, month: d.month, day: d.day, totalDays: total, dayProgress: 0 });
+    return true;
+  }
+
+  // Debug (?debug=1) until New Game+ (Milestone 20) exists.
   setDebugNgPlus(n) {
     this.flags.ngPlusRuns = Math.max(0, Math.min(NG_PLUS_RESEARCH.maxRuns, n));
     this.flags.ngPlus = this.flags.ngPlusRuns > 0;
@@ -766,6 +825,8 @@ export class Campaign {
         return this.feature(rule.id);
       case 'counter':
         return this.counter(rule.counter) >= rule.min;
+      case 'partOpen':
+        return this.partOpen(rule.id, { ignoreDebug: true }); // the Heavy Assembly Bay needs CH08 discovered
       case 'purposeBuilt':
         return this.history.records.some((r) => r.result?.purpose === rule.purpose);
       case 'competition':
@@ -835,11 +896,23 @@ export class Campaign {
     return Math.min(b.max, n);
   }
 
-  // Can a new robot project start now? { ok, reason }
-  canStartProject() {
+  // Can a new robot project start now (with these parts, if given)? { ok, reason }
+  canStartProject(components = null) {
     if (!this.projectBays) return { ok: false, reason: 'Build an Assembly Bay first (tap Build)' };
-    if (this.projects.jobs.length >= this.projectBays) return { ok: false, reason: 'The project bay is busy — finish the current project first' };
+    if (this.projects.jobs.length >= this.projectBays) return { ok: false, reason: this.projectBays > 1 ? 'Both project bays are busy — finish a project first' : 'The project bay is busy — finish the current project first' };
+    const heavy = components && Object.values(components).find((id) => HEAVY_BAY.parts.includes(id));
+    if (heavy && this.fx(HEAVY_BAY.effect) < 1) return { ok: false, reason: `${COMPONENTS[heavy]?.name ?? heavy} needs a Heavy Assembly Bay (Build)` };
     return { ok: true, reason: null };
+  }
+
+  // F27 Pilot Simulator: a pilot's first finished course each year also gives +3 TST (up to their cap).
+  _simulatorTst(s) {
+    const tst = this.fx('simulatorTst');
+    if (!tst || s.role !== 'pilot') return;
+    const seen = (this.flags.simulatorYear ||= {});
+    if (seen[s.id] === this.clock.year) return;
+    seen[s.id] = this.clock.year;
+    s.stats.tst = Math.min(this.staff.statCap(s, 'tst') ?? 999, (s.stats.tst ?? 0) + tst);
   }
 
   // --- building (bible §18; money here, layout rules in core/FacilitySystem) ---
@@ -1718,6 +1791,7 @@ export class Campaign {
     this.trophies.reset();
     this.synergyArchive.resetRun(); // the account half stays
     this.secrets.resetRun(); // clues and unlocks start again; the account history stays (repeat easing)
+    this.ending.reset();
     this.recruitment.reset();
     this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'start');
     this.applyFeatures();
@@ -1755,6 +1829,7 @@ export class Campaign {
       sponsors: this.sponsors.serialize(),
       notifications: this.notes.serialize(),
       secrets: this.secrets.serializeRun(),
+      ending: this.ending.serialize(),
       guide: this.guideState ?? null,
       flags: { ...this.flags },
     };
@@ -1800,8 +1875,10 @@ export class Campaign {
     this.notes.load(data.notifications);
     this.secrets.loadRun(data.secrets); // null before Milestone 16
     if (data.removeTestSecrets) this._removeTestSecrets();
+    this.ending.load(data.ending); // null before Milestone 19 (the M18 debug switch set only the flag)
     this._payStoredPrestige();
     this._backfillAchievementFlags();
+    if (this.sponsors.active || this.sponsors.history.length) this.flags.firstSponsor = true; // saves from before Milestone 19
     this.applyFeatures();
     this.guideState = data.guide ?? null;
     this.assignments.refresh();
@@ -1813,7 +1890,7 @@ export class Campaign {
     try {
       this.syncSecretFacts();
       syncRecords(this);
-      if (this.accountManager) await this.accountManager.save({ synergies: this.synergyArchive.serializeAccount(), secrets: this.secrets.serializeAccount(), achievements: this.achievements.serialize(), records: this.records.serialize() });
+      if (this.accountManager) await this.accountManager.save({ synergies: this.synergyArchive.serializeAccount(), secrets: this.secrets.serializeAccount(), achievements: this.achievements.serialize(), records: this.records.serialize(), archive: this.archive.serialize() });
       const rec = await this.saveManager.save(this.serialize());
       this.lastSaveError = null;
       return rec;
@@ -1832,6 +1909,7 @@ export class Campaign {
       this.secrets.loadAccount(account?.secrets); // secret history + facts across runs
       this.achievements.load(account?.achievements); // Milestone 18: achievements and records across runs
       this.records.load(account?.records);
+      this.archive.load(account?.archive); // Milestone 19: finished runs
       for (const id of Object.keys(this.secrets.account.history)) if (id.startsWith('TEST-')) delete this.secrets.account.history[id]; // M16 test rules
     } catch (err) {
       console.error('[Campaign] could not load the account record', err);

@@ -21,6 +21,7 @@ import { PHASES, PROJECT_TIERS, BUDGET_FOCUS } from '../../data/phases.js';
 import { ROBOT_STAT_KEYS } from '../../data/stats.js';
 import { PROJECT_RULES } from '../../data/balance.js';
 import { robotVisual } from './robotVisual.js';
+import { MEETING_ROOM } from '../../data/facilities.js';
 import { applySynergies } from './Synergies.js';
 
 const R = PROJECT_RULES;
@@ -45,9 +46,18 @@ export class RobotBuildSystem {
     return this.partsOf(components).reduce((t, p) => t + p.cx, 0);
   }
 
+  // The complexity the project tier is worked out from: a facility can make a slot's part count less (Power Lab,
+  // F22: power parts −1), never below 1 per part.
+  tierComplexity(components) {
+    return SLOTS.reduce((t, s) => {
+      const p = COMPONENTS[components[s.id]];
+      return t + (p ? Math.max(1, p.cx + this.effects(`tierCx.${s.id}`)) : 0);
+    }, 0);
+  }
+
   tierFor(components) {
-    const cx = this.totalComplexity(components);
-    return PROJECT_TIERS.find((t) => cx <= t.maxCx);
+    const cx = this.tierComplexity(components);
+    return PROJECT_TIERS.find((t) => cx <= t.maxCx) ?? PROJECT_TIERS.at(-1);
   }
 
   buildCost(components) {
@@ -143,16 +153,21 @@ export class RobotBuildSystem {
   // --- facility bonuses -------------------------------------------------------
   // Flat stat from facilities (e.g. Test Rig +2 REL; Paint Booth +5 APL on commercial models only), and for one
   // purpose when it is given (a sponsor's +8 REL on Rescue builds, Milestone 15).
-  facilityStat(k, commercial, purpose = null) {
-    return this.effects(`robotStat.${k}`) + (commercial ? this.effects(`commercialStat.${k}`) : 0) + (purpose ? this.effects(`purposeStat.${purpose}.${k}`) : 0);
+  // components: the robot's parts, for bonuses that depend on a part's tags (Wind Tunnel: hover / rocket builds).
+  facilityStat(k, commercial, purpose = null, components = null) {
+    let tagged = 0;
+    if (components) for (const t of new Set(this.partsOf(components).flatMap((p) => p?.tags ?? []))) tagged += this.effects(`tagStat.${t}.${k}`);
+    return this.effects(`robotStat.${k}`) + (commercial ? this.effects(`commercialStat.${k}`) : 0) + (purpose ? this.effects(`purposeStat.${purpose}.${k}`) : 0) + tagged;
   }
 
   gainMultiplier(k) {
     return 1 + this.effects(`gainPct.${k}`) / 100;
   }
 
-  progressMultiplier(phase) {
-    return 1 + (this.effects(`progressPct.${phase.id}`) + this.effects('progressPct.all')) / 100; // all: an event's short boost
+  // job (optional): the Meeting Room (F30) adds its bonus when that robot's team has enough different roles.
+  progressMultiplier(phase, job = null) {
+    const mixed = job && new Set(this.team(job).map((s) => s.role)).size >= MEETING_ROOM.minRoles ? this.effects(MEETING_ROOM.effect) : 0;
+    return 1 + (this.effects(`progressPct.${phase.id}`) + this.effects('progressPct.all') + mixed) / 100; // all: an event's short boost
   }
 
   statMultiplier(statKey) {
@@ -221,7 +236,7 @@ export class RobotBuildSystem {
     const base = this.baseStats(job.data.components);
     const commercial = !job.data.contractId;
     const out = {};
-    for (const k of ROBOT_STAT_KEYS) out[k] = base[k] + job.data.gains[k] + this.facilityStat(k, commercial, job.data.purpose);
+    for (const k of ROBOT_STAT_KEYS) out[k] = base[k] + job.data.gains[k] + this.facilityStat(k, commercial, job.data.purpose, job.data.components);
     out.REL -= job.data.faults.length * R.faultReliabilityPenalty;
     for (const k of ROBOT_STAT_KEYS) out[k] = clamp(Math.round(out[k]), 0, 999);
     return out;
@@ -232,7 +247,8 @@ export class RobotBuildSystem {
     const cx = { job, cx: d.totalCx };
     this.staff.runSignatures(this.team(job), 'faultChance', cx); // Impossible Tolerances
     const avgCx = cx.cx / SLOTS.length;
-    let chance = R.faultBaseChance + this.partFaultChance(d.components);
+    // AI Lab (F18): points off the base chance in its stage.
+    let chance = Math.max(0, R.faultBaseChance + this.effects(`faultPts.${phase.id}`) / 100) + this.partFaultChance(d.components);
     chance *= 1 + (R.faultComplexityPct / 100) * (avgCx - 1);
     const deficit = Math.max(0, R.faultDeficit.expectedScore - teamScore) / R.faultDeficit.expectedScore;
     chance *= 1 + (deficit * R.faultDeficit.maxExtraPct) / 100;
@@ -259,7 +275,7 @@ export class RobotBuildSystem {
 
       // Facilities: the stage's station speeds progress; the workbench boosts a work stat (§18.2).
       // Perfectionist: every stage takes longer (+6% time = progress ÷ 1.06).
-      progressModifier: (job, phase) => this.progressMultiplier(phase) / (1 + this.teamPct(job, 'phaseTimePct') / 100),
+      progressModifier: (job, phase) => this.progressMultiplier(phase, job) / (1 + this.teamPct(job, 'phaseTimePct') / 100),
       statModifier: (job, phase, s, k) => this.statMultiplier(k) * this.traitStatMultiplier(s, k),
 
       // §9.7: a worker whose role matches the phase → +8% for the whole team.

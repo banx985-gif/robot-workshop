@@ -3,6 +3,7 @@
 //   account history, with the eased numbers on a repeat run — §30.4a).
 // Before the Year 16 ending it lists only secrets you have heard of — never how many there are. After the ending
 // (or in New Game+) the unknown ones show as "???" too.
+// Milestone 19: the encrypted invitation from the Year 16 ending sits at the top — scrambled until its secret is found.
 // Opened from the Inbox. ?debug=1 adds a "Why not?" button (the inspector).
 import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
@@ -11,6 +12,8 @@ import { SECRETS, SECRET_ART, SECRET_GROUPS } from '../../data/secrets.js';
 import { ruleLines } from '../systems/secretText.js';
 import { panel, text, hit } from '../ui/widgets.js';
 import { wrapLines } from '../ui/competitionDraw.js';
+import { INVITATION, ENDING_ART } from '../../data/ending.js';
+import { scramble } from '../systems/invitationText.js';
 const COL = THEME.color;
 
 const HEAD_H = 150;
@@ -96,6 +99,7 @@ export function createRumourArchiveScreen({ renderer, layout, assets, campaign, 
         y += 36;
       }
       y += 12;
+      if (campaign.invitationReceived) y = drawInvitation(ctx, y, w) + 24;
       for (const g of groups) {
         text(ctx, g.group, 4, y + 12, { size: SZ.button, bold: true, color: COL.purple });
         y += GROUP_H;
@@ -142,6 +146,33 @@ export function createRumourArchiveScreen({ renderer, layout, assets, campaign, 
       if (r.stage === 2 && r.missing?.length) put(`Missing: ${r.missing.join(', ')}`, SZ.body, { bold: true, color: COL.gold });
     }
     return { ops, h: Math.max(150, y + 18) };
+  }
+
+  // The encrypted invitation (§25): its words stay scrambled until the Lunar Invitation secret is discovered.
+  function drawInvitation(ctx, y, w) {
+    const readable = campaign.invitationReadable;
+    const x = 146;
+    const mw = w - x - 20;
+    const body = wrapLines(readable ? INVITATION.text : scramble(INVITATION.text, 0), mw, SZ.body).slice(0, 7);
+    const note = wrapLines(readable ? INVITATION.readNote : INVITATION.lockedNote, mw, SZ.body, true).slice(0, 3);
+    const h = 30 + 56 + 44 + body.length * 44 + 14 + note.length * 44 + 24;
+    panel(ctx, { x: 0, y, w, h }, { stroke: readable ? COL.gold : COL.purple, lineWidth: 5 });
+    assets.drawContained(ctx, ENDING_ART.invitation, { x: 16, y: y + 24, w: 110, h: 110 });
+    let ly = y + 24;
+    text(ctx, INVITATION.title, x, ly, { size: SZ.button, bold: true, color: readable ? COL.gold : COL.purple, maxWidth: mw });
+    ly += 56;
+    text(ctx, `${INVITATION.from} · received ${campaign.clock.shortLabel(campaign.secrets.account.flags.invitation?.day ?? 0)}`, x, ly, { size: SZ.small, color: COL.textMuted, maxWidth: mw });
+    ly += 44;
+    for (const l of body) {
+      text(ctx, l, x, ly, { size: SZ.body, color: readable ? COL.text : COL.textMuted, maxWidth: mw });
+      ly += 44;
+    }
+    ly += 14;
+    for (const l of note) {
+      text(ctx, l, x, ly, { size: SZ.body, bold: true, color: readable ? COL.good : COL.purple, maxWidth: mw });
+      ly += 44;
+    }
+    return y + h;
   }
 
   function drawRow(ctx, r, y, w, L) {

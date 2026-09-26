@@ -84,7 +84,7 @@ export function predictBuild(campaign, purposeId, components, { commercial = fal
     days += Math.ceil(tier.phaseTarget / perDay);
   }
   const stats = {};
-  for (const k of ROBOT_STAT_KEYS) stats[k] = Math.min(999, Math.max(0, base[k] + gains[k] + rb.facilityStat(k, commercial)));
+  for (const k of ROBOT_STAT_KEYS) stats[k] = Math.min(999, Math.max(0, base[k] + gains[k] + rb.facilityStat(k, commercial, purposeId, components)));
   innovation += rb.partInnovation(components);
   const weighted = rb.weightedScore(purposeId, stats);
   const quality = Math.min(100, Math.max(0, weighted / 6.5 + innovation * 0.2 + bonus));
