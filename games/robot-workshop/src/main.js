@@ -11,7 +11,6 @@ import { ScreenRouter } from '../../../core/ScreenRouter.js';
 import { AssetManager } from '../../../core/AssetManager.js';
 import { FixedStepLoop } from '../../../core/FixedStepLoop.js';
 import { DebugOverlay } from '../../../core/DebugOverlay.js';
-import { SaveManager } from '../../../core/SaveManager.js';
 import { createStorageAdapter } from '../../../core/StorageAdapter.js';
 import { VfxSystem } from '../../../core/VfxSystem.js';
 import { AudioManager } from '../../../core/AudioManager.js';
@@ -75,6 +74,11 @@ import { createSettingsScreen } from './screens/SettingsScreen.js';
 import { createProjectListScreen } from './screens/ProjectListScreen.js';
 import { MENU_ART, PAUSE_MENU, COMING_SOON, SETTINGS_DEFAULTS, TEXT_SCALES, SETTINGS_TEXT } from '../data/menu.js';
 import { CAMPAIGN_SEED } from '../data/balance.js';
+// Milestone 22: hardened saves — rolling checked copies, the one-time move, autosave, the save inspector.
+import { SaveSlot, moveLegacySaves } from '../../../core/SaveStore.js';
+import { Autosave } from '../../../core/Autosave.js';
+import { SAVE_STORAGE, SAVE_SLOTS, SAVE_TRIGGERS, AUTOSAVE_RULES, SAVE_TEXT } from '../data/save.js';
+import { createSaveInspectorScreen } from './screens/SaveInspectorScreen.js';
 import { ENDING_ART, INVITATION } from '../data/ending.js';
 import { ACHIEVEMENT_ART, rewardLabel } from '../data/achievements.js';
 import { wireMessages, effectsText, fillText } from './app/Messages.js';
@@ -95,7 +99,7 @@ import { createDebugBuilderScreen } from './screens/DebugBuilderScreen.js';
 import { validateGameData } from './app/validateData.js';
 import { VISUAL_FAMILIES } from '../data/visuals.js';
 import { moneyBarRect, topBarRect } from './ui/TopBar.js';
-import { Campaign, SAVE_MIGRATIONS } from './app/Campaign.js';
+import { Campaign, SAVE_MIGRATIONS, ACCOUNT_VERSION, ACCOUNT_MIGRATIONS } from './app/Campaign.js';
 import { COMPONENTS } from '../data/components.js';
 import { STAFF, ROLES } from '../data/staff.js';
 import { SAVE_VERSION } from '../data/balance.js';
@@ -251,6 +255,8 @@ const modal = {
   onTap: (p) => (dialog.active ? dialog.onTap(p) : major.active ? major.onTap(p) : eventPopup.onTap(p)),
   // The back button (§6.2): a dialog closes if it may; a big moment is acknowledged like a tap; a text event with
   // choices waits for an answer (it is in the Inbox too), a plain message closes.
+  onDown: (p) => dialog.active && dialog.onDown(p), // hold-to-confirm buttons (Milestone 22)
+  onUp: (p) => dialog.active && dialog.onUp(p),
   onBack: () => {
     if (dialog.active) return dialog.onBack();
     if (major.active) return major.onTap({ x: W / 2, y: H / 2 });
@@ -281,6 +287,7 @@ const loop = new FixedStepLoop({
   update: (dt) => {
     if (campaignReady) {
       campaign.clock.update(dt);
+      autosave.tick(dt); // the 30-second rolling save while the clock runs (Milestone 22)
       workshopScreen.tick(dt);
     }
     router.update(dt);
@@ -328,27 +335,76 @@ let campaignReady = false;
 // handlers below, so a moment's entry exists by the time they run.
 wireMessages({ bus, campaign, ready: () => campaignReady });
 let loadError = null; // the save exists but could not be read (the main menu shows it)
-async function checkSave() {
-  if (!campaign.saveManager) {
-    const adapter = await createStorageAdapter({ dbName: 'robot-workshop', prefix: 'robot-workshop:' }); // the save key never changes
-    campaign.saveManager = new SaveManager({ adapter, key: 'campaign', version: SAVE_VERSION, migrations: SAVE_MIGRATIONS, bus });
-    campaign.accountManager = new SaveManager({ adapter, key: 'account', version: 1, bus }); // combo archive across runs
-    debug.log(`storage: ${adapter.kind}`);
+let saveNotes = []; // friendly lines for the main menu (a fallback was used…) — shown once
+const storageInfo = { storage: 'not open yet', move: null };
+// Milestone 22 (§37.1–37.2): IndexedDB first (localStorage only if it is unavailable), the one-time move of older
+// saves into the new layout, then one slot each for the run (3 rolling copies), the account and the archived endings,
+// and the settings. The database name, keys and localStorage prefix never change.
+async function openStorage() {
+  const adapter = await createStorageAdapter({ dbName: SAVE_STORAGE.dbName, prefix: SAVE_STORAGE.localPrefix });
+  storageInfo.storage = adapter.kind;
+  try {
+    storageInfo.move = await moveLegacySaves({ adapter, keys: [SAVE_SLOTS.campaign.key, SAVE_SLOTS.account.key], localPrefix: SAVE_STORAGE.localPrefix, settingsKey: SAVE_STORAGE.settingsKey });
+    if (storageInfo.move.moved.length) debug.log(`saves moved: ${storageInfo.move.moved.map((m) => `${m.key}←${m.from}`).join(', ')}`);
+  } catch (err) {
+    // The old copies are still read as a fallback, and the move is tried again next time.
+    console.error('[storage] move', err);
+    storageInfo.move = { already: false, moved: [], error: err.message };
   }
+  campaign.saveManager = new SaveSlot({ adapter, key: SAVE_SLOTS.campaign.key, rolling: SAVE_SLOTS.campaign.rolling, version: SAVE_VERSION, migrations: SAVE_MIGRATIONS, bus });
+  campaign.accountManager = new SaveSlot({ adapter, key: SAVE_SLOTS.account.key, rolling: SAVE_SLOTS.account.rolling, version: ACCOUNT_VERSION, migrations: ACCOUNT_MIGRATIONS, bus });
+  campaign.archiveManager = new SaveSlot({ adapter, key: SAVE_SLOTS.archive.key, rolling: SAVE_SLOTS.archive.rolling, version: 1, bus });
+  settings.attachStore(adapter, SAVE_SLOTS.settings.key);
+  debug.log(`storage: ${adapter.kind}`);
+}
+async function checkSave() {
+  if (!campaign.saveManager) await openStorage();
   const res = await campaign.loadSaved();
   loadError = res.error;
   campaignReady = res.loaded;
-  debug.log(res.loaded ? 'save loaded' : res.error ? `save unreadable: ${res.error.message}` : 'no save yet');
+  saveNotes = [];
+  if (res.fallback) saveNotes.push(SAVE_TEXT.fallback);
+  if (res.account?.fallback) saveNotes.push(SAVE_TEXT.accountFallback);
+  if (res.account?.lost) saveNotes.push(SAVE_TEXT.accountLost);
+  if (res.account?.blocked) saveNotes.push(SAVE_TEXT.accountBlocked);
+  debug.log(res.loaded ? `save loaded${res.fallback ? ' (fallback)' : ''}` : res.error ? `save unreadable: ${res.error.message}` : 'no save yet');
   // Milestone 18: a run from before achievements catches up on everything it has already done.
   if (res.loaded) campaign.achievements.checkAll();
   return res;
 }
+function showSaveNotes() {
+  if (!saveNotes.length || dialog.active) return;
+  dialog.show({ title: 'About your save', body: saveNotes.join(' '), art: MENU_ART.save, buttons: [{ id: 'ok', label: 'OK', accent: COL.progress }] });
+  saveNotes = [];
+}
+// §37.3 autosave: the trigger list (data/save.js), every 30 real seconds while the clock runs (skipped if nothing
+// changed), and straight away when the app goes to the background.
+const autosave = new Autosave({
+  bus,
+  triggers: [...new Set(Object.values(SAVE_TRIGGERS).flat()), 'competition:pick'],
+  save: () => (campaignReady && campaign.hasRun ? campaign.save() : Promise.resolve(null)),
+  stamp: () => campaign.changeStamp(),
+  running: () => campaignReady && !campaign.clock.paused,
+  intervalMs: AUTOSAVE_RULES.intervalMs,
+  enabled: () => campaignReady && campaign.hasRun && !campaign.closed,
+});
+autosave.installBackground();
+// Read everything again (the save inspector's "reload", like reopening the app).
+async function reloadFromStorage() {
+  const res = await checkSave();
+  if (res.loaded) continueGame(true);
+  else router.go('menu');
+  showSaveNotes();
+  return res;
+}
 
 // --- the front-end flow (Milestone 21): Continue, New Game → Company Setup → workshop, Reset save ---
-function continueGame() {
+function continueGame(fromReload = false) {
   if (!campaign.hasRun) return;
-  const resume = menuScreen.resumeOnContinue;
+  const resume = !fromReload && menuScreen.resumeOnContinue;
   router.go(campaign.closed ? 'closed' : campaign.ending.pending ? 'ceremony' : 'workshop'); // an unfinished ending ceremony picks up again
+  // §37.4: a race that was set up but not run comes back on its setup screen.
+  if (router.currentName === 'workshop' && campaign.pendingEntry) return router.go('compSetup', { eventId: campaign.pendingEntry.eventId, restore: true });
   if (resume && router.currentName === 'workshop') campaign.clock.resume();
 }
 function startNewGame(company) {
@@ -361,6 +417,15 @@ function startNewGame(company) {
 }
 async function retryLoad() {
   await checkSave();
+}
+// §37.7: the run only (the account and the finished campaigns stay).
+async function resetCampaign() {
+  await campaign.resetCampaign();
+  campaignReady = false;
+  loadError = null;
+  sheet.close();
+  router.go('menu');
+  dialog.show({ title: SETTINGS_TEXT.resetCampaignDone, art: MENU_ART.warning, buttons: [{ id: 'ok', label: 'OK', accent: COL.progress }] });
 }
 async function resetSave() {
   await campaign.resetSave();
@@ -410,6 +475,7 @@ const splashScreen = createSplashScreen({
     if (START_SCREEN === 'test') return router.go('test', {}, { replace: true });
     if (START_SCREEN === 'debugbuilder' && campaign.hasRun) return router.go('debugbuilder', {}, { replace: true });
     router.go('menu', {}, { replace: true });
+    showSaveNotes(); // "Your last save was damaged, so we loaded the one from a moment earlier." (Milestone 22)
   },
 });
 
@@ -803,7 +869,18 @@ const ceremonyScreen = createCeremonyScreen({ renderer, layout, assets, campaign
 const creditsScreen = createCreditsScreen({ renderer, layout, assets, campaign, router });
 const menuScreen = createMainMenuScreen({ renderer, layout, assets, campaign, router, dialog, actions: { continueGame, newGame: () => router.go('company'), retry: retryLoad }, loadError: () => loadError });
 const companyScreen = createCompanySetupScreen({ renderer, layout, assets, router, dialog, textPrompt, onStart: startNewGame });
-const settingsScreen = createSettingsScreen({ renderer, layout, assets, router, dialog, settings, onReset: resetSave });
+const settingsScreen = createSettingsScreen({ renderer, layout, assets, router, dialog, settings, onReset: resetSave, onResetCampaign: resetCampaign, hasRun: () => campaign.hasRun, debugEnabled: debug.enabled });
+const saveInspector = createSaveInspectorScreen({
+  renderer,
+  layout,
+  assets,
+  campaign,
+  router,
+  textPrompt,
+  slots: { get campaign() { return campaign.saveManager; }, get account() { return campaign.accountManager; }, get archive() { return campaign.archiveManager; } },
+  info: () => ({ ...storageInfo, autosave: autosave.stats }),
+  reload: reloadFromStorage,
+});
 const projectsScreen = createProjectListScreen({ renderer, layout, assets, campaign, router });
 // New Game+ (Milestone 20): the setup screen; once the new run is built the workshop opens on a big NG+ moment.
 const ngPlusScreen = createNgPlusSetupScreen({
@@ -1166,6 +1243,7 @@ if (debug.enabled) {
   window.__m18 = { ...window.__m17b, records: recordsScreen, achievements: campaign.achievements, accountRecords: campaign.records, floats, achMoment };
   window.__m19 = { ...window.__m18, ceremony: ceremonyScreen, credits: creditsScreen, ending: campaign.ending, archive: campaign.archive, rumours: rumourScreen };
   window.__m20 = { ...window.__m19, ngplus: ngPlusScreen, ngPlusSys: campaign.ngPlusSys };
+  window.__m22 = { autosave, storageInfo, saveInspector, reloadFromStorage, showSaveNotes, saveNotes: () => saveNotes };
   window.__m21 = { ...window.__m20, splash: splashScreen, menu: menuScreen, company: companyScreen, settingsScreen, settings, projects: projectsScreen, dialog, systemBack: null, haptics, textPrompt, eventPopup, major, layout, bus };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
@@ -1210,7 +1288,7 @@ router
   .register('credits', creditsScreen)
   .register('ngplus', ngPlusScreen)
   .register('debugbuilder', debugBuilderScreen);
-if (debug.enabled) router.register('staffdebug', staffDebugScreen).register('secretdebug', secretDebugScreen); // ?debug=1 only // ?debug=1 only: spawn any of the 50
+if (debug.enabled) router.register('staffdebug', staffDebugScreen).register('secretdebug', secretDebugScreen).register('saveinspector', saveInspector); // ?debug=1 only // ?debug=1 only: spawn any of the 50
 // The phone's / browser's back button and Escape (§6.2): the router closes the top thing, or goes back.
 const systemBack = new SystemBack({ onBack: () => (textPrompt.active ? (textPrompt.close(), true) : router.back()) });
 bus.on('screen:change', () => systemBack.rearm());

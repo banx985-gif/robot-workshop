@@ -23,9 +23,21 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
   let initial = null; // the picks as the screen opened (§6.2: leaving with others asks first)
   const dirty = () => initial != null && JSON.stringify(choice) !== initial;
   function leave() {
-    const go = () => router.go('competitions');
+    const go = () => {
+      campaign.setPendingEntry(null); // backed out: no race waiting
+      router.go('competitions');
+    };
     if (!dirty() || !dialog) return go();
     dialog.confirm({ title: DISCARD.title, body: DISCARD.body, art: 'ui_icon_29', yes: DISCARD.yes, no: DISCARD.no, danger: true, onYes: go });
+  }
+  // The picks are part of the save while this screen is open (a save is asked for when they change).
+  let lastKept = null;
+  function keepPending() {
+    const k = JSON.stringify(choice);
+    if (k === lastKept) return;
+    lastKept = k;
+    campaign.setPendingEntry(choice);
+    bus.emit('competition:pick', { choice });
   }
   const W = renderer.width;
   let ev = null;
@@ -137,10 +149,14 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
     enter(params = {}) {
       ev = COMPETITIONS_BY_ID[params.eventId] ?? ev;
       choice = defaults(ev.id);
+      // §37.4 (Milestone 22): a race set up before the app was closed comes back with the same picks.
+      const saved = params.restore ? campaign.pendingEntry : null;
+      if (saved?.eventId === ev.id && campaign.history.get(saved.robotNumber) && campaign.staff.get(saved.pilotId)) choice = { ...choice, ...saved };
       picker = null;
       message = null;
       scroll.scrollY = 0;
-      initial = JSON.stringify(choice);
+      initial = JSON.stringify(defaults(ev.id));
+      keepPending();
       bus.emit('competition:setup', { eventId: ev.id });
     },
     get dirty() {
@@ -183,6 +199,7 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
     onDragEnd: (p) => scroll.endDrag(p),
 
     render(ctx) {
+      if (choice && campaign.pendingEntry) keepPending();
       ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const s = sections();

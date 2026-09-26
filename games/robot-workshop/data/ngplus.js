@@ -62,6 +62,7 @@ export const NG_PLUS = {
       { id: 'seed', label: 'Random seed', hidden: true },
       { id: 'rngState', label: 'Random state', hidden: true },
       { id: 'ngplus', label: 'Last run’s NG+ picks', hidden: true },
+      { id: 'pendingEntry', label: 'A race set up but not run', hidden: true }, // Milestone 22
     ],
   },
   // §30.4 Legacy Staff: 1 / 2 / 3 picks; Level 5; 60% of their work stats, never below their normal starting stats.

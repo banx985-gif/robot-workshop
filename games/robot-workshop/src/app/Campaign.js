@@ -137,6 +137,15 @@ export const SAVE_MIGRATIONS = {
   15: (record) => ({ ...record, data: { ...record.data, ngplus: null } }),
   // v16 (Milestone 20) had no Company Setup: null = the default company name and colour.
   16: (record) => ({ ...record, data: { ...record.data, company: null } }),
+  // v17 (Milestone 21) did not keep a race that was set up but not run: none waiting.
+  17: (record) => ({ ...record, data: { ...record.data, pendingEntry: null } }),
+};
+
+// The account record's own versions (a separate slot, §37.2). v1: everything, the archived endings included; v2
+// (Milestone 22): the endings have their own slot — a v1 record's endings are still read from it once.
+export const ACCOUNT_VERSION = 2;
+export const ACCOUNT_MIGRATIONS = {
+  1: (record) => ({ ...record }),
 };
 
 // A company identity (§6.3 Company Setup): names trimmed and capped, an accent from the six (default otherwise).
@@ -168,6 +177,8 @@ export class Campaign {
     this.ngPlusRun = null; // { level, fromRunId, modifier, blueprints, legacy, startingCredits } — null on a first run
     this.ngPlusAccount = { highest: 0, starts: 0, purchases: {} };
     this.company = companyOf(null); // Milestone 21: name, manager, accent colour (no stat effect)
+    this.pendingEntry = null; // Milestone 22: a race set up but not run yet (§37.4)
+    this.accountStatus = { fallback: false, lost: false, blocked: false };
     this.synergyArchive = new DiscoveryArchive({ bus });
     this.campaignId = null;
     this.seed = CAMPAIGN_SEED;
@@ -1687,6 +1698,7 @@ export class Campaign {
     if (fee) this.economy.add('credits', -fee, `Entry fee: ${ev.name}`, 'competition');
     if (tuning.cost) this.economy.add('credits', -tuning.cost, `Tuning: ${tuning.name} (${ev.name})`, 'competition');
     const run = this.competitions.run(setup, this.competitionSeed(ev.id), this.competitionContext);
+    this.pendingEntry = null; // the race is run now (it was the saved set-up)
     const ranking = this.rankings.record(run.standings, ev.rankWeight ?? 1); // { before, after } positions
     const result = this.competitions.commit(run, { day, period: this.monthIndex, costs: { entry: fee, tuning: tuning.cost }, signatures: setup.signatures, robotNumber: choice.robotNumber, ranking });
     const w = result.rewards;
@@ -1961,6 +1973,7 @@ export class Campaign {
   newGame(seed = CAMPAIGN_SEED, { carry = null, company = null } = {}) {
     this.seed = seed;
     this.company = companyOf(carry?.always?.company ?? company);
+    this.pendingEntry = null;
     this.campaignId = `run-${Date.now().toString(36)}${(runCounter++).toString(36)}`;
     this.rng.setSeed(seed);
     this.marketRng.setSeed(`${seed}|market`);
@@ -2059,6 +2072,7 @@ export class Campaign {
       flags: { ...this.flags },
       ngplus: this.ngPlusRun ? JSON.parse(JSON.stringify(this.ngPlusRun)) : null, // Milestone 20
       company: { ...this.company }, // Milestone 21
+      pendingEntry: this.pendingEntry ? { ...this.pendingEntry } : null, // Milestone 22: a race set up, not run yet
     };
   }
 
@@ -2105,6 +2119,7 @@ export class Campaign {
     this.ending.load(data.ending); // null before Milestone 19 (the M18 debug switch set only the flag)
     this.ngPlusRun = data.ngplus ?? null; // null on a first run and before Milestone 20
     this.company = companyOf(data.company); // null before Milestone 21: the default name
+    this.pendingEntry = data.pendingEntry ?? null; // Milestone 22
     this.applyNgPlus();
     this._payStoredPrestige();
     this._backfillAchievementFlags();
@@ -2115,14 +2130,30 @@ export class Campaign {
     this.bus.emit('campaign:ready', { fresh: false });
   }
 
-  async save() {
-    if (!this.saveManager) return null;
+  // Saves never overlap (each waits for the one before). Milestone 22: the account, the archived endings and the run
+  // are separate slots (§37.2), so a damaged run can never take the account with it, and the other way round.
+  save() {
+    const run = (this._saveChain ?? Promise.resolve()).then(() => this._save());
+    this._saveChain = run.catch(() => {});
+    return run;
+  }
+
+  async _save() {
+    if (!this.saveManager || !this.campaignId) return null;
+    const t0 = globalThis.performance?.now() ?? Date.now();
     try {
       this.syncSecretFacts();
       syncRecords(this);
-      if (this.accountManager) await this.accountManager.save({ synergies: this.synergyArchive.serializeAccount(), secrets: this.secrets.serializeAccount(), achievements: this.achievements.serialize(), records: this.records.serialize(), archive: this.archive.serialize(), ngPlus: { ...this.ngPlusAccount } });
+      if (this.accountManager && !this.accountStatus?.blocked) {
+        const account = { synergies: this.synergyArchive.serializeAccount(), secrets: this.secrets.serializeAccount(), achievements: this.achievements.serialize(), records: this.records.serialize(), ngPlus: { ...this.ngPlusAccount } };
+        if (!this.archiveManager) account.archive = this.archive.serialize(); // one slot only (tests / older tools)
+        await this.accountManager.save(account);
+      }
+      if (this.archiveManager) await this.archiveManager.save({ endings: this.archive.serialize() });
       const rec = await this.saveManager.save(this.serialize());
       this.lastSaveError = null;
+      this.lastSaveMs = (globalThis.performance?.now() ?? Date.now()) - t0;
+      this.lastSaveStamp = this.changeStamp();
       return rec;
     } catch (err) {
       this.lastSaveError = err;
@@ -2131,28 +2162,44 @@ export class Campaign {
     }
   }
 
+  // What changes whenever anything worth saving changes (the 30-second autosave skips when this hasn't moved).
+  changeStamp() {
+    if (!this.campaignId) return 'none';
+    const c = this.clock;
+    return [this.campaignId, c.totalDays, Math.round((c.dayProgress ?? 0) * 1000), this.economy.nextLine, this.history.count, this.facilities.version, this.staff.staff.length, this.research.doneCount, this.notes.inbox.length, JSON.stringify(this.pendingEntry)].join('|');
+  }
+
+  // §37.4: a race set up but not run yet is part of the save, so it comes back after the app is closed.
+  setPendingEntry(choice) {
+    this.pendingEntry = choice ? { ...choice } : null;
+  }
+
   // Load the save if there is one, else start a new run. Returns true if a save was loaded.
   // Boot (Milestone 21): read the account record and the run save, but never start a game on its own — the main
   // menu decides. Returns { loaded, error }: loaded = a run is in memory now; error = the save exists but could not be
   // read (the menu offers Try again / New Game).
+  // Milestone 22: fallback = the newest copy was damaged and an earlier one was loaded; account = what happened to the
+  // account slot ({ fallback, lost, blocked }).
   async loadSaved() {
     await this._loadAccount();
+    const account = this.accountStatus;
     let data = null;
     try {
       data = await this.saveManager?.load();
     } catch (err) {
       console.error('[Campaign] could not load the save', err);
-      return { loaded: false, error: err };
+      return { loaded: false, error: err, fallback: false, account };
     }
-    if (!data) return { loaded: false, error: null };
+    const fallback = !!this.saveManager?.lastLoad?.fallback;
+    if (!data) return { loaded: false, error: null, fallback: false, account };
     try {
       this.loadData(data);
     } catch (err) {
       console.error('[Campaign] the save could not be read', err);
       this.campaignId = null;
-      return { loaded: false, error: err };
+      return { loaded: false, error: err, fallback, account };
     }
-    return { loaded: true, error: null };
+    return { loaded: true, error: null, fallback, account };
   }
 
   // Is there a run in memory (loaded or started)?
@@ -2160,10 +2207,25 @@ export class Campaign {
     return !!this.campaignId;
   }
 
-  // Settings → Reset save (Milestone 21): the run save and the account record are deleted and nothing is in memory.
+  // Settings → Reset this campaign (§37.7): only the run goes; the account (Tech Chips, Prestige Tokens, achievements,
+  // records, discoveries) and the archived endings stay.
+  async resetCampaign() {
+    await this._saveChain;
+    await this.saveManager?.clear();
+    this.campaignId = null;
+    this.ngPlusRun = null;
+    this.pendingEntry = null;
+    this.flags = {};
+    this.clock.pause();
+  }
+
+  // Settings → Reset everything (§37.7): the run, the account and the archived endings are deleted and nothing is in
+  // memory. (Device settings stay.)
   async resetSave() {
+    await this._saveChain;
     await this.saveManager?.clear();
     await this.accountManager?.clear();
+    await this.archiveManager?.clear();
     this.synergyArchive.account = { found: {} };
     this.secrets.loadAccount(null);
     this.achievements.load(null);
@@ -2176,19 +2238,34 @@ export class Campaign {
     this.clock.pause();
   }
 
+  // The account slot and the archived endings (Milestone 22: their own slots). If every copy of the account is
+  // damaged the run still loads and a fresh account starts; if the account is from a newer version it is left alone
+  // (blocked: never written over).
   async _loadAccount() {
+    this.accountStatus = { fallback: false, lost: false, blocked: false };
+    let account = null;
     try {
-      const account = await this.accountManager?.load();
-      this.synergyArchive.loadAccount(account?.synergies);
-      this.secrets.loadAccount(account?.secrets); // secret history + facts across runs
-      this.achievements.load(account?.achievements); // Milestone 18: achievements and records across runs
-      this.records.load(account?.records);
-      this.archive.load(account?.archive); // Milestone 19: finished runs
-      this.ngPlusAccount = { highest: 0, starts: 0, purchases: {}, ...(account?.ngPlus ?? {}) }; // Milestone 20
-      for (const id of Object.keys(this.secrets.account.history)) if (id.startsWith('TEST-')) delete this.secrets.account.history[id]; // M16 test rules
+      account = await this.accountManager?.load();
+      this.accountStatus.fallback = !!this.accountManager?.lastLoad?.fallback;
     } catch (err) {
       console.error('[Campaign] could not load the account record', err);
+      if (/newer/.test(err.message)) this.accountStatus.blocked = true;
+      else this.accountStatus.lost = true;
     }
+    let endings = account?.archive ?? null; // before Milestone 22 the endings lived in the account record
+    try {
+      const a = await this.archiveManager?.load();
+      if (a?.endings) endings = a.endings;
+    } catch (err) {
+      console.error('[Campaign] could not load the archived endings', err);
+    }
+    this.synergyArchive.loadAccount(account?.synergies);
+    this.secrets.loadAccount(account?.secrets); // secret history + facts across runs
+    this.achievements.load(account?.achievements); // Milestone 18: achievements and records across runs
+    this.records.load(account?.records);
+    this.archive.load(endings); // Milestone 19: finished runs
+    this.ngPlusAccount = { highest: 0, starts: 0, purchases: {}, ...(account?.ngPlus ?? {}) }; // Milestone 20
+    for (const id of Object.keys(this.secrets.account.history)) if (id.startsWith('TEST-')) delete this.secrets.account.history[id]; // M16 test rules
   }
 
   // Load the save if there is one, else start a new run. Returns true if a save was loaded (tests and tools).

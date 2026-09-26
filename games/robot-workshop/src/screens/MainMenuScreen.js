@@ -8,7 +8,6 @@ import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { hitRect } from '../../../../core/ui/Button.js';
 import { iconButton, errorState, stateHeight } from '../ui/widgets.js';
 import { MENU_ART, MAIN_MENU, COMPANY } from '../../data/menu.js';
-import { RANKS } from '../../data/economy.js';
 const C = THEME.color;
 
 const BTN_H = 150;
@@ -34,7 +33,7 @@ export function createMainMenuScreen({ renderer, layout, assets, campaign, route
     const accent = COMPANY.accents.find((a) => a.id === c.company?.accent)?.color;
     const ngBlock = run ? c.ngPlusBlock() : MAIN_MENU.ngPlus.lockedSub;
     return [
-      { id: 'continue', label: MAIN_MENU.continue.label, sub: run ? `${c.company.name} · Year ${c.clock.year} · Rank ${RANKS[c.reputation.highestRankIndex].id}${c.ngPlusRuns ? ` · NG+${c.ngPlusRuns}` : ''}` : MAIN_MENU.continue.none, icon: MENU_ART.continue, disabled: !run, stripe: run ? accent : null, onTap: actions.continueGame },
+      { id: 'continue', label: MAIN_MENU.continue.label, sub: run ? `${c.company.name} · Year ${c.clock.year} · Month ${c.clock.month} · Day ${c.clock.day}${c.ngPlusRuns ? ` · NG+${c.ngPlusRuns}` : ''}` : MAIN_MENU.continue.none, icon: MENU_ART.continue, disabled: !run, stripe: run ? accent : null, onTap: actions.continueGame },
       { id: 'newGame', label: MAIN_MENU.newGame.label, sub: MAIN_MENU.newGame.sub, icon: MENU_ART.newGame, accent: run ? C.progress : C.action, onTap: newGame },
       { id: 'ngPlus', label: ngBlock ? MAIN_MENU.ngPlus.label : `${MAIN_MENU.ngPlus.label} (NG+${c.nextNgPlusLevel})`, sub: ngBlock ? MAIN_MENU.ngPlus.lockedSub : 'Legacy Staff, blueprints and more', icon: MENU_ART.ngPlusIcon, accent: C.purple, locked: !!ngBlock, onTap: () => !ngBlock && router.go('ngplus', { back: 'menu' }) },
       { id: 'records', label: MAIN_MENU.records.label, sub: MAIN_MENU.records.sub, icon: MENU_ART.records, accent: C.progress, onTap: () => router.go('records', { back: 'menu' }) },

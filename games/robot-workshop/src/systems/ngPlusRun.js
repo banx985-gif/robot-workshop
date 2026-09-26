@@ -44,6 +44,7 @@ const RUN_FIELDS = {
   flags: 'flags',
   ngplus: 'ngplus',
   company: 'company', // always carried (Milestone 21)
+  pendingEntry: 'pendingEntry', // reset (Milestone 22)
 };
 const CARRIED_CURRENCIES = ['techChips', 'prestigeTokens'];
 

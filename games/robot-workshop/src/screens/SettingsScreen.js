@@ -1,6 +1,6 @@
 // Settings (Milestone 21, bible §6.3): sound and music volume, haptics, text size (Normal / Large = +15%), Reduced
-// Flashes, screen shake, performance (a placeholder until Milestone 27), privacy & legal, and Reset save behind a
-// double confirm. They are this device's settings (core/Settings.js) and change at once.
+// Flashes, screen shake, performance (a placeholder until Milestone 27), privacy & legal, and the two resets (§37.7,
+// Milestone 22: this campaign — one confirm; everything — hold to confirm). They are this device's settings (core/Settings.js).
 //   createSettingsScreen({ renderer, layout, assets, router, dialog, settings, onReset })
 import { THEME, font, lineH } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
@@ -13,7 +13,7 @@ const Z = THEME.size;
 const HEAD_H = 140;
 const PAD = 24;
 
-export function createSettingsScreen({ renderer, layout, assets, router, dialog, settings, onReset }) {
+export function createSettingsScreen({ renderer, layout, assets, router, dialog, settings, onReset, onResetCampaign = null, hasRun = () => true, debugEnabled = false }) {
   const W = renderer.width;
   const scroll = new ScrollPanel({ getRect: bodyRect, contentHeight: 0 });
   let back = 'menu';
@@ -38,16 +38,21 @@ export function createSettingsScreen({ renderer, layout, assets, router, dialog,
     return opts.map((o) => ({ ...o, on: o.value === v, w: bw }));
   }
 
-  function resetSave() {
-    dialog.confirm({
-      title: SETTINGS_TEXT.reset1Title,
-      body: SETTINGS_TEXT.reset1Body,
+  // §37.7 (Milestone 22): the run only — one confirm.
+  function resetCampaign() {
+    dialog.confirm({ title: SETTINGS_TEXT.resetCampaignTitle, body: SETTINGS_TEXT.resetCampaignBody, art: MENU_ART.warning, yes: SETTINGS_TEXT.resetCampaignYes, no: 'Cancel', danger: true, onYes: onResetCampaign });
+  }
+
+  // Everything — the button has to be held (it cannot be undone).
+  function resetAll() {
+    dialog.show({
+      title: SETTINGS_TEXT.resetAllTitle,
+      body: SETTINGS_TEXT.resetAllBody,
       art: MENU_ART.warning,
-      yes: 'Continue',
-      no: 'Cancel',
-      danger: true,
-      onYes: () =>
-        dialog.confirm({ title: SETTINGS_TEXT.reset2Title, body: SETTINGS_TEXT.reset2Body, art: MENU_ART.warning, yes: SETTINGS_TEXT.reset2Yes, no: 'Cancel', danger: true, onYes: onReset }),
+      buttons: [
+        { id: 'hold', label: SETTINGS_TEXT.resetAllYes, accent: C.bad, hold: SETTINGS_TEXT.resetAllHold, onTap: onReset },
+        { id: 'no', label: 'Cancel', accent: C.progress },
+      ],
     });
   }
 
@@ -134,10 +139,22 @@ export function createSettingsScreen({ renderer, layout, assets, router, dialog,
     iconButton(ctx, assets, legal, { label: SETTINGS_TEXT.legal, sub: 'How your save is kept', icon: MENU_ART.lock, accent: C.progress });
     hits.push({ key: 'legal', r: legal, onTap: () => dialog.show({ title: SETTINGS_TEXT.legal, body: SETTINGS_TEXT.legalBody, art: MENU_ART.lock, buttons: [{ id: 'ok', label: 'OK', accent: C.progress }] }) });
     y += 150 + 18;
-    const reset = { x: 0, y, w, h: 150 };
-    iconButton(ctx, assets, reset, { label: SETTINGS_TEXT.reset, sub: SETTINGS_TEXT.resetSub, icon: MENU_ART.warning, accent: C.bad });
-    hits.push({ key: 'reset', r: reset, onTap: resetSave });
-    return y + 150;
+    const rc = { x: 0, y, w, h: 150 };
+    iconButton(ctx, assets, rc, { label: SETTINGS_TEXT.resetCampaign, sub: hasRun() ? SETTINGS_TEXT.resetCampaignSub : 'No run to reset', icon: MENU_ART.warning, accent: C.bad, disabled: !hasRun() });
+    hits.push({ key: 'resetCampaign', r: rc, onTap: () => hasRun() && resetCampaign() });
+    y += 150 + 18;
+    const ra = { x: 0, y, w, h: 150 };
+    iconButton(ctx, assets, ra, { label: SETTINGS_TEXT.resetAll, sub: SETTINGS_TEXT.resetAllSub, icon: MENU_ART.warning, accent: C.bad });
+    hits.push({ key: 'resetAll', r: ra, onTap: resetAll });
+    y += 150;
+    if (debugEnabled) {
+      y += 18;
+      const si = { x: 0, y, w, h: 150 };
+      iconButton(ctx, assets, si, { label: SETTINGS_TEXT.inspector, sub: 'Slots, versions, checksums', icon: MENU_ART.save, accent: C.gold });
+      hits.push({ key: 'inspector', r: si, onTap: () => router.go('saveinspector', { back: 'settings' }) });
+      y += 150;
+    }
+    return y;
   }
 
   return screen;

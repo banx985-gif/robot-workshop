@@ -235,7 +235,10 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     });
     onLayout(); // spots for the new team; places everyone at home
     agents.forEach((a, i) => {
-      const h = homeOf(a);
+      // After a load (§37.4, Milestone 22): a worker on the current stage reappears at that stage's station (nearest
+      // valid spot); everyone else at home. Exact walking positions are never saved.
+      const st = staffOf(a)?.assigned ? primaryStation(phaseIdOf(a)) : null;
+      const h = st?.spot ?? homeOf(a);
       a.placeAtTile(grid, h.col, h.row);
       a.stateTime = -i * 1.5; // stagger start times so they don't all queue at once
     });
