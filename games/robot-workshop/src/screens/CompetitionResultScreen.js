@@ -9,7 +9,7 @@ import { TUNINGS, STRATEGIES } from '../../data/tuning.js';
 import { TRAITS } from '../../data/traits.js';
 import { robotArtOf } from '../systems/robotVisual.js';
 import { panel, text, hit, fmt } from '../ui/widgets.js';
-import { drawMarker, rivalOf, placeText, placeColor, row, drawSpeech, PLAYER_COLOR } from '../ui/competitionDraw.js';
+import { drawMarker, rivalOf, placeText, placeColor, row, drawSpeech, PLAYER_COLOR, drawBackdrop } from '../ui/competitionDraw.js';
 import { rivalLine, behindHint, ordinal } from '../systems/CompetitionRules.js';
 const COL = THEME.color;
 
@@ -88,7 +88,11 @@ export function createCompetitionResultScreen({ renderer, layout, assets, campai
     const h = 250;
     const dnf = result.player.dnf;
     panel(ctx, { x: 0, y, w, h }, { stroke: placeColor(result.place, dnf), lineWidth: 5 });
+    // Milestone 24: the event's backdrop behind the place, as on the setup and watch screens.
+    const ev = COMPETITIONS_BY_ID[result.eventId];
+    if (ev) drawBackdrop(ctx, assets, ev, { x: w - 262, y: y + 14, w: 246, h: h - 28 }, { radius: 18 });
     if (result.won) assets.drawContained(ctx, COMPETITION_ART.winBurst, { x: w - 250, y: y + 10, w: 230, h: 230 });
+    panel(ctx, { x: w - 232, y: y + 72, w: 194, h: 108 }, { fill: 'rgba(255,245,226,0.88)', stroke: null, radius: 22 }); // keeps the place readable over the scene
     text(ctx, dnf ? 'DNF' : placeText(result.place), w - 135, y + 125, { size: 96, bold: true, align: 'center', baseline: 'middle', color: placeColor(result.place, dnf) });
     text(ctx, result.eventName, 24, y + 20, { size: 40, bold: true, maxWidth: w - 300 });
     const head = dnf ? 'A breakdown ended the run.' : result.won ? 'You won!' : result.place <= 3 ? 'A podium finish!' : `Finished ${placeText(result.place)} of ${result.standings.length}.`;

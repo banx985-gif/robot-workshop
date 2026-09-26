@@ -7,6 +7,15 @@
 //     { type: 'start' } | { type: 'research', branch, level } | { type: 'facility', id } | { type: 'rank', rank }
 //     { type: 'counter', counter, min } | { type: 'competition', event } | { type: 'secret', id } | { type: 'all', of: [rules] }
 
+// Milestone 24: how special a part is, shown on its card with the matching parts crate from rewards/ (reward_07–09).
+// By complexity; the prestige parts are always legendary.
+export const PART_GRADES = [
+  { id: 'legendary', name: 'Legendary part', art: 'reward_09', minCx: 9, orTag: 'prestige' },
+  { id: 'elite', name: 'Elite part', art: 'reward_08', minCx: 7 },
+  { id: 'rare', name: 'Rare part', art: 'reward_07', minCx: 5 },
+];
+export const partGrade = (c) => PART_GRADES.find((g) => c.cx >= g.minCx || (g.orTag && c.tags?.includes(g.orTag))) ?? null;
+
 export const SLOTS = [
   { id: 'chassis', name: 'Chassis', art: 'chassis' },
   { id: 'mobility', name: 'Mobility', art: 'mobility' },

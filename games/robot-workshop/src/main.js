@@ -117,90 +117,10 @@ const W = 1080;
 const BASE_H = 1920; // 9:16; taller phones grow the height (see Renderer)
 const MAX_H = 2640; // up to 9:22 fills edge to edge; taller still gets thin bars top and bottom
 
-const art = (folder, key) => [key, `assets/images/${folder}/${key}.png`];
-const ASSETS = {
-  // Workshop room: floor, walls, the expansion boundary and the test-zone floor; facilities F01–F15; build icons.
-  ...Object.fromEntries([ROOM_ART.floor.key, ROOM_ART.corner.key, ...Object.values(ROOM_ART.pieces).map((p) => p.key), BUILD_ART.boundary].map((k) => art('env', k))),
-  ...Object.fromEntries(Object.values(FACILITIES).map((f) => art('facilities', f.art))),
-  ...Object.fromEntries(Object.values(FACILITIES).filter((f) => f.floor).map((f) => art('env', f.floor))),
-  ...Object.fromEntries([BUILD_ART.buildIcon, BUILD_ART.expansionIcon, BUILD_ART.lockIcon].map((k) => art('ui', k))),
-  // Effects and status icons.
-  ...Object.fromEntries(Object.values(VFX_ART).map((k) => art('vfx', k))),
-  ...Object.fromEntries(Object.values(STATUS_ART).map((k) => art('status', k))),
-  // Staff portraits: all 50 named staff (Milestone 11), plus every portrait candidates can use; role and tier badges.
-  ...Object.fromEntries(STAFF.map((s) => [s.art, `assets/images/staff/${s.art}.png`])),
-  ...Object.fromEntries(Object.values(PORTRAIT_FOLDER).flatMap((f) => Object.values(PORTRAITS).flat().map((n) => art('staff', `staff_${f}_${n}`)))),
-  ...Object.fromEntries(Object.values(ROLES).map((r) => art('badges', r.badge))),
-  ...Object.fromEntries(Object.values(RECRUIT_ART.tierBadges).map((k) => art('badges', k))),
-  // Hiring and training icons.
-  [RECRUIT_ART.icon]: `assets/images/ui/${RECRUIT_ART.icon}.png`,
-  [TRAINING_ART.icon]: `assets/images/ui/${TRAINING_ART.icon}.png`,
-  [TRAINING_ART.manual]: `assets/images/rewards/${TRAINING_ART.manual}.png`,
-  // Robot project art: finished robots, part icons, menu icons.
-  ...Object.fromEntries(VISUAL_FAMILIES.map((v) => art('robots', v.art))), // all 20 robot families
-  ...Object.fromEntries(Object.values(COMPONENTS).map((c) => [c.art, `assets/images/components/${c.art}.png`])),
-  ui_icon_11: 'assets/images/ui/ui_icon_11.png',
-  ui_icon_06_robot: 'assets/images/ui/ui_icon_06_robot.png',
-  // Money art.
-  ui_icon_01_money: 'assets/images/ui/ui_icon_01_money.png',
-  ui_icon_02_premium: 'assets/images/ui/ui_icon_02_premium.png',
-  ui_icon_03_reputation: 'assets/images/ui/ui_icon_03_reputation.png',
-  ui_icon_13: 'assets/images/ui/ui_icon_13.png',
-  // Contracts: icon, customer portraits, the first-contract moment.
-  ui_icon_14: 'assets/images/ui/ui_icon_14.png',
-  // Milestone 17b: the workshop props, the save icon and the effects the build show uses.
-  ...Object.fromEntries(PROPS.map((p) => art('props', p.art))),
-  ...Object.fromEntries(['ui_icon_28', 'ui_icon_05_staff', 'ui_icon_13', 'ui_icon_12'].map((k) => art('ui', k))),
-  ...Object.fromEntries(['vfx_01', 'vfx_02', 'vfx_03', 'vfx_04', 'vfx_09', 'vfx_11', 'vfx_12'].map((k) => art('vfx', k))),
-  // First-time guide: help icon and the two event pictures.
-  [HELP_ICON]: `assets/images/ui/${HELP_ICON}.png`,
-  event_art_01: 'assets/images/events/event_art_01.png',
-  event_art_02: 'assets/images/events/event_art_02.png',
-  ...Object.fromEntries([...new Set(SEGMENTS.map((s) => s.customerArt))].map((k) => art('npc', k))),
-  [FIRST_CONTRACT_ART]: `assets/images/events/${FIRST_CONTRACT_ART}.png`,
-  ui_icon_29: 'assets/images/ui/ui_icon_29.png',
-  reward_01: 'assets/images/rewards/reward_01.png',
-  // Research (Milestone 9): icon and RP token (the glow and blueprint effects are in VFX art).
-  [RESEARCH_ART.icon]: `assets/images/ui/${RESEARCH_ART.icon}.png`,
-  [RESEARCH_ART.rp]: `assets/images/rewards/${RESEARCH_ART.rp}.png`,
-  [RESEARCH_ART.glow]: `assets/images/vfx/${RESEARCH_ART.glow}.png`,
-  // Competitions (Milestones 12–13): all 12 event backdrops, icons, win/loss/rank-up effects, the 6 trophies, the first-event
-  // and World Championship art, rival logos and the five rival managers.
-  ...Object.fromEntries(COMPETITIONS.map((c) => art('backdrops', c.art))),
-  ...Object.fromEntries([art('ui', COMPETITION_ART.icon), art('vfx', COMPETITION_ART.winBurst), art('vfx', COMPETITION_ART.lossPuff), art('events', COMPETITION_ART.firstMoment)]),
-  ...Object.fromEntries([art('ui', COMPETITION_ART.rankingsIcon), art('ui', COMPETITION_ART.trophiesIcon), art('vfx', COMPETITION_ART.rankUpBurst), art('events', COMPETITION_ART.worldMoment)]),
-  ...Object.fromEntries(TROPHIES.map((t) => art('trophies', t.art))),
-  ...Object.fromEntries(RIVALS.map((r) => art('logos', r.logo))),
-  ...Object.fromEntries(RIVALS.filter((r) => r.manager).map((r) => art('npc', r.manager))),
-  // Combos (Milestone 14): discovery glow, combos icon, the ??? marker (robots 11–20 are in the robot families above).
-  ...Object.fromEntries([art('vfx', SYNERGY_ART.discover), art('vfx', SYNERGY_ART.blueprint), art('ui', SYNERGY_ART.icon), art('ui', SYNERGY_ART.secret)]),
-  // Events, sponsors and the inbox (Milestone 15): the 8 milestone pictures, the event icons, the two sponsor reps
-  // and the sponsors' icons.
-  ...Object.fromEntries(MILESTONE_EVENTS.map((e) => art('events', e.art))),
-  ...Object.fromEntries(Object.values(EVENT_ICONS).map((k) => art(k.startsWith('reward_') ? 'rewards' : 'ui', k))),
-  ...Object.fromEntries(SPONSORS.map((s) => (s.art ? art('npc', s.art) : art('ui', s.icon)))),
-  // Secrets (Milestone 16): the ??? marker, the discovery effect and the records icon.
-  // Milestone 17: legendary aura, Prestige Token, secret badge (the 09/10 staff, prestige parts, F34/F35, robots 18–20,
-  // event art 07/08 and the Nocturne logo come in with their own lists above).
-  ...Object.fromEntries([art('ui', SECRET_ART.marker), art('vfx', SECRET_ART.discover), art('ui', SECRET_ART.records), art('vfx', SECRET_ART.aura), art('rewards', SECRET_ART.token), art('badges', SECRET_ART.badge)]),
-  // Achievements and records (Milestone 18): records icon, trophies icon, reward badge, rank-up burst, reputation stars.
-  ...Object.fromEntries([art('ui', ACHIEVEMENT_ART.records), art('ui', ACHIEVEMENT_ART.icon), art('rewards', ACHIEVEMENT_ART.badge), art('vfx', ACHIEVEMENT_ART.burst), art('vfx', ACHIEVEMENT_ART.stars)]),
-  ...Object.fromEntries(['ui_icon_04_research', 'ui_icon_08_competition', 'ui_icon_10_secret', 'ui_icon_12'].map((k) => art('ui', k))),
-  // The Year 16 ending (Milestone 19): key art, logo and series end-card; the World Championship / national
-  // moments, trophies, burst and stars are loaded above.
-  ...Object.fromEntries([ENDING_ART.keyArt, ENDING_ART.logo, ENDING_ART.seriesMark].map((k) => art('brand', k))),
-  ...Object.fromEntries([art('events', ENDING_ART.worldMoment), art('events', ENDING_ART.nationalMoment), art('vfx', ENDING_ART.burst), art('vfx', ENDING_ART.stars)]),
-  // New Game+ (Milestone 20): key art, the NG+ burst and icon (the Prestige Token, portraits and blueprint glow are above).
-  ...Object.fromEntries([art('brand', NG_PLUS_ART.keyArt), art('vfx', NG_PLUS_ART.burst), art('ui', NG_PLUS_ART.icon)]),
-  // The front end (Milestone 21): every menu / settings / store icon and the splash art.
-  ...Object.fromEntries(['ui_icon_07_workshop', 'ui_icon_15', 'ui_icon_16', 'ui_icon_17', 'ui_icon_18', 'ui_icon_21', 'ui_icon_22', 'ui_icon_25', 'ui_icon_26', 'ui_icon_27', 'ui_icon_30'].map((k) => art('ui', k))),
-  ...Object.fromEntries([MENU_ART.keyArt, MENU_ART.logo, MENU_ART.seriesMark, MENU_ART.ngPlus].map((k) => art('brand', k))),
-  // Store, VIP and ads (Milestone 23): the store / VIP / rewarded-ad / Remove Ads icons and the Tech Chip rewards.
-  ...Object.fromEntries(['ui_icon_23', 'ui_icon_24'].map((k) => art('ui', k))),
-  ...Object.fromEntries(['reward_02', 'reward_03'].map((k) => art('rewards', k))),
-  // Deliberately missing file: proves the placeholder fallback.
-  placeholderTest: 'assets/m0-missing-test.png',
-};
+import { ASSETS } from './app/artManifest.js'; // Milestone 24: the art manifest has its own module
+import { WEB_ART, SCREEN_ART } from '../data/webArt.js';
+import { ART_LIST_KEYS, ART_NOT_IN_GAME } from '../data/artList.js';
+import { validateAssets, assetSummary } from '../../../core/AssetValidator.js';
 // ?screen=test: the Milestone 0 test screen. ?debug=1&screen=debugbuilder: open straight into the debug builder.
 const SCREEN_PARAM = new URLSearchParams(window.location.search).get('screen');
 const DEBUG_PARAM = new URLSearchParams(window.location.search).get('debug') === '1';
@@ -216,7 +136,13 @@ let H = renderer.height; // live logical height
 const layout = new UiLayout(renderer, { forceInsets: FORCE_INSETS });
 bus.on('renderer:resize', () => layout.refresh());
 const input = new Input(renderer, bus);
-const assets = new AssetManager({ bus });
+// Milestone 24: the game is served web-sized copies of its art (tools/optimize-images.mjs → assets/img_opt/): WebP where
+// the browser shows it, a PNG copy otherwise, and the original only as a last resort (local runs before the copies exist;
+// the published build ships only the copies).
+let webpOk = false;
+const optPath = (src, ext) => src.replace(`${WEB_ART.sourceDir}/`, `${WEB_ART.outDir}/`).replace(/.png$/, `.${ext}`);
+const resolveArt = (src) => (src.startsWith(`${WEB_ART.sourceDir}/`) ? [...(webpOk ? [optPath(src, 'webp')] : []), optPath(src, 'png'), src] : [src]);
+const assets = new AssetManager({ bus, resolve: resolveArt });
 const router = new ScreenRouter(bus, { roots: ['workshop', 'menu'] }); // back from a root: pause menu / leave
 
 // Device settings (Milestone 21): text size, volumes, haptics, Reduced Flashes… (?flashes=reduced still works).
@@ -543,6 +469,36 @@ document.addEventListener('visibilitychange', () => {
 });
 setInterval(() => document.visibilityState === 'visible' && storeCheck(), VIP.recheckEveryMin * 60000);
 
+// --- the art loading plan (Milestone 24) ---------------------------------------------------------------------------------
+// After the first screen: each screen's pictures are fetched first when it opens (data/webArt.js SCREEN_ART), the run's
+// own team and facilities as soon as a run is loaded, and everything else a few at a time in the background.
+const folderOf = (key) => ASSETS[key]?.split('/').at(-2);
+function screenArt(name) {
+  const folders = new Set(SCREEN_ART[name] ?? []);
+  return folders.size ? Object.keys(ASSETS).filter((k) => folders.has(folderOf(k))) : [];
+}
+function runArt() {
+  if (!campaign.hasRun) return [];
+  return [...campaign.staff.staff.map((s) => s.art), ...campaign.facilities.placed.map((it) => FACILITIES[it.def]?.art), ...campaign.recruitment.cards.map((c) => c.art)].filter(Boolean);
+}
+let artBackground = null;
+function artLoadPlan() {
+  assets.ensure(runArt());
+  artBackground ??= assets.loadInBackground(Object.keys(ASSETS), { concurrency: WEB_ART.backgroundConcurrency }).then(() => {
+    bus.emit('art:allLoaded', {});
+    performance.mark?.('botworks:art-loaded');
+    if (debug.enabled) debug.log(assetSummary(artCheck()));
+  });
+}
+bus.on('screen:change', ({ to }) => assets.ensure(screenArt(to)));
+for (const e of ['campaign:ready', 'staff:hired', 'recruit:refresh', 'facility:placed']) bus.on(e, () => assets.ensure(runArt()));
+// ?debug=1: the asset validator on what really loaded and what has been drawn so far (core/AssetValidator.js).
+function artCheck() {
+  const t = assets.trackingReport();
+  const files = Object.fromEntries([...assets.images.keys()].map((k) => [k, assets.sources.get(k)]));
+  return validateAssets({ artList: ART_LIST_KEYS, manifest: ASSETS, files, notInGame: ART_NOT_IN_GAME, drawn: t?.drawn ?? null, fallbacks: t?.fallbacks ?? null });
+}
+
 // ---------------------------------------------------------------------------
 // Splash (Milestone 21): the BOTWORKS logo over the key art while the art loads (the splash's own pictures first),
 // then the save check; then the main menu. Art first: the workshop sizes each worker from their picture.
@@ -550,13 +506,20 @@ const splashScreen = createSplashScreen({
   renderer,
   layout,
   assets,
+  // Milestone 24 loading plan: the splash's own two pictures, then only what the first screen needs (menu, workshop,
+  // starter staff and facilities — data/webArt.js); the rest follows in the background once the game is up.
   load: async (progress) => {
-    await assets.loadImages({ [MENU_ART.keyArt]: ASSETS[MENU_ART.keyArt], [MENU_ART.logo]: ASSETS[MENU_ART.logo] });
-    const res = await assets.loadImages(ASSETS, (done, total) => progress(done / total));
-    return { missing: (res?.missing ?? []).filter((k) => k !== 'placeholderTest') };
+    webpOk = await AssetManager.webpSupported();
+    assets.register(ASSETS);
+    await assets.ensure([MENU_ART.keyArt, MENU_ART.logo]);
+    const first = WEB_ART.firstScreen.filter((k) => ASSETS[k]);
+    await assets.ensure(first, (done, total) => progress(done / total));
+    return { missing: first.filter((k) => assets.missing.has(k)) };
   },
   checkSave,
   onDone: () => {
+    performance.mark?.('botworks:menu-ready'); // Milestone 24: first-screen load time (measured on a throttled connection)
+    artLoadPlan();
     if (START_SCREEN === 'test') return router.go('test', {}, { replace: true });
     if (START_SCREEN === 'debugbuilder' && campaign.hasRun) return router.go('debugbuilder', {}, { replace: true });
     router.go('menu', {}, { replace: true });
@@ -569,6 +532,7 @@ const splashScreen = createSplashScreen({
 // tap marker, drag trail, hold ring, a spinner that stops when paused, and a pause button.
 const testScreen = {
   enter() {
+    assets.loadImage('placeholderTest', 'assets/m0-missing-test.png'); // deliberately missing: proves the placeholder box
     this.time = 0;
     this.angle = 0;
     this.tap = null; // last tap { x, y, age }
@@ -1302,7 +1266,7 @@ if (debug.enabled) {
   window.__m5 = { ...window.__m4, vfx, audio, major };
   window.__m6 = { ...window.__m5, components: componentsScreen, debugBuilder: debugBuilderScreen, makeSandbox, validation: null };
   // §41.5: check all content at start (debug builds only). Results go to the debug box and the console.
-  validateGameData({ manifest: ASSETS, placeholders: ['placeholderTest'] }).then((report) => {
+  validateGameData({ manifest: ASSETS, placeholders: [], fetchFn: (url) => fetch(resolveArt(url)[0], { method: 'HEAD', cache: 'no-store' }) }).then((report) => {
     window.__m6.validation = report;
     debug.log(`data check: ${report.errors.length} errors, ${report.warnings.length} warnings, ${report.counts.art} images`);
     if (report.errors.length) console.error('[data check]', report.errors);
@@ -1334,6 +1298,8 @@ if (debug.enabled) {
   window.__m20 = { ...window.__m19, ngplus: ngPlusScreen, ngPlusSys: campaign.ngPlusSys };
   window.__m22 = { autosave, storageInfo, saveInspector, reloadFromStorage, showSaveNotes, saveNotes: () => saveNotes };
   window.__m23 = { monet, testStore, store: storeScreen, vip: vipScreen, debugPanel: monetDebugScreen, watchAd, breakPoint, interstitialContext, storeCheck };
+  window.__m24 = { assets, ASSETS, artCheck, screenArt, runArt, webp: () => webpOk, background: () => artBackground };
+  assets.startTracking(); // the validator's "used" and "0 fallbacks" record
   window.__m21 = { ...window.__m20, splash: splashScreen, menu: menuScreen, company: companyScreen, settingsScreen, settings, projects: projectsScreen, dialog, systemBack: null, haptics, textPrompt, eventPopup, major, layout, bus };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
@@ -1388,6 +1354,7 @@ bus.on('screen:change', () => systemBack.rearm());
 if (window.__m21) window.__m21.systemBack = systemBack;
 // A full screen opening clears any floating number still rising (FIXES_QUEUE, M20 note).
 bus.on('screen:change', ({ to }) => to !== 'workshop' && floats.clear());
+bus.on('screen:change', ({ to }) => (assets.screenTag = to)); // Milestone 24: the asset tracker notes where each picture is drawn
 // Haptics (§7): light on building, launching and a stage done; medium on unlocks and wins.
 for (const e of ['facility:placed', 'product:launch', 'project:phase', 'staff:hired', 'research:complete']) bus.on(e, () => campaignReady && haptics.light());
 for (const e of ['project:complete', 'secret:unlocked', 'trophy:awarded', 'reputation:rankUp', 'achievement:unlocked']) bus.on(e, () => campaignReady && haptics.medium());

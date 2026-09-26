@@ -28,5 +28,8 @@ export const CREDITS = [
   { gap: 80 },
   { image: 'brand_07_credits_series_mark', h: 360 },
   { line: 'The Canvas Management Series continues…' },
+  { gap: 60 },
+  { image: 'brand_01_app_icon', h: 220 }, // Milestone 24: the app icon, as it sits on your home screen
+  { line: 'BOTWORKS on your home screen' },
   { gap: 200 },
 ];

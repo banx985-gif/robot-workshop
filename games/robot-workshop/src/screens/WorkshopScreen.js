@@ -213,6 +213,16 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
 
   let agents = []; // one per staff member, rebuilt when a campaign loads
   for (const e of ['campaign:ready', 'staff:hired', 'staff:fired']) bus.on(e, () => buildAgents());
+  // Milestone 24: pictures now arrive while the game runs (the loading plan). A worker gets their real width when their
+  // picture lands; a room piece arriving redraws the cached room layer.
+  const ROOM_KEYS = new Set([ROOM_ART.floor.key, ROOM_ART.corner.key, ...Object.values(ROOM_ART.pieces).map((p) => p.key), ...Object.values(ROOM_ART.zoneFloors ?? {}).map((f) => f.key), BUILD_ART.boundary, ...Object.values(FACILITIES).map((f) => f.floor).filter(Boolean)]);
+  bus.on('asset:loaded', ({ key }) => {
+    for (const a of agents) if (a.art === key) a.width = Math.round(a.height * assets.aspect(key));
+    if (ROOM_KEYS.has(key) && roomOps) {
+      roomOps = layoutRoom();
+      room.invalidate();
+    }
+  });
   bus.on('facility:layout', () => onLayout());
 
   function buildAgents() {
@@ -490,6 +500,15 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
         if (r < 0 || r >= ext.rows || r % n || !shownCell(c, r)) continue;
         const x = (c - r) * HW;
         const y = (c + r) * HH;
+        // Milestone 24: an expansion can have its own floor tile (the industrial wing).
+        const zf = ROOM_ART.zoneFloors?.[F.zoneAt(c, r)?.id];
+        if (zf) {
+          const zi = assets.get(zf.key);
+          const zx = (HW * zf.cells + 0.6) / zf.halfW;
+          const zy = (HH * zf.cells + 0.4) / zf.halfH;
+          ops.push({ key: zf.key, w: (zi?.naturalWidth ?? 488) * zx, h: (zi?.naturalHeight ?? 406) * zy, m: new DOMMatrix().translate(x - zf.faceTop[0] * zx, y - zf.faceTop[1] * zy), lx: 0, ly: 0 });
+          continue;
+        }
         ops.push({ key: F0.key, w: iw * fx, h: ih * fy, m: new DOMMatrix().translate(x - F0.faceTop[0] * fx, y - F0.faceTop[1] * fy), lx: 0, ly: 0 });
       }
     }

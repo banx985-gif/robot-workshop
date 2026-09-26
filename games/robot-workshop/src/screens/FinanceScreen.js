@@ -239,7 +239,16 @@ export function createFinanceScreen({ renderer, layout, assets, campaign, router
       const cash = eco.balance('credits');
       text(ctx, 'Credits', 290, 22, { size: SMALL, color: COL.textMuted });
       text(ctx, fmt(cash), 290, 56, { size: 64, bold: true, color: cash < 0 ? COL.bad : COL.text });
-      text(ctx, `Tech Chips ${eco.balance('techChips')}${eco.balance('prestigeTokens') ? ` · Prestige Tokens ${eco.balance('prestigeTokens')}` : ''}`, 290, 142, { size: BODY, bold: true, color: COL.purple, maxWidth: w - 310 });
+      // Milestone 24: each currency with its reward picture (Tech Chip, Prestige Token).
+      contained(ctx, assets, 'reward_02', { x: 288, y: 134, w: 48, h: 48 });
+      const chipsTxt = `Tech Chips ${eco.balance('techChips')}`;
+      text(ctx, chipsTxt, 342, 142, { size: BODY, bold: true, color: COL.purple, maxWidth: w - 362 });
+      if (eco.balance('prestigeTokens')) {
+        ctx.font = font(BODY, true);
+        const tx = Math.min(w - 300, 342 + ctx.measureText(chipsTxt).width + 30);
+        contained(ctx, assets, 'reward_10', { x: tx, y: 134, w: 48, h: 48 });
+        text(ctx, `Prestige Tokens ${eco.balance('prestigeTokens')}`, tx + 54, 142, { size: BODY, bold: true, color: COL.purple, maxWidth: w - tx - 74 });
+      }
       const next = rep.nextRank;
       wrapText(ctx, `Reputation ${fmt(rep.value)} · Rank ${rep.rank.id}${next ? ` (Rank ${next.id} at ${fmt(next.min)})` : ''}`, 290, 194, w - 310, { size: BODY, lineH: LINE, maxLines: 2 });
 

@@ -49,8 +49,8 @@ const ROBOT_ART = (key) => `assets/images/robots/${key}.png`;
 const PART_ART = (key) => `assets/images/components/${key}.png`;
 
 // manifest: the game's image list { key: path }; placeholders: keys that are allowed to be missing.
-export async function validateGameData({ manifest = {}, placeholders = [] } = {}) {
-  const v = new DataValidator();
+export async function validateGameData({ manifest = {}, placeholders = [], fetchFn = null } = {}) {
+  const v = new DataValidator(fetchFn ? { fetchFn } : {}); // Milestone 24: the art is checked where the game really loads it from
   const statSet = new Set(ROBOT_STAT_KEYS);
   const rankSet = new Set(RANKS.map((r) => r.id));
   const WORK_STAT_KEYS = new Set(STAT_KEYS);

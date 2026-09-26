@@ -115,7 +115,8 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
       title: c.name,
       subtitle: `${ROLES[c.role].name} · Lv ${c.level} · ${TIERS[c.tier].name}`,
       portraitKey: c.art,
-      badgeKey: RECRUIT_ART.tierBadges[c.tier],
+      badgeKey: ROLES[c.role].badge, // Milestone 24: role and rarity badges on every candidate
+      badge2Key: RECRUIT_ART.tierBadges[c.tier],
       stats: WORK_STATS.map((st) => ({ label: st.short, value: c.stats[st.key] })),
       chips: c.traits.map((t) => ({ label: TRAITS[t]?.name ?? t })),
       bars: [],

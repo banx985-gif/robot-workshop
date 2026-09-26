@@ -21,6 +21,7 @@ import { hintFor, rewardText } from '../systems/Synergies.js';
 import { SYNERGIES_BY_ID, SYNERGY_ART } from '../../data/synergies.js';
 import { checkRecord, requirementLines } from '../systems/ContractRules.js';
 import { panel, text, contained, hit, fmt, staffRow, wrapText } from '../ui/widgets.js';
+import { RECRUIT_ART } from '../../data/recruitment.js';
 const COL = THEME.color;
 
 const HEADER_H = 150;
@@ -351,7 +352,7 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       campaign.staff.staff.forEach((s, i) => {
         const on = state.teamIds.includes(s.id);
         const support = on && state.teamIds.indexOf(s.id) >= PROJECT_RULES.teamSlots;
-        staffRow(ctx, assets, rowRect(i), s, { roleName: ROLES[s.role].name, on, tag: onResearch(s.id) ? 'On research' : support ? 'Support 35% ✓' : on ? 'On team ✓' : 'Tap to add' });
+        staffRow(ctx, assets, rowRect(i), s, { roleName: ROLES[s.role].name, badges: [ROLES[s.role].badge, RECRUIT_ART.tierBadges[s.tier]], on, tag: onResearch(s.id) ? 'On research' : support ? 'Support 35% ✓' : on ? 'On team ✓' : 'Tap to add' });
       });
 
       // Summary

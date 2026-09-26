@@ -230,9 +230,9 @@ Object.assign(FACILITIES, {
   // M19 reading of "-1 complexity for PO components for tier calc": the power part counts 1 less when the project tier is worked out.
   F22: advanced('F22', 'Power Lab', 5500, 3, 2, [{ key: 'robotStat.PWR', value: 6, maxCount: 1 }, { key: 'robotStat.END', value: 6, maxCount: 1 }, { key: 'tierCx.power', value: -1, maxCount: 1 }], '+6 PWR and END; power parts count −1.', research('power', 4), 'facility_22_power_lab'),
   F23: advanced('F23', 'Sensor Lab', 5000, 3, 2, [{ key: 'robotStat.INT', value: 6, maxCount: 1 }, { key: 'robotStat.CTL', value: 6, maxCount: 1 }], '+6 INT and CTL on every robot.', research('ai', 3), 'facility_23_sensor_lab'),
-  F24: advanced('F24', 'Drive Test Bench', 5000, 3, 2, [{ key: 'robotStat.SPD', value: 6, maxCount: 1 }, { key: 'robotStat.CTL', value: 6, maxCount: 1 }], '+6 SPD and CTL on every robot.', research('mobility', 4), 'facility_24_drive_test_bench'),
+  F24: advanced('F24', 'Drive Test Bench', 5000, 3, 2, [{ key: 'robotStat.SPD', value: 6, maxCount: 1 }, { key: 'robotStat.CTL', value: 6, maxCount: 1 }], '+6 SPD and CTL on every robot.', research('mobility', 4), 'facility_24_drive_test_bench', { floor: 'env_10_pit_floor' }), // M24: the test-pit floor under it
   // M19 reading of "+12 Testing phase score for competition prototypes": +12 to the preparation part of every competition score.
-  F25: advanced('F25', 'Dyno Test Rig', 6500, 3, 2, [{ key: 'competitionPrep', value: 12, maxCount: 1 }], '+12 on every competition score.', rank('B'), 'facility_25_dyno_test_rig'),
+  F25: advanced('F25', 'Dyno Test Rig', 6500, 3, 2, [{ key: 'competitionPrep', value: 12, maxCount: 1 }], '+12 on every competition score.', rank('B'), 'facility_25_dyno_test_rig', { floor: 'env_10_pit_floor' }), // M24: the test-pit floor under it
   // Aero / Hover / Rocket builds: a robot whose parts carry one of those tags (MO07 Hover Drive, MO08 Rocket/Skate Drive).
   F26: advanced('F26', 'Wind Tunnel', 8000, 4, 2, ['hover', 'rocket', 'aero'].flatMap((t) => [{ key: `tagStat.${t}.SPD`, value: 10, maxCount: 1 }, { key: `tagStat.${t}.CTL`, value: 6, maxCount: 1 }]), 'Aero, hover, rocket builds: +10 SPD, +6 CTL.', research('mobility', 5), 'facility_26_wind_tunnel'),
   // M19 reading of "+3 TST from first use/worker/year": a pilot finishing a course here gains +3 TST, once a year each.

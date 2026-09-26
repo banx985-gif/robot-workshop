@@ -41,8 +41,21 @@ export const PROPS = [
   { art: 'prop_02', col: 1, row: 3, h: 60 }, // rolling stool
   { art: 'prop_06', col: 7, row: 8, h: 110 }, // spare limbs rack
   { art: 'prop_11', col: 3, row: 9, h: 115 }, // drink machine
-  { art: 'prop_09', col: 0, row: 9, h: 100 }, // plant
+  { art: 'prop_09', col: 1, row: 9, h: 100 }, // plant (M24: one cell over, off the corner rest spot)
   { art: 'prop_12', col: 5, row: 9, h: 80 }, // shipping crates
+  // Milestone 24: every expansion comes with a little decoration of its own (drawn only once that floor is owned, and
+  // hidden under any facility built on the spot). folder: where the picture lives if not props/ (the partition is a
+  // room piece). They never block walking.
+  { art: 'prop_08', col: 9, row: 0, h: 115 }, // X1: whiteboard on the back wall
+  { art: 'env_09_internal_partition', folder: 'env', col: 11, row: 7, h: 62 }, // X1: a low partition
+  { art: 'prop_05', col: 10, row: 13, h: 60 }, // X2: safety cones
+  { art: 'prop_09', col: 1, row: 13, h: 100 }, // X2: a plant
+  { art: 'prop_13', col: 16, row: 2, h: 115 }, // X3: forklift / pallet mover
+  { art: 'prop_12', col: 17, row: 6, h: 80 }, // X3: shipping crates
+  { art: 'env_09_internal_partition', folder: 'env', col: 13, row: 12, h: 62 }, // X3: a low partition
+  { art: 'prop_14', col: 9, row: 19, h: 125 }, // X4: the media camera tripod
+  { art: 'prop_05', col: 3, row: 18, h: 60 }, // X4: safety cones
+  { art: 'prop_07', col: 24, row: 0, h: 120 }, // basement: a blueprint board
 ];
 
 // Worker routine timings (real seconds at 1×).
@@ -69,6 +82,11 @@ export const ROOM_ART = {
     window: { key: 'env_07_window', base: [7, 271], slope: 0.3725, span: 454, post: 56 },
   },
   corner: { key: 'env_05_wall_corner', apex: [237, 293], arm: 230, post: 56 },
+  // Milestone 24: the big expansions (Expansions 3 and 4) are the industrial wing — their own floor tile.
+  zoneFloors: {
+    X3: { key: 'env_02_floor_industrial', faceTop: [244, 8], halfW: 236, halfH: 160, cells: 2 },
+    X4: { key: 'env_02_floor_industrial', faceTop: [244, 8], halfW: 236, halfH: 160, cells: 2 },
+  },
   // Pieces along each back wall, from the corner outwards.
   rightWall: ['window', 'wall'],
   leftWall: ['wall', 'door', 'window'],

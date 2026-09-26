@@ -8,7 +8,7 @@
 import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
-import { SLOTS, partsInSlot } from '../../data/components.js';
+import { SLOTS, partsInSlot, partGrade } from '../../data/components.js';
 import { ROBOT_STAT_KEYS } from '../../data/stats.js';
 import { VISUAL_FAMILIES } from '../../data/visuals.js';
 import { PURPOSES } from '../../data/purposes.js';
@@ -84,9 +84,13 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
     const stats = ROBOT_STAT_KEYS.filter((k) => c.stats[k]).map((k) => `${k} ${c.stats[k] > 0 ? '+' : ''}${c.stats[k]}`);
     if (c.inn) stats.push(`INN +${c.inn}`);
     const lock = open ? 'Open — ready to use' : `Locked — needs ${missingParts(c.unlock, (r) => campaign.unlockMet(r, { type: 'part', id: c.id })).join(' + ') || describeUnlock(c.unlock)}`;
+    const grade = partGrade(c); // Milestone 24: the parts crate for rare / elite / legendary parts
     return {
       art: c.art,
       title: `${c.id} · ${c.name}`,
+      rightArt: grade?.art,
+      right: grade?.name,
+      rightColor: COL.gold,
       locked: !open,
       state: open ? 'good' : 'locked',
       lines: [

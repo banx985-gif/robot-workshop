@@ -11,13 +11,17 @@ import { ROLES, TIERS } from '../../data/staff.js';
 import { TRAITS } from '../../data/traits.js';
 import { WORK_STATS } from '../../data/stats.js';
 import { createTopBar } from '../ui/TopBar.js';
+import { STATUS_ART, STATUS_ORDER } from '../../data/feedback.js';
+import { RECRUIT_ART } from '../../data/recruitment.js';
 const COL = THEME.color;
 
-const STATUS_ICONS = {
-  tired: 'status_staff_02_tired',
-  stressed: 'status_staff_04_stressed',
-  inspired: 'status_staff_03_inspired',
-};
+// Status icons on the card (Milestone 24: the same five pictures as over the workers' heads — data/feedback.js).
+// Most important first; a content worker with nothing else going on shows the happy face.
+function statusIcons(s) {
+  const list = STATUS_ORDER.filter((k) => s.status?.[k]).map((k) => STATUS_ART[k]);
+  if (!list.length && s.morale >= 70) list.push(STATUS_ART.happy);
+  return list;
+}
 
 export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, campaign, router, workshop, goProject, hud }) {
   const W = renderer.width;
@@ -73,6 +77,7 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
       subtitle: `${ROLES[s.role].name} · Lv ${s.level} · ${TIERS[s.tier].name}`,
       portraitKey: s.art,
       badgeKey: ROLES[s.role].badge,
+      badge2Key: RECRUIT_ART.tierBadges[s.tier], // Milestone 24: rarity too
       xp: { value: s.xp, max: need },
       stats: WORK_STATS.map((st) => ({ label: st.short, value: s.stats[st.key] })),
       bars: [
@@ -80,9 +85,7 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
         { label: 'Morale', value: s.morale, max: 100, color: COL.action },
       ],
       chips: s.traits.map((t) => ({ label: (TRAITS[t]?.signature ? '★ ' : '') + (TRAITS[t]?.name ?? t), detail: TRAITS[t]?.description })),
-      icons: Object.keys(STATUS_ICONS)
-        .filter((k) => s.status[k])
-        .map((k) => STATUS_ICONS[k]),
+      icons: statusIcons(s),
       footer: nowText(s),
       buttons: [
         { id: 'train', label: campaign.training.trainingOf(s.id) ? 'Training…' : 'Train' },

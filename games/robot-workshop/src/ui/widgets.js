@@ -41,9 +41,11 @@ export function fmt(n) {
 }
 
 // One worker row with a portrait, name, role, Energy/Morale and an on/off tag (team pickers).
-export function staffRow(ctx, assets, r, s, { roleName, on = false, tag = '', tagColor = COL.good } = {}) {
+// badges (Milestone 24): small role / rarity badges over the portrait's corner.
+export function staffRow(ctx, assets, r, s, { roleName, on = false, tag = '', tagColor = COL.good, badges = [] } = {}) {
   panel(ctx, r, { fill: on ? COL.panelGood : COL.panel, stroke: on ? COL.good : COL.line, lineWidth: on ? 5 : 3 });
   contained(ctx, assets, s.art, { x: r.x + 12, y: r.y + 8, w: 90, h: r.h - 16 });
+  badges.filter(Boolean).forEach((k, i) => contained(ctx, assets, k, { x: r.x + 4 + i * 44, y: r.y + r.h - 50, w: 46, h: 46 }));
   text(ctx, s.name, r.x + 120, r.y + 16, { size: 34, bold: true, maxWidth: r.w - 520 });
   text(ctx, `${roleName} · Lv ${s.level}`, r.x + 120, r.y + 60, { size: 26, color: COL.textMuted, maxWidth: r.w - 520 });
   const bx = r.x + r.w - 370;
