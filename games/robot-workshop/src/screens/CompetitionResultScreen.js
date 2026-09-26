@@ -142,7 +142,7 @@ export function createCompetitionResultScreen({ renderer, layout, assets, campai
     if (!speaker) return y - 20;
     const kind = result.player.dnf ? 'youDnf' : result.won ? 'youWon' : speaker.place < result.place ? 'theyWon' : 'youWon';
     const rv = rivalOf(speaker.id, shown);
-    const line = rivalLine(rv, kind, result.seed, { event: result.eventName, robot: result.setup.entrantName, pilot: result.setup.pilotName });
+    const line = rivalLine(rv, kind, result.seed, { event: result.eventName, robot: result.setup.entrantName, pilot: result.setup.pilotName }, campaign.ngPlusRuns);
     if (!line) return y - 20;
     drawSpeech(ctx, assets, rv, line, { x: 0, y, w: cw(), h: 150 });
     return y + 150;

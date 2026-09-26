@@ -14,6 +14,7 @@ import { panel, text, hit } from '../ui/widgets.js';
 import { wrapLines } from '../ui/competitionDraw.js';
 import { INVITATION, ENDING_ART } from '../../data/ending.js';
 import { scramble } from '../systems/invitationText.js';
+import { FINAL_BADGE } from '../../data/ngplus.js';
 const COL = THEME.color;
 
 const HEAD_H = 150;
@@ -54,6 +55,8 @@ export function createRumourArchiveScreen({ renderer, layout, assets, campaign, 
       const lines = ruleLines(res);
       return { rule, stage, lines, h: 150 + lines.length * LINE };
     }
+    // §30.7 NG+2: a rule that opens at a later NG+ level can already whisper (the Unknown robot's extra clue stage).
+    if (gated && rule.earlyClue && campaign.ngPlusRuns >= rule.earlyClue.ngPlus) return { rule, stage: 1, early: rule.earlyClue.text, lines: [], h: 190 };
     if (stage === 0 || gated) return postEnding() ? { rule, stage: 0, lines: [], h: 150 } : null;
     if (stage === 2) return { rule, stage, missing: S().missingCategories(S().evaluate(rule, {})), lines: [], h: 190 };
     return { rule, stage, lines: [], h: 150 };
@@ -100,6 +103,7 @@ export function createRumourArchiveScreen({ renderer, layout, assets, campaign, 
       }
       y += 12;
       if (campaign.invitationReceived) y = drawInvitation(ctx, y, w) + 24;
+      if (S().account.flags[FINAL_BADGE.flag]) y = drawFinalBadge(ctx, y, w) + 24;
       for (const g of groups) {
         text(ctx, g.group, 4, y + 12, { size: SZ.button, bold: true, color: COL.purple });
         y += GROUP_H;
@@ -141,8 +145,8 @@ export function createRumourArchiveScreen({ renderer, layout, assets, campaign, 
       y += 62;
       put('No rumours yet.', SZ.body, { color: COL.textMuted });
     } else {
-      put(r.stage === 2 ? 'A clue' : 'A rumour', SZ.body, { bold: true, color: COL.purple });
-      put(rule.clueStages[r.stage - 1]?.text ?? '', SZ.body);
+      put(r.early ? 'A New Game+ whisper' : r.stage === 2 ? 'A clue' : 'A rumour', SZ.body, { bold: true, color: COL.purple });
+      put(r.early ?? rule.clueStages[r.stage - 1]?.text ?? '', SZ.body);
       if (r.stage === 2 && r.missing?.length) put(`Missing: ${r.missing.join(', ')}`, SZ.body, { bold: true, color: COL.gold });
     }
     return { ops, h: Math.max(150, y + 18) };
@@ -172,6 +176,16 @@ export function createRumourArchiveScreen({ renderer, layout, assets, campaign, 
       text(ctx, l, x, ly, { size: SZ.body, bold: true, color: readable ? COL.good : COL.purple, maxWidth: mw });
       ly += 44;
     }
+    return y + h;
+  }
+
+  // §30.7 NG+3: the final secret completion badge.
+  function drawFinalBadge(ctx, y, w) {
+    const h = 170;
+    panel(ctx, { x: 0, y, w, h }, { fill: COL.panelGold, stroke: COL.gold, lineWidth: 5 });
+    assets.drawContained(ctx, FINAL_BADGE.art, { x: 16, y: y + 20, w: 130, h: 130 });
+    text(ctx, FINAL_BADGE.name, 170, y + 30, { size: SZ.button, bold: true, color: COL.purple, maxWidth: w - 190 });
+    text(ctx, FINAL_BADGE.text, 170, y + 90, { size: SZ.body, maxWidth: w - 190 });
     return y + h;
   }
 

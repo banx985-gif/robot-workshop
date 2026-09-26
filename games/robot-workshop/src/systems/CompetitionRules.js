@@ -63,9 +63,10 @@ export function ordinal(n) {
 }
 
 // A rival's flavour line (data/rivals.js lines[kind]), picked by a seed so the same moment always says the same thing.
+// In New Game+ (ngPlus ≥ 1) their ngPlusLines[kind] are used where they exist (§30.7 altered rival dialogue).
 // vars: { event, robot, pilot }
-export function rivalLine(rival, kind, seed, vars = {}) {
-  const list = rival?.lines?.[kind];
+export function rivalLine(rival, kind, seed, vars = {}, ngPlus = 0) {
+  const list = (ngPlus > 0 && rival?.ngPlusLines?.[kind]?.length ? rival.ngPlusLines[kind] : null) ?? rival?.lines?.[kind];
   if (!list?.length) return null;
   const line = new Rng(`${seed}|${rival.id}|${kind}`).pick(list);
   return line.replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);

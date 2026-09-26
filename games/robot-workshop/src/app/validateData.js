@@ -38,6 +38,8 @@ import { ACHIEVEMENTS, ACHIEVEMENT_TRIGGERS, ACHIEVEMENT_ART } from '../../data/
 import { RECORDS, RECORD_GROUPS } from '../../data/records.js';
 import { ACHIEVEMENT_OPS } from '../../../../core/AchievementSystem.js';
 import { SECRETS, SECRET_TRIGGERS, SECRET_REWARD_TYPES, SECRET_RULES, SECRET_ART } from '../../data/secrets.js';
+import { NG_PLUS, NG_PLUS_CONTENT, NG_PLUS_SCALING, NG_PLUS_ART, FINAL_BADGE } from '../../data/ngplus.js';
+import { NgPlusSystem } from '../../../../core/NgPlusSystem.js';
 import { SECRET_OPS } from '../../../../core/SecretEngine.js';
 
 const SLOT_COUNTS ={ chassis: 10, mobility: 8, ai: 8, tool: 8, power: 8, special: 8 }; // §11
@@ -678,6 +680,33 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   v.check(ENDING_RULES.endYear === CALENDAR.campaignYears && ENDING_RULES.archiveMax === 3, 'ending: Year 16 and 3 archived summaries (§4.1, §37.2)');
   v.check(SECRETS.some((s) => s.id === INVITATION.secretId), `ending: the invitation's secret ${INVITATION.secretId} is unknown`);
   for (const k of [ENDING_ART.keyArt, ENDING_ART.logo, ENDING_ART.seriesMark]) v.art(`ending art ${k}`, `assets/images/brand/${k}.png`);
+
+  // --- New Game+ (Milestone 20, §30) ---
+  let ngSys = null;
+  try {
+    ngSys = new NgPlusSystem({ rules: NG_PLUS });
+  } catch (e) {
+    v.check(false, `ngplus: ${e.message}`);
+  }
+  const ngIds = (k) => NG_PLUS.fields[k].map((f) => f.id);
+  v.check(['techChips', 'prestigeTokens', 'purchases', 'achievements', 'records', 'combos', 'secretRecipes', 'discoveryArchive', 'pastCampaigns', 'highestLevel'].every((id) => ngIds('always').includes(id)), 'ngplus: §30.3 always-carried fields missing');
+  v.check(['legacyStaff', 'blueprints', 'modifier'].every((id) => ngIds('chosen').includes(id)), 'ngplus: §30.4 / §30.8 chosen fields missing');
+  v.check(['credits', 'reputation', 'workshop', 'researchPoints', 'research', 'staff', 'products', 'contracts', 'sponsors', 'competitions', 'events', 'flags'].every((id) => ngIds('reset').includes(id)), 'ngplus: §30.6 reset fields missing');
+  v.check(NG_PLUS.maxLevel === 3 && NG_PLUS.legacy.picksByLevel.join() === '0,1,2,3' && NG_PLUS.legacy.startLevel === 5 && NG_PLUS.legacy.statPct === 60, 'ngplus: Legacy Staff must be 1/2/3 picks, Level 5, 60% (§30.4)');
+  v.check(NG_PLUS.blueprints.perLevel === 1 && NG_PLUS.blueprints.max === 3, 'ngplus: Blueprint Memory 1 per level, 3 at most (§30.4)');
+  const adv = NG_PLUS.advantages;
+  v.check(adv.maxRuns === 3 && adv.perRun.researchCostPct === -5 && adv.perRun.researchSpeedPct === 5 && adv.perRun.startingCredits === 2000 && adv.perRun.freeRefreshes === 1, 'ngplus: §30.5 advantages must be −5% cost, +5% speed, +2,000 credits, +1 refresh, capped at NG+3');
+  v.check(NG_PLUS.modifiers.map((m) => m.id).join() === 'leanStart,smallWorkshop,oldSchool,homegrownTeam', 'ngplus: the four §30.8 modifiers');
+  v.check(NG_PLUS.modifierReward.currency === 'prestigeTokens' && NG_PLUS.modifierReward.amount === 1, 'ngplus: a challenge pays +1 Prestige Token (§30.8)');
+  v.check([1, 2, 3].every((l) => NG_PLUS_CONTENT[l]?.length > 0), 'ngplus: §30.7 content lines for NG+1–3');
+  for (const c of NG_PLUS_SCALING.startClues) v.check(SECRETS.some((s) => s.id === c.id), `ngplus: start clue for unknown secret ${c.id}`);
+  v.check(SECRETS.find((s) => s.id === 'SEC-ROBOT-03')?.ngPlusMin === 3 && SECRETS.find((s) => s.id === 'SEC-ROBOT-03')?.earlyClue?.ngPlus === 2, 'ngplus: the Unknown robot opens at NG+3 with an NG+2 clue (§30.7)');
+  v.check(SECRETS.find((s) => s.id === 'SEC-ROBOT-03')?.rewardActions.some((a) => a.type === 'accountFlag' && a.id === FINAL_BADGE.flag), 'ngplus: the Unknown robot gives the final secret badge');
+  v.check(RIVALS.every((r) => ['before', 'theyWon', 'youWon'].every((k) => r.ngPlusLines?.[k]?.length > 0)), 'rivals: every rival needs New Game+ lines (§30.7)');
+  v.check(RIVALS.find((r) => r.id === 'R08')?.ngPlusBonus?.fromLevel === 2, 'rivals: Nocturne needs its NG+2 variant (§30.7)');
+  for (const k of [NG_PLUS_ART.keyArt]) v.art(`ngplus art ${k}`, `assets/images/brand/${k}.png`);
+  v.art(`ngplus art ${NG_PLUS_ART.burst}`, `assets/images/vfx/${NG_PLUS_ART.burst}.png`);
+  v.art(`ngplus art ${NG_PLUS_ART.icon}`, `assets/images/ui/${NG_PLUS_ART.icon}.png`);
 
   // --- every image the game loads ---
   for (const [key, path] of Object.entries(manifest)) v.art(`image "${key}"`, path, { placeholder: placeholders.includes(key) });

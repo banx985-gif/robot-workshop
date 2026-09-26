@@ -59,6 +59,8 @@ import { createRecordsScreen } from './screens/RecordsScreen.js';
 import { createAchievementMoment } from './ui/achievementMoment.js';
 import { createCeremonyScreen } from './screens/CeremonyScreen.js';
 import { createCreditsScreen } from './screens/CreditsScreen.js';
+import { createNgPlusSetupScreen } from './screens/NgPlusSetupScreen.js';
+import { NG_PLUS_ART } from '../data/ngplus.js';
 import { ENDING_ART, INVITATION } from '../data/ending.js';
 import { ACHIEVEMENT_ART, rewardLabel } from '../data/achievements.js';
 import { wireMessages, effectsText, fillText } from './app/Messages.js';
@@ -164,6 +166,8 @@ const ASSETS = {
   // moments, trophies, burst and stars are loaded above.
   ...Object.fromEntries([ENDING_ART.keyArt, ENDING_ART.logo, ENDING_ART.seriesMark].map((k) => art('brand', k))),
   ...Object.fromEntries([art('events', ENDING_ART.worldMoment), art('events', ENDING_ART.nationalMoment), art('vfx', ENDING_ART.burst), art('vfx', ENDING_ART.stars)]),
+  // New Game+ (Milestone 20): key art, the NG+ burst and icon (the Prestige Token, portraits and blueprint glow are above).
+  ...Object.fromEntries([art('brand', NG_PLUS_ART.keyArt), art('vfx', NG_PLUS_ART.burst), art('ui', NG_PLUS_ART.icon)]),
   // Deliberately missing file: proves the placeholder fallback.
   placeholderTest: 'assets/m0-missing-test.png',
 };
@@ -270,7 +274,7 @@ bus.on('loop:pause', () => input.reset());
 bus.on('screen:change', ({ to }) => (debug.compact = !['workshop', 'test', 'boot'].includes(to)));
 
 // Campaign: calendar + staff + save slot.
-const campaign = new Campaign({ bus });
+const campaign = new Campaign({ bus, debugAllowed: debug.enabled }); // the NG+ level setter only works with ?debug=1
 let campaignReady = false;
 // Messages (Milestone 15): what happens in play becomes inbox entries, toasts and queued pop-ups. Wired before the
 // handlers below, so a moment's entry exists by the time they run.
@@ -556,7 +560,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key !== 'p' && e.key !== 'P' && e.key !== ' ') return;
   if (modal.active) return;
   if (router.currentName === 'test') loop.togglePause();
-  else if (campaignReady && !campaign.closed && !['ceremony', 'credits'].includes(router.currentName)) campaign.clock.togglePause();
+  else if (campaignReady && !campaign.closed && !['ceremony', 'credits', 'ngplus'].includes(router.currentName)) campaign.clock.togglePause();
 });
 
 // Test hook for automated checks (debug builds only).
@@ -621,7 +625,7 @@ const guide = new GuideSystem({
   targetRect: guideTarget,
   screen: () => router.currentName,
   // A pop-up waiting on the workshop goes first; the guide steps back until it has been read.
-  canShow: () => campaignReady && !modal.active && !(campaign.notes.pending && presentPlace()) && !campaign.closed && !buildScreen?.confirm && !['boot', 'test', 'debugbuilder', 'help', 'components', 'staffdebug', 'secretdebug', 'ceremony', 'credits'].includes(router.currentName),
+  canShow: () => campaignReady && !modal.active && !(campaign.notes.pending && presentPlace()) && !campaign.closed && !buildScreen?.confirm && !['boot', 'test', 'debugbuilder', 'help', 'components', 'staffdebug', 'secretdebug', 'ceremony', 'credits', 'ngplus'].includes(router.currentName),
   pause: () => {
     if (campaign.clock.paused) return false;
     campaign.clock.pause();
@@ -703,6 +707,39 @@ function flushAchievements() {
 // reaching the ending, so it still opens no ceremony.
 const ceremonyScreen = createCeremonyScreen({ renderer, layout, assets, campaign, router, vfx, audio });
 const creditsScreen = createCreditsScreen({ renderer, layout, assets, campaign, router });
+// New Game+ (Milestone 20): the setup screen; once the new run is built the workshop opens on a big NG+ moment.
+const ngPlusScreen = createNgPlusSetupScreen({
+  renderer,
+  layout,
+  assets,
+  campaign,
+  router,
+  onStarted: ({ carry }) => {
+    sheet.close();
+    pendingAch.length = 0; // anything the old run just unlocked is already in the account
+    router.go('workshop');
+    audio.play('levelUp');
+    debug.log(`NG+${carry.level} started: ${carry.chosen.legacyStaff.length} legacy, ${carry.chosen.blueprints.length} blueprints, challenge ${carry.modifier ?? 'none'}`);
+    major.show({
+      title: `New Game+ ${carry.level}`,
+      subtitle: 'Year 1 again — with everything you have learned. Tap to begin.',
+      accent: COL.purple,
+      drawFn: (ctx, t) => {
+        const s = Math.min(1, t / 0.4);
+        const cx = W / 2;
+        const cy = H / 2 - 300;
+        ctx.save();
+        ctx.globalAlpha = s * (vfx.reducedFlashes ? 0.5 : 0.9);
+        const g = 760 + (vfx.reducedFlashes ? 0 : Math.sin(t * 3) * 30);
+        assets.drawContained(ctx, NG_PLUS_ART.burst, { x: cx - g / 2, y: cy - g / 2, w: g, h: g });
+        ctx.globalAlpha = s;
+        assets.drawContained(ctx, NG_PLUS_ART.keyArt, { x: cx - 420, y: cy - 260 + (1 - s) * 50, w: 840, h: 520 });
+        ctx.restore();
+      },
+    });
+    campaign.save().catch(() => {});
+  },
+});
 bus.on('campaign:ending', () => {
   if (!campaignReady || !campaign.ending.reached) return;
   const s = campaign.endingSummary;
@@ -1029,6 +1066,7 @@ if (debug.enabled) {
   window.__m17b = { ...window.__m16, sheet, menus: menuHolder, bottomBar: workshopScreen.bottomBar, debug, guideTarget };
   window.__m18 = { ...window.__m17b, records: recordsScreen, achievements: campaign.achievements, accountRecords: campaign.records, floats, achMoment };
   window.__m19 = { ...window.__m18, ceremony: ceremonyScreen, credits: creditsScreen, ending: campaign.ending, archive: campaign.archive, rumours: rumourScreen };
+  window.__m20 = { ...window.__m19, ngplus: ngPlusScreen, ngPlusSys: campaign.ngPlusSys };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
   bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));
@@ -1066,6 +1104,7 @@ router
   .register('records', recordsScreen)
   .register('ceremony', ceremonyScreen)
   .register('credits', creditsScreen)
+  .register('ngplus', ngPlusScreen)
   .register('debugbuilder', debugBuilderScreen);
 if (debug.enabled) router.register('staffdebug', staffDebugScreen).register('secretdebug', secretDebugScreen); // ?debug=1 only // ?debug=1 only: spawn any of the 50
 router.go('boot');

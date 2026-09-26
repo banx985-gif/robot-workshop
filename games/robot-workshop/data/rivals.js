@@ -4,6 +4,8 @@
 //                      before it), clamped to ±RIVAL_RULES.growthClampPct. It never looks at the player (§22.1).
 //   manager            portrait (R01–R05); R06–R08 speak through their logo only (§22)
 //   hidden             R08 Nocturne Systems stays out of lists and rankings until its secret chain (Milestones 16–17)
+//   ngPlusLines        New Game+ runs (§30.7 NG+1 altered rival dialogue): used instead of lines where given
+//   ngPlusBonus        extra % from an NG+ level on (§30.7 NG+2 higher Nocturne variants)
 //   lines              short flavour lines (templates: {event}, {robot}, {pilot}) — before an event, when they beat you,
 //                      when you beat them, when you fail to finish. Warm, competitive, never nasty (§25).
 export const RIVALS = [
@@ -23,6 +25,11 @@ export const RIVALS = [
       youWon: ['Well built! {robot} earned that one.', "Ha! You've been practising. Congratulations!"],
       youDnf: ['Rotten luck. A spare bolt helps, trust me.'],
     },
+    ngPlusLines: {
+      before: ['Back again? We kept a chair warm for you at the barn.', "Word is you've done all this before. Show us the new tricks at the {event}!"],
+      theyWon: ['Even veterans have off days!'],
+      youWon: ['You learn fast the second time round!'],
+    },
   },
   {
     id: 'R02',
@@ -39,6 +46,11 @@ export const RIVALS = [
       theyWon: ['Fast is a feature. See you at the next one.', 'Another one for the pitch deck!'],
       youWon: ['Okay, {robot} is quick. Noted. Very noted.', 'Back to the whiteboard for us…'],
       youDnf: ['Ouch. Speed is nothing without the finish.'],
+    },
+    ngPlusLines: {
+      before: ['You again. We rebuilt our whole stack after last time.', 'Our new investors asked specifically about you.'],
+      theyWon: ['Experience is nice. Speed is nicer.'],
+      youWon: ['Fine. Version two of you is annoyingly good.'],
     },
   },
   {
@@ -57,6 +69,11 @@ export const RIVALS = [
       youWon: ['Hmph. Decent machine. Decent.', 'You kids might last in this business after all.'],
       youDnf: ['Build it heavier next time.'],
     },
+    ngPlusLines: {
+      before: ["Second time round, eh? Iron Mule doesn't forget a rival.", "We've added a night shift just for you."],
+      theyWon: ['Old dogs, new tricks — ours.'],
+      youWon: ['Hmph. Experience shows.'],
+    },
   },
   {
     id: 'R04',
@@ -73,6 +90,11 @@ export const RIVALS = [
       theyWon: ['As simulated.', 'Clean code, clean run.'],
       youWon: ["Our model didn't see {robot} coming. Updating it now.", 'Interesting. Very interesting data.'],
       youDnf: ['Have you tried a better fault checker?'],
+    },
+    ngPlusLines: {
+      before: ['Our model now has a whole section on you.', "We've simulated your comeback at the {event}. Mostly."],
+      theyWon: ['History repeated itself. In our favour.'],
+      youWon: ['Our model underestimated your experience.'],
     },
   },
   {
@@ -91,6 +113,11 @@ export const RIVALS = [
       youWon: ['Enjoy it. We will be back faster.', "Fine. {pilot} drove well. Don't tell them I said so."],
       youDnf: ['Racing is hard, isn’t it?'],
     },
+    ngPlusLines: {
+      before: ["Déjà vu? Not this time. We've been training.", 'Apex remembers every podium you took from us.'],
+      theyWon: ['Second time, same result for Apex.'],
+      youWon: ['Enjoy it. We know your tricks now.'],
+    },
   },
   {
     id: 'R06',
@@ -107,6 +134,11 @@ export const RIVALS = [
       theyWon: ['Northstar: steady hands, safe results.', 'Dependable wins the day.'],
       youWon: ['Northstar congratulates the {robot} team.', 'Well done. We will study your run.'],
       youDnf: ['Northstar: glad nobody was hurt. Try again.'],
+    },
+    ngPlusLines: {
+      before: ['Northstar welcomes back a familiar team.', 'We studied your old runs. All of them.'],
+      theyWon: ['Northstar: practice pays.'],
+      youWon: ['Northstar notes: this team has done it before.'],
     },
   },
   {
@@ -125,6 +157,11 @@ export const RIVALS = [
       youWon: ['TitanWorks notes a strong new competitor.', 'TitanWorks will respond.'],
       youDnf: ['TitanWorks recommends a maintenance plan.'],
     },
+    ngPlusLines: {
+      before: ['TitanWorks has prepared for your return.', "TitanWorks' board has asked about you by name."],
+      theyWon: ['TitanWorks: we adapt too.'],
+      youWon: ['TitanWorks will study your second campaign closely.'],
+    },
   },
   {
     id: 'R08',
@@ -137,11 +174,17 @@ export const RIVALS = [
     manager: null,
     color: '#7E57C2',
     hidden: true,
+    ngPlusBonus: { fromLevel: 2, pct: 8 }, // §30.7 NG+2: a higher Nocturne variant (+8% on top of the NG+ rise)
     lines: {
       before: ['…'],
       theyWon: ['Nocturne: as expected.'],
       youWon: ['Nocturne: noted.'],
       youDnf: ['Nocturne: …'],
+    },
+    ngPlusLines: {
+      before: ['…again.', 'Nocturne: we have been expecting you.'],
+      theyWon: ['Nocturne: as expected. Again.'],
+      youWon: ['Nocturne: interesting. Again.'],
     },
   },
 ];

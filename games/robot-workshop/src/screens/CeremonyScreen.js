@@ -5,7 +5,9 @@
 //   scores     the eight §45 categories fill in one by one, with the running total
 //   grade      the grade reveal: the rank-up burst (vfx_07), reputation stars and confetti
 //   invitation the encrypted invitation arrives (§25) — readable only once its secret is found
-//   choice     Continue (postgame) · Credits · New Game+ (greyed: Milestone 20)
+//   choice     Continue (postgame) · Credits · New Game+ (the NG+ setup screen, Milestone 20)
+// The NG+3 hidden ending variant (§30.7): when the Unknown robot was built this run, the title, host line and picture
+// change and the final secret badge shows on the choice.
 // How far it got is kept in the save (core/CampaignEnding state.stage): a reload during the ceremony starts it again
 // from the top; one after the invitation opens straight on the choice.
 import { THEME, font } from '../../../../core/Theme.js';
@@ -30,6 +32,7 @@ export function createCeremonyScreen({ renderer, layout, assets, campaign, route
   const sr = () => layout.safeRect;
   const summary = () => campaign.endingSummary;
   const champion = () => !!summary()?.recap?.worldChampion;
+  const hidden = () => !!summary()?.hiddenEnding;
   const band = () => GRADE_BANDS.find((b) => b.id === summary()?.grade.band) ?? GRADE_BANDS[0];
   const bandColor = () => C[band().color] ?? C.gold;
 
@@ -113,7 +116,8 @@ export function createCeremonyScreen({ renderer, layout, assets, campaign, route
       if (stage === 'choice') {
         if (hitRect(p, choiceRect(0))) return continuePostgame();
         if (hitRect(p, choiceRect(1))) return router.go('credits', { back: 'ceremony' });
-        return; // New Game+ is greyed out until Milestone 20
+        if (hitRect(p, choiceRect(2)) && !campaign.ngPlusBlock()) return router.go('ngplus', { back: 'ceremony' });
+        return;
       }
       if (!animDone()) return finishAnim();
       const i = STAGES.indexOf(stage);
@@ -191,17 +195,18 @@ export function createCeremonyScreen({ renderer, layout, assets, campaign, route
     let y = top + keyH + 40;
     ctx.save();
     ctx.globalAlpha = fade(0.3);
-    text(ctx, CEREMONY_TEXT.title, W / 2, y, { size: 72, bold: true, align: 'center', color: C.actionDark, maxWidth: s.w - 60 });
+    text(ctx, hidden() ? CEREMONY_TEXT.hidden.title : CEREMONY_TEXT.title, W / 2, y, { size: 72, bold: true, align: 'center', color: hidden() ? C.purple : C.actionDark, maxWidth: s.w - 60 });
     y += 100;
     y += paragraph(ctx, CEREMONY_TEXT.subtitle, y, { color: C.textMuted });
     ctx.restore();
     ctx.save();
     ctx.globalAlpha = fade(0.6);
     y += 30;
-    const art = champion() ? ENDING_ART.worldMoment : ENDING_ART.nationalMoment;
+    const art = hidden() ? ENDING_ART.hiddenMoment : champion() ? ENDING_ART.worldMoment : ENDING_ART.nationalMoment;
     assets.drawContained(ctx, art, { x: s.x + 100, y, w: s.w - 200, h: artH });
     y += artH + 30;
-    paragraph(ctx, champion() ? CEREMONY_TEXT.intro.champion : CEREMONY_TEXT.intro.normal, y, { size: 38, bold: true, color: champion() ? C.gold : C.text });
+    const intro = hidden() ? CEREMONY_TEXT.hidden.intro : champion() ? CEREMONY_TEXT.intro.champion : CEREMONY_TEXT.intro.normal;
+    paragraph(ctx, intro, y, { size: 38, bold: true, color: hidden() ? C.purple : champion() ? C.gold : C.text });
     ctx.restore();
   }
 
@@ -211,7 +216,7 @@ export function createCeremonyScreen({ renderer, layout, assets, campaign, route
     let y = s.y + 50;
     heading(ctx, CEREMONY_TEXT.recapTitle, y);
     y += 90;
-    y += paragraph(ctx, champion() ? CEREMONY_TEXT.host.champion : CEREMONY_TEXT.host.normal, y, { color: C.textMuted, maxLines: 2 });
+    y += paragraph(ctx, hidden() ? CEREMONY_TEXT.hidden.host : champion() ? CEREMONY_TEXT.host.champion : CEREMONY_TEXT.host.normal, y, { color: hidden() ? C.purple : C.textMuted, maxLines: 2 });
     y += 30;
     const room = s.y + s.h - 140 - y;
     const cardH = Math.min(400, Math.floor((room - 3 * 24) / 4));
@@ -385,17 +390,21 @@ export function createCeremonyScreen({ renderer, layout, assets, campaign, route
     assets.drawContained(ctx, ENDING_ART.logo, { x: s.x + 140, y, w: s.w - 280, h: 300 });
     y += 330;
     // The key art fills the space between the grade line and the buttons (tall screens have room for it).
-    const artTop = y + 170;
+    const artTop = y + 170 + (hidden() ? 130 : 0); // the final badge line sits under the grade on the hidden ending
     const artH = choiceRect(0).y - 40 - artTop;
     if (artH > 200) assets.drawContained(ctx, ENDING_ART.keyArt, { x: s.x + 80, y: artTop, w: s.w - 160, h: artH });
     heading(ctx, 'What next?', y);
     y += 100;
     if (g) text(ctx, `Grade ${g.band} · ${fmt(g.total)} / ${fmt(g.max)}`, W / 2, y, { size: Z.button, bold: true, align: 'center', color: bandColor() });
+    if (hidden()) {
+      assets.drawContained(ctx, ENDING_ART.finalBadge, { x: s.x + 60, y: y + 60, w: 90, h: 90 });
+      paragraph(ctx, CEREMONY_TEXT.hidden.badge, y + 70, { size: Z.small, bold: true, color: C.purple, maxLines: 2 });
+    }
     const opts = [END_CHOICES.continue, END_CHOICES.credits, END_CHOICES.ngPlus];
     opts.forEach((o, i) => {
       const r = choiceRect(i);
-      const locked = i === 2;
-      drawButton(ctx, r, o.label, { accent: i === 0 ? C.action : C.progress, locked, disabled: locked, font: font(44, true) });
+      const locked = i === 2 && !!campaign.ngPlusBlock();
+      drawButton(ctx, r, i === 2 ? `${o.label} (NG+${campaign.nextNgPlusLevel})` : o.label, { accent: i === 0 ? C.action : i === 2 ? C.purple : C.progress, locked, disabled: locked, font: font(44, true) });
       text(ctx, o.sub, W / 2, r.y + r.h + 14, { size: Z.small, align: 'center', color: C.textMuted });
     });
   }

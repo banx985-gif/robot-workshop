@@ -195,7 +195,7 @@ export function createContractsScreen({ renderer, layout, assets, campaign, rout
     y += 4;
     requirementLines(c).slice(1).forEach((line, j) => put(line, x, mw, THEME.size.body, { bold: j === 0 }, 2));
     const bonus = campaign.fx('contractPayoutPct');
-    put(`Pays ${fmt(c.payout)}${bonus ? ` +${bonus}%` : ''} · +${c.reputation} Rep · fail ${c.failReputation} Rep · ${Math.round(c.specialChance * 100)}% bonus chance`, x, mw, THEME.size.body, { color: COL.gold }, 2);
+    put(`Pays ${fmt(c.payout)}${bonus ? ` +${bonus}%` : ''}${c.prestigeTokens ? ` · +${c.prestigeTokens} Prestige Token` : ''} · +${c.reputation} Rep · fail ${c.failReputation} Rep · ${Math.round(c.specialChance * 100)}% bonus chance`, x, mw, THEME.size.body, { color: COL.gold }, 2);
     y = Math.max(y + 8, r.y + ART_H + 16);
     let h;
     const open = c.status === 'offered' || c.status === 'active';

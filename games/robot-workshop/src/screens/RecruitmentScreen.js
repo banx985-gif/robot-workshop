@@ -69,7 +69,7 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
     const textW = cw() - 48 - CH_BTN_W - 20;
     const open = campaign.channelOpen(ch.id);
     const tiers = Object.entries(campaign.recruitment.hooks.tierWeights(ch)).filter(([, v]) => v > 0).map(([t, v]) => `${TIERS[t].name} ${v}%`).join(' · ');
-    return { open, textW, pool: wrapLines(ch.pool, textW), odds: wrapLines(open ? tiers : `Needs ${describeUnlock(ch.unlock)}`, textW, SIZE.body, !open) };
+    return { open, textW, pool: wrapLines(ch.pool, textW), odds: wrapLines(open ? tiers : campaign.channelChallengeBlock(ch.id) ?? `Needs ${describeUnlock(ch.unlock)}`, textW, SIZE.body, !open) };
   }
   const channelHeight = (ch) => {
     const l = channelLines(ch);

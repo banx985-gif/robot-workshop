@@ -111,6 +111,12 @@ function c12BeatenByLegend(list) {
   return false;
 }
 
+// Hired in this run. New Game+ Legacy Staff (Milestone 20) came with the company, so they don't count (§30.4).
+function hiredThisRun(c) {
+  const legacy = new Set(c.flags.legacyStaff ?? []);
+  return Object.keys(c.careers.records).filter((id) => !legacy.has(id));
+}
+
 // Parts open in this run (debug "unlock all" does not count).
 const partsDiscovered = (c) => Object.keys(COMPONENTS).filter((id) => c.partOpen(id, { ignoreDebug: true }));
 
@@ -186,8 +192,8 @@ export function createSecretFacts(c) {
     // --- people ---
     .define('run.staff', () => c.staff.staff.map((s) => ({ id: s.id, role: s.role, tier: s.tier, level: s.level, stats: { ...s.stats }, projects: c.careers.count(s.id, 'projects'), robots: c.careers.count(s.id, 'robots') })))
     .define('run.staffIds', () => c.staff.staff.map((s) => s.id))
-    .define('run.staffHired', () => Object.keys(c.careers.records))
-    .define('run.legendaryHired', () => Object.keys(c.careers.records).filter((id) => STAFF_BY_ID[id]?.tier === 'legendary').length)
+    .define('run.staffHired', () => hiredThisRun(c))
+    .define('run.legendaryHired', () => hiredThisRun(c).filter((id) => STAFF_BY_ID[id]?.tier === 'legendary').length)
     .define('run.startersLoyal', () => STARTER_IDS.every((id) => (c.careers.get(id)?.stints ?? []).length === 1 && c.careers.isCurrent(id)))
     .define('run.starterProjects', () => STARTER_IDS.reduce((t, id) => t + c.careers.count(id, 'robots'), 0))
     // --- workshop ---

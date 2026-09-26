@@ -19,7 +19,7 @@ export function gradeFacts(c) {
   return {
     rankIndex: c.reputation.highestRankIndex,
     reputation: c.reputation.value,
-    profit: eco.balance('credits') - STARTING_MONEY.credits,
+    profit: eco.balance('credits') - (c.flags.startingCredits ?? STARTING_MONEY.credits), // NG+ runs start with more (M20)
     solvency: eco.inDebt ? 0 : c.flags.everInDebt ? 0.5 : 1,
     topQuality: avgTop(robots.map((r) => r.result.quality ?? 0), 5),
     bestReview: Math.max(0, ...robots.map((r) => r.result.review ?? 0)),
@@ -68,5 +68,7 @@ export function runSummary(c) {
     recap: companyRecap(c),
     rank: c.reputation.ranks[c.reputation.highestRankIndex].id,
     credits: c.economy.balance('credits'),
+    challenge: c.ngPlusRun?.modifier ?? null, // §30.8 (Milestone 20)
+    hiddenEnding: !!c.flags.hiddenEndingVariant, // §30.7 NG+3: the Unknown robot was built
   };
 }

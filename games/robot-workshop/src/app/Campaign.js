@@ -66,7 +66,7 @@ import { CALENDAR, SPEED_UNLOCKS, STAFF_RULES, PROJECT_RULES, CAMPAIGN_SEED } fr
 import { CURRENCIES, STARTING_MONEY, DEBT_RULES, SALARY_RULES, OPERATING_COST, TECH_CHIP_REWARDS, RANKS, REPUTATION_RULES } from '../../data/economy.js';
 import { PRODUCT_SLOT_STEPS, SALES_RULES } from '../../data/market.js';
 import { FACILITIES, EXPANSIONS, WORKSHOP_START, PROJECT_BAYS, DISPLAY_RULES, LOCKED_LATER, PRESTIGE_DISPLAY, HEAVY_BAY } from '../../data/facilities.js';
-import { RESEARCH_NODES, RESEARCH_MILESTONES, RESEARCH_QUEUES, RESEARCH_RULES, RESEARCH_BRANCH_INFO, RP_SOURCES, NG_PLUS_RESEARCH, researchNodeId, SECRET_RESEARCH } from '../../data/research.js';
+import { RESEARCH_NODES, RESEARCH_MILESTONES, RESEARCH_QUEUES, RESEARCH_RULES, RESEARCH_BRANCH_INFO, RP_SOURCES, researchNodeId, SECRET_RESEARCH } from '../../data/research.js';
 import { describeUnlock } from '../systems/unlockRules.js';
 import { AchievementSystem } from '../../../../core/AchievementSystem.js';
 import { AccountRecords } from '../../../../core/AccountRecords.js';
@@ -80,6 +80,9 @@ import { ENDING_RULES, INVITATION } from '../../data/ending.js';
 import { runSummary } from '../systems/endingSummary.js';
 import { Sales } from '../systems/Sales.js';
 import { contractHooks, checkRecord } from '../systems/ContractRules.js';
+import { NgPlusSystem } from '../../../../core/NgPlusSystem.js';
+import { NG_PLUS, NG_PLUS_SCALING } from '../../data/ngplus.js';
+import { ngPlusOptions, ngPlusSnapshot } from '../systems/ngPlusRun.js';
 
 // Save migrations (bible §37.6): each step upgrades one version.
 export const SAVE_MIGRATIONS = {
@@ -129,6 +132,8 @@ export const SAVE_MIGRATIONS = {
   13: (record) => ({ ...record, data: { ...record.data, secrets: null } }),
   // v14 (Milestone 16) held the 3 engine test rules: Campaign.loadData takes them and their rewards back out.
   14: (record) => ({ ...record, data: { ...record.data, removeTestSecrets: true } }),
+  // v15 (Milestones 17–19) had no New Game+: null = a first run with no NG+ picks.
+  15: (record) => ({ ...record, data: { ...record.data, ngplus: null } }),
 };
 
 // Things research unlock actions name ("part:CH02", "facility:F07"…): for these, the research part of their
@@ -139,13 +144,19 @@ const QUEUE_RULES = new Set(RESEARCH_QUEUES.map((q) => q.rule));
 // Project tiers that count as an "advanced robot" (C09 needs 5): Advanced and above.
 // Credits that count as "earned" for Market Leader (ACH24): not the starting money, loans or facility refunds.
 const EARNED_CATEGORIES = new Set(['sales', 'contract', 'competition', 'event', 'reward']);
+let runCounter = 0; // keeps two runs started in the same millisecond apart (tests start several in a row)
 const ADVANCED_TIERS = PROJECT_TIERS.slice(PROJECT_TIERS.findIndex((t) => t.id === 'advanced')).map((t) => t.id);
 
 export class Campaign {
-  constructor({ bus, saveManager = null, accountManager = null }) {
+  constructor({ bus, saveManager = null, accountManager = null, debugAllowed = false }) {
     this.bus = bus;
     this.saveManager = saveManager;
     this.accountManager = accountManager; // account-wide record (combo archive), survives new runs
+    this.debugAllowed = debugAllowed; // ?debug=1 builds only: the NG+ level setter (Milestone 20)
+    // New Game+ (Milestone 20, §30): the shared carry-over rules, this run's NG+ picks, and the account's NG+ record.
+    this.ngPlusSys = new NgPlusSystem({ rules: NG_PLUS });
+    this.ngPlusRun = null; // { level, fromRunId, modifier, blueprints, legacy, startingCredits } — null on a first run
+    this.ngPlusAccount = { highest: 0, starts: 0, purchases: {} };
     this.synergyArchive = new DiscoveryArchive({ bus });
     this.campaignId = null;
     this.seed = CAMPAIGN_SEED;
@@ -212,8 +223,9 @@ export class Campaign {
         conditionMet: (rule) => (QUEUE_RULES.has(rule) ? this.ruleMet(rule) : this.unlockMet(rule)),
         workerStat: (s, node) => s.stats[RESEARCH_BRANCH_INFO[node.branch].stat] ?? 0,
         bonusPerDay: () => fx('researchPerDay'),
-        speedPct: () => fx('researchSpeedPct') + this.ngPlusRuns * NG_PLUS_RESEARCH.speedPctPerRun,
-        costPct: () => this.ngPlusRuns * NG_PLUS_RESEARCH.costPctPerRun,
+        // §30.5 NG+ advantages: research −5% cost and +5% speed per completed campaign (up to NG+3).
+        speedPct: () => fx('researchSpeedPct') + this.ngPlusAdvantages.researchSpeedPct,
+        costPct: () => this.ngPlusAdvantages.researchCostPct,
         busyElsewhere: (id) => this.busyReason(id, 'research'),
         onComplete: (node, { staffId }) => {
           if (staffId) this.staff.addXp(staffId, node.cost * RESEARCH_RULES.xpPerRp);
@@ -432,14 +444,14 @@ export class Campaign {
     };
     bus.on('recruit:expired', ({ candidate }) => this._arrivalGone(candidate));
     bus.on('staff:hired', () => this._arrivalGone(null));
-    for (const [ev, busEvent] of Object.entries(SECRET_TRIGGERS)) bus.on(busEvent, (payload) => this.checkSecrets(ev, payload));
+    for (const [ev, busEvents] of Object.entries(SECRET_TRIGGERS)) for (const b of [].concat(busEvents)) bus.on(b, (payload) => this.checkSecrets(ev, payload));
 
     // Achievements and account records (Milestone 18, §27): both live in the account save, so a new run keeps them.
     // Achievements read the secret engine's fact registry; their rewards are paid once per account, into this run.
     const when = () => ({ day: this.clock.totalDays, year: this.clock.year, runId: this.campaignId });
     this.achievements = new AchievementSystem({ bus, defs: ACHIEVEMENTS, facts: this.secrets.facts, pay: (r, def) => this._achievementPay(r, def), now: when });
     this.records = new AccountRecords({ bus, defs: RECORDS, now: when });
-    for (const [ev, busEvent] of Object.entries(ACHIEVEMENT_TRIGGERS)) bus.on(busEvent, () => this.checkAchievements(ev));
+    for (const [ev, busEvents] of Object.entries(ACHIEVEMENT_TRIGGERS)) for (const b of [].concat(busEvents)) bus.on(b, () => this.checkAchievements(ev));
     for (const e of ['project:complete', 'competition:enter', 'clock:month', 'staff:levelup', 'product:launch']) bus.on(e, () => this.campaignId && syncRecords(this));
     bus.on('product:sales', ({ product, sale }) => this.campaignId && recordSale(this, product, sale));
     bus.on('economy:change', (l) => {
@@ -627,6 +639,13 @@ export class Campaign {
   _reachEnding() {
     this.flags.endingReached = true;
     this.clock.pause();
+    // §30.8: a New Game+ challenge kept to the end pays +1 Prestige Token (once).
+    const ch = this.challenge;
+    if (ch && !this.flags.challengePaid) {
+      const r = NG_PLUS.modifierReward;
+      this.flags.challengePaid = true;
+      this.economy.add(r.currency, r.amount, `Challenge complete: ${ch.name}`, 'reward');
+    }
     const summary = this.archive.add(runSummary(this));
     this.records.submit('bestEnding', summary.grade.total, { grade: summary.grade.band });
     this.save().catch(() => {});
@@ -668,10 +687,175 @@ export class Campaign {
     return true;
   }
 
-  // Debug (?debug=1) until New Game+ (Milestone 20) exists.
+  // Debug only (?debug=1): set the NG+ level of this run directly. Normal builds can't (Milestone 20: the real
+  // transition is startNewGamePlus).
   setDebugNgPlus(n) {
-    this.flags.ngPlusRuns = Math.max(0, Math.min(NG_PLUS_RESEARCH.maxRuns, n));
+    if (!this.debugAllowed) return false;
+    this.flags.ngPlusRuns = Math.max(0, Math.min(NG_PLUS.maxLevel, n));
     this.flags.ngPlus = this.flags.ngPlusRuns > 0;
+    this.applyNgPlus();
+    return true;
+  }
+
+  // --- New Game+ (Milestone 20, bible §30) ---
+  // Why NG+ can't start now, or null. It opens once this run has reached the Year 16 ending (the ceremony's choice,
+  // or later from the Money menu while playing on).
+  ngPlusBlock() {
+    if (!this.flags.endingReached) return 'Reach the Year 16 ending first';
+    return null;
+  }
+
+  // The level the next run would be (NG+1, 2, 3 — later runs stay NG+3).
+  get nextNgPlusLevel() {
+    return this.ngPlusSys.levelAfter(this.ngPlusRuns);
+  }
+
+  // What the NG+ setup screen offers: Legacy Staff, blueprints, challenges.
+  ngPlusOptions() {
+    return ngPlusOptions(this);
+  }
+
+  // §30.5, from this run's level.
+  get ngPlusAdvantages() {
+    return this.ngPlusSys.advantages(this.ngPlusRuns);
+  }
+
+  // The §30.8 challenge this run is playing with, or null.
+  get challenge() {
+    return this.ngPlusSys.modifier(this.ngPlusRun?.modifier);
+  }
+
+  // The real transition: this run ends (the run-ended trigger fires for secrets and achievements, the account facts
+  // and records are brought up to date), core/NgPlusSystem makes the carry package from the full snapshot, and a
+  // new run is built from it. choices: { legacyStaff: [id], blueprints: [id], modifier: id | null, guide: bool }.
+  // Returns { ok, reason, carry }.
+  startNewGamePlus(choices = {}) {
+    const block = this.ngPlusBlock();
+    if (block) return { ok: false, reason: block };
+    const level = this.nextNgPlusLevel;
+    const options = this.ngPlusOptions();
+    const problems = this.ngPlusSys.checkChoices(choices, options, level);
+    if (problems.length) return { ok: false, reason: problems[0], problems };
+    this.bus.emit('campaign:transition', { level, fromRunId: this.campaignId });
+    this.syncSecretFacts();
+    syncRecords(this);
+    const carry = this.ngPlusSys.transition({ snapshot: ngPlusSnapshot(this, options), choices, level });
+    carry.fromRunId = this.campaignId;
+    carry.guideOff = choices.guide === false;
+    this.newGame(`${CAMPAIGN_SEED}|ngplus|${this.campaignId}`, { carry });
+    this.save().catch(() => {});
+    return { ok: true, reason: null, carry };
+  }
+
+  // A new run built from the carry package (newGame calls this after the fresh start).
+  _applyCarry(carry) {
+    const a = carry.always;
+    // Account level (§30.3): loaded from the package, so the new run holds exactly what was declared.
+    this.achievements.load(a.achievements);
+    this.records.load(a.records);
+    this.synergyArchive.account = { found: {} };
+    this.synergyArchive.loadAccount(a.combos);
+    const families = a.discoveryArchive?.families ?? {};
+    this.secrets.loadAccount({ history: a.secretRecipes, facts: a.discoveryArchive?.facts ?? {}, flags: { ...a.accountFlags, ...(Object.keys(families).length ? { families } : {}) } });
+    this.archive.load(a.pastCampaigns);
+    this.ngPlusAccount = { ...this.ngPlusAccount, highest: Math.max(a.highestLevel ?? 0, carry.level), starts: (this.ngPlusAccount.starts ?? 0) + 1, purchases: { ...(a.purchases ?? {}) } };
+    if (a.techChips) this.economy.add('techChips', a.techChips, 'Carried over from your last run', 'start');
+    if (a.prestigeTokens) this.economy.add('prestigeTokens', a.prestigeTokens, 'Carried over from your last run', 'start');
+    // §30.4 Legacy Staff: Level 5, 60% of their work stats (never below their normal starting stats), normal salary.
+    const legacy = [];
+    for (const e of carry.chosen.legacyStaff ?? []) {
+      const probe = new StaffModel({ tier: e.tier, traits: e.traits });
+      const caps = Object.fromEntries(STAT_KEYS.map((k) => [k, this.staff.statCap(probe, k)]));
+      const s = new StaffModel({
+        id: e.id,
+        name: e.name,
+        role: e.role,
+        tier: e.tier,
+        level: NG_PLUS.legacy.startLevel,
+        xp: 0,
+        stats: this.ngPlusSys.legacyStats(e.stats, e.floor, caps),
+        traits: e.traits,
+        salary: e.salary,
+        art: e.art,
+        energy: STAFF_RULES.startEnergy,
+        morale: STAFF_RULES.startMorale,
+        counters: { legacy: true, startStats: { ...e.floor } },
+      });
+      if (this.staff.get(s.id)) this.staff.remove(s.id); // a starter picked as Legacy: the Legacy version replaces them
+      this.staff.add(s);
+      legacy.push(s.id);
+    }
+    this.careers.reset();
+    for (const s of this.staff.staff) this.careers.join(s, 0);
+    this.flags.legacyStaff = legacy; // they don't count as hired this run for secret conditions (§30.4)
+    this.ngPlusRun = {
+      level: carry.level,
+      fromRunId: carry.fromRunId ?? null,
+      modifier: carry.modifier ?? null,
+      blueprints: carry.chosen.blueprints ?? [],
+      legacy,
+    };
+  }
+
+  // Things the NG+ level changes in other systems; re-applied on a new run, a load and the debug setter.
+  applyNgPlus() {
+    this.recruitment.freeManualPerYear = RECRUIT_RULES.freeManualPerYear + this.ngPlusAdvantages.freeRefreshes; // §30.5
+  }
+
+  // §30.8 Small Workshop: Expansion 3/4 cost more.
+  expansionCost(zoneId) {
+    const z = EXPANSIONS.find((e) => e.id === zoneId);
+    if (!z) return 0;
+    const pct = this.challenge?.expansionCostPct?.[zoneId] ?? 0;
+    return Math.round(z.cost * (1 + pct / 100));
+  }
+
+  // §30.8 Homegrown Team: Head Hunt / Global Search stay shut until Rank A. The reason, or null.
+  channelChallengeBlock(channelId) {
+    const ch = this.challenge;
+    if (!ch?.lockedChannels?.includes(channelId)) return null;
+    if (rankAtLeast(RANKS, this.reputation.highestRankIndex, ch.untilRank)) return null;
+    return `${ch.name} challenge: not before Rank ${ch.untilRank}`;
+  }
+
+  // §30.8 Old School: no Tech Chip boosts during projects or research. Any Tech Chip speed-up for a project or a
+  // research topic must ask this first (the store's boosts arrive with the store milestone). The reason, or null.
+  techChipBoostBlock() {
+    return this.challenge?.noTechChipBoosts ? `${this.challenge.name} challenge: no Tech Chip boosts` : null;
+  }
+
+  // --- Blueprint Memory (§30.4): rebuild a remembered robot with one tap once its parts are open again ---
+  blueprint(id) {
+    return (this.ngPlusRun?.blueprints ?? []).find((b) => b.id === id) ?? null;
+  }
+
+  // Workers free to build right now (not on a project, research or training).
+  get freeBuilders() {
+    return this.staff.staff.filter((s) => !this.busyReason(s.id));
+  }
+
+  blueprintBlock(id) {
+    const b = this.blueprint(id);
+    if (!b) return 'Unknown blueprint';
+    if (!this.openPurposes.includes(b.purpose)) return `${PURPOSES[b.purpose]?.name ?? b.purpose} robots are not open yet`;
+    const missing = Object.values(b.components).filter((p) => !this.partOpen(p));
+    if (missing.length) return `Needs ${missing.map((p) => COMPONENTS[p]?.name ?? p).join(', ')}`;
+    const can = this.canStartProject(b.components);
+    if (!can.ok) return can.reason;
+    if (!this.freeBuilders.length) return 'Nobody is free to build it';
+    return null;
+  }
+
+  // One tap: the remembered purpose and six parts, balanced budget, everyone free on the team.
+  rebuildBlueprint(id) {
+    const block = this.blueprintBlock(id);
+    if (block) return { ok: false, reason: block };
+    const b = this.blueprint(id);
+    const teamIds = this.freeBuilders.map((s) => s.id).slice(0, PROJECT_RULES.teamSlots);
+    const job = this.startRobotProject({ purposeId: b.purpose, components: { ...b.components }, budgetFocus: 'balanced', teamIds });
+    job.data.blueprint = b.id;
+    this.bus.emit('blueprint:rebuild', { blueprint: b, job });
+    return { ok: true, job };
   }
 
   setDebugEnding(on) {
@@ -971,7 +1155,7 @@ export class Campaign {
     if (!this.facilities.zoneReady(zoneId)) return `Open ${z.requires.map((r) => EXPANSIONS.find((e) => e.id === r)?.name ?? r).join(', ')} first`;
     if (!this.unlockMet(z.unlock)) return `Needs ${describeUnlock(z.unlock)}`;
     if (this.economy.isBlocked('facility')) return 'No building while in debt';
-    if (!this.economy.canAfford('credits', z.cost)) return 'Not enough credits';
+    if (!this.economy.canAfford('credits', this.expansionCost(zoneId))) return 'Not enough credits';
     return null;
   }
 
@@ -979,7 +1163,7 @@ export class Campaign {
     const block = this.expansionBlock(zoneId);
     if (block) return { ok: false, reason: block };
     const z = EXPANSIONS.find((e) => e.id === zoneId);
-    this.economy.add('credits', -z.cost, `Workshop ${z.name}`, 'expansion');
+    this.economy.add('credits', -this.expansionCost(zoneId), `Workshop ${z.name}`, 'expansion');
     this.facilities.openZone(zoneId);
     // The basement comes with the Secret Lab already built inside it (§29.4).
     if (z.comesWith && !this.facilities.has(z.comesWith.def)) this.facilities.place(z.comesWith.def, z.comesWith.col, z.comesWith.row, 0);
@@ -1011,8 +1195,10 @@ export class Campaign {
   }
 
   // --- research (§19) ---
+  // This run's New Game+ level: 0 on a first run, then 1, 2, 3 (later runs stay 3). Set by the NG+ transition
+  // (Milestone 20) — or the ?debug=1 setter.
   get ngPlusRuns() {
-    return Math.min(NG_PLUS_RESEARCH.maxRuns, this.flags.ngPlusRuns ?? 0); // NG+ arrives later (§30.5 stored now)
+    return Math.min(NG_PLUS.maxLevel, this.flags.ngPlusRuns ?? 0);
   }
 
   feature(id) {
@@ -1111,7 +1297,7 @@ export class Campaign {
   // --- recruitment (§16, §15.7, §39.1) ---
   channelOpen(id) {
     const ch = this.recruitment.channel(id);
-    return !!ch && this.unlockMet(ch.unlock);
+    return !!ch && this.unlockMet(ch.unlock) && !this.channelChallengeBlock(id);
   }
 
   // kind: 'free' (the yearly free tap), 'paid' (cash, through a channel), 'techChips' (store, ordinary only).
@@ -1120,6 +1306,8 @@ export class Campaign {
     if (kind === 'techChips') return this.store.block(RECRUIT_RULES.techChipItem);
     const ch = this.recruitment.channel(channelId);
     if (!ch) return 'Unknown channel';
+    const challenge = this.channelChallengeBlock(channelId);
+    if (challenge) return challenge;
     if (!this.channelOpen(channelId)) return `Needs ${describeUnlock(ch.unlock)}`;
     if (ch.debtBlock && this.economy.isBlocked(ch.debtBlock)) return 'Not while in debt';
     if (this.economy.balance('credits') < ch.cost) return 'Not enough credits';
@@ -1181,6 +1369,7 @@ export class Campaign {
         art: c.art,
         energy: STAFF_RULES.startEnergy,
         morale: STAFF_RULES.startMorale,
+        counters: { startStats: { ...c.stats } }, // their normal starting stats (a Legacy worker's floor, §30.4)
       }),
     );
     if (fee) this.economy.add('credits', -fee, `Signing fee: ${c.name}`, 'hiring');
@@ -1577,6 +1766,7 @@ export class Campaign {
     const a = e.amount;
     let v = a.base + (a.perYear ?? 0) * (this.clock.year - 1);
     if (a.spread) v *= rng.range(1 - a.spread, 1 + a.spread);
+    v *= 1 + (NG_PLUS_SCALING.events.amountPctPerLevel * this.ngPlusRuns) / 100; // §30.7 stronger event variants in NG+
     return { ...e, amount: e.type === 'credits' ? Math.round(v / 50) * 50 : Math.round(v) };
   }
 
@@ -1662,6 +1852,7 @@ export class Campaign {
       openPurposes: this.openPurposes,
       openParts: this.openParts,
       rankIndex: this.reputation.highestRankIndex,
+      ngPlus: this.ngPlusRuns, // §30.7: contracts scale by NG+ level; Hard contracts from NG+2
     };
   }
 
@@ -1698,6 +1889,7 @@ export class Campaign {
       this.economy.add('techChips', CONTRACT_RULES.special.techChips, `Contract bonus: ${c.title}`, 'reward');
       c.result.special = true;
     }
+    if (c.prestigeTokens) this.economy.add('prestigeTokens', c.prestigeTokens, `Hard contract: ${c.title}`, 'contract'); // §30.7 NG+2
     this.research.addRp(RP_SOURCES.contract[c.tier] ?? RP_SOURCES.contract.starter, `Contract: ${c.title}`, this.clock.totalDays);
     this.flags.firstContractDone = true;
     if (c.setsFlag) this.flags[c.setsFlag] = true;
@@ -1753,9 +1945,10 @@ export class Campaign {
     return job;
   }
 
-  newGame(seed = CAMPAIGN_SEED) {
+  // carry: a New Game+ carry package (startNewGamePlus) — null for a first run.
+  newGame(seed = CAMPAIGN_SEED, { carry = null } = {}) {
     this.seed = seed;
-    this.campaignId = `run-${Date.now().toString(36)}`;
+    this.campaignId = `run-${Date.now().toString(36)}${(runCounter++).toString(36)}`;
     this.rng.setSeed(seed);
     this.marketRng.setSeed(`${seed}|market`);
     this.contractRng.setSeed(`${seed}|contracts`);
@@ -1766,7 +1959,13 @@ export class Campaign {
     this.sponsors.reset();
     this.notes.reset();
     this.flags = { creditsEarned: 0, everInDebt: false };
-    this.guideState = undefined; // a brand-new run: the guide starts from step 1
+    this.ngPlusRun = null;
+    if (carry?.level) {
+      this.flags.ngPlusRuns = carry.level;
+      this.flags.ngPlus = true;
+    }
+    // A brand-new run: the guide starts from step 1 — or, in New Game+, is off if the player said so (M20).
+    this.guideState = carry?.guideOff ? { done: [], seen: [], events: [], off: true, current: null } : undefined;
     this.reputation.load({ value: 0, highestRankIndex: 0 });
     this.clock.load({ year: 1, month: 1, day: 1, totalDays: 0, dayProgress: 0, speed: CALENDAR.speeds[0] });
     this.startLayout();
@@ -1779,8 +1978,14 @@ export class Campaign {
     this.assignments.refresh();
     this.economy.reset();
     this.products.load({ nextId: 1, products: [] });
-    this.economy.add('credits', STARTING_MONEY.credits, 'Starting money', 'start');
-    this.economy.add('techChips', STARTING_MONEY.techChips, 'Welcome grant', 'start');
+    // §30.5 +2,000 starting credits per completed run (NG+3 at most); §30.8 Lean Start −40%. NG+ brings its own
+    // Tech Chips and Prestige Tokens instead of the first-run welcome grant.
+    const bonus = this.ngPlusSys.advantages(carry?.level ?? 0).startingCredits;
+    const lean = this.ngPlusSys.modifier(carry?.modifier)?.startingCreditsPct ?? 0;
+    const startCredits = Math.round((STARTING_MONEY.credits + bonus) * (1 + lean / 100));
+    this.flags.startingCredits = startCredits;
+    this.economy.add('credits', startCredits, carry ? `Starting money (NG+${carry.level})` : 'Starting money', 'start');
+    if (!carry) this.economy.add('techChips', STARTING_MONEY.techChips, 'Welcome grant', 'start');
     this.market.start();
     this.contracts.reset();
     this.unlocks.reset();
@@ -1793,10 +1998,17 @@ export class Campaign {
     this.secrets.resetRun(); // clues and unlocks start again; the account history stays (repeat easing)
     this.ending.reset();
     this.recruitment.reset();
+    if (carry) this._applyCarry(carry); // New Game+: the account half, Legacy Staff, blueprints, the challenge
+    this.applyNgPlus();
     this.recruitment.refresh(RECRUIT_RULES.freeChannel, 'start');
+    // §30.7 NG+1: the Secret Lab's clue is there from day 1 (the guaranteed clue route).
+    for (const sc of NG_PLUS_SCALING.startClues) if (this.ngPlusRuns >= sc.fromLevel) this._secretClue({ id: sc.id, stage: sc.stage });
     this.applyFeatures();
     this.contracts.monthStart(this.contractContext(), 0);
     this.paySalaries(); // day 1 of month 1
+    // Set again last: the guide hears events while the run is being built (facility:placed…) and writes its old
+    // progress back here. A new run's guide starts from step 1 — or stays off in an NG+ run that chose so (M20).
+    this.guideState = carry?.guideOff ? { done: [], seen: [], events: [], off: true, current: null } : undefined;
     this.bus.emit('campaign:ready', { fresh: true });
   }
 
@@ -1832,6 +2044,7 @@ export class Campaign {
       ending: this.ending.serialize(),
       guide: this.guideState ?? null,
       flags: { ...this.flags },
+      ngplus: this.ngPlusRun ? JSON.parse(JSON.stringify(this.ngPlusRun)) : null, // Milestone 20
     };
   }
 
@@ -1876,6 +2089,8 @@ export class Campaign {
     this.secrets.loadRun(data.secrets); // null before Milestone 16
     if (data.removeTestSecrets) this._removeTestSecrets();
     this.ending.load(data.ending); // null before Milestone 19 (the M18 debug switch set only the flag)
+    this.ngPlusRun = data.ngplus ?? null; // null on a first run and before Milestone 20
+    this.applyNgPlus();
     this._payStoredPrestige();
     this._backfillAchievementFlags();
     if (this.sponsors.active || this.sponsors.history.length) this.flags.firstSponsor = true; // saves from before Milestone 19
@@ -1890,7 +2105,7 @@ export class Campaign {
     try {
       this.syncSecretFacts();
       syncRecords(this);
-      if (this.accountManager) await this.accountManager.save({ synergies: this.synergyArchive.serializeAccount(), secrets: this.secrets.serializeAccount(), achievements: this.achievements.serialize(), records: this.records.serialize(), archive: this.archive.serialize() });
+      if (this.accountManager) await this.accountManager.save({ synergies: this.synergyArchive.serializeAccount(), secrets: this.secrets.serializeAccount(), achievements: this.achievements.serialize(), records: this.records.serialize(), archive: this.archive.serialize(), ngPlus: { ...this.ngPlusAccount } });
       const rec = await this.saveManager.save(this.serialize());
       this.lastSaveError = null;
       return rec;
@@ -1910,6 +2125,7 @@ export class Campaign {
       this.achievements.load(account?.achievements); // Milestone 18: achievements and records across runs
       this.records.load(account?.records);
       this.archive.load(account?.archive); // Milestone 19: finished runs
+      this.ngPlusAccount = { highest: 0, starts: 0, purchases: {}, ...(account?.ngPlus ?? {}) }; // Milestone 20
       for (const id of Object.keys(this.secrets.account.history)) if (id.startsWith('TEST-')) delete this.secrets.account.history[id]; // M16 test rules
     } catch (err) {
       console.error('[Campaign] could not load the account record', err);

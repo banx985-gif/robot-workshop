@@ -120,6 +120,13 @@ export const CEREMONY_TEXT = {
   },
   gradeTitle: 'Your grade',
   tap: 'Tap to continue',
+  // §30.7 NG+3 hidden ending variant: the Unknown robot (Singularity Workshop) was built this run.
+  hidden: {
+    title: 'The Singularity Awards',
+    intro: 'The lights flicker. On stage stands a robot nobody has ever seen — yours. The whole hall falls silent.',
+    host: 'Every prestige part, every legend, one machine. Tonight the story is yours alone.',
+    badge: 'Final secret found: the Singularity Badge is yours.',
+  },
 };
 
 // Art (already in the folder — never moved or edited).
@@ -133,6 +140,8 @@ export const ENDING_ART = {
   stars: 'vfx_06',
   trophies: ['trophy_01', 'trophy_02', 'trophy_03', 'trophy_04', 'trophy_05', 'trophy_06'],
   invitation: 'ui_icon_10_secret',
+  hiddenMoment: 'event_art_08', // the Unknown robot's endgame picture (hidden ending, §30.7)
+  finalBadge: 'badge_rarity_05_secret',
 };
 
 // The encrypted invitation (§25): sent after the ceremony. It reads only once its secret has been discovered (the
@@ -147,9 +156,9 @@ export const INVITATION = {
   readNote: 'Decoded! The Lunar Robotics League wrote to you.',
 };
 
-// The end of the ceremony (§30.1): play on, roll the credits, or (Milestone 20) New Game+.
+// The end of the ceremony (§30.1): play on, roll the credits, or New Game+ (Milestone 20).
 export const END_CHOICES = {
   continue: { label: 'Continue (postgame)', sub: 'Keep everything and play on' },
   credits: { label: 'Credits', sub: 'The people behind the workshop' },
-  ngPlus: { label: 'New Game+', sub: 'Coming soon' },
+  ngPlus: { label: 'New Game+', sub: 'Start again with Legacy Staff, blueprints and more' },
 };

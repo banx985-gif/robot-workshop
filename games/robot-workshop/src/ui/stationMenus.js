@@ -19,6 +19,7 @@ import { SECRET_ART } from '../../data/secrets.js';
 import { ACHIEVEMENTS, ACHIEVEMENT_ART } from '../../data/achievements.js';
 import { robotArtOf } from '../systems/robotVisual.js';
 import { describeUnlock } from '../systems/unlockRules.js';
+import { NG_PLUS_ART } from '../../data/ngplus.js';
 
 const C = THEME.color;
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
@@ -75,6 +76,30 @@ export function createStationMenus({ campaign, router, workshop, sheet }) {
     return list;
   }
 
+  // New Game+ Blueprint Memory (Milestone 20, §30.4): one tap rebuilds a remembered robot once its parts are open.
+  function blueprintSection() {
+    const list = campaign.ngPlusRun?.blueprints ?? [];
+    if (!list.length) return null;
+    return {
+      title: 'Blueprint Memory',
+      buttons: list.map((b) => {
+        const block = campaign.blueprintBlock(b.id);
+        return {
+          id: `blueprint:${b.id}`,
+          label: `Rebuild ${b.name}`,
+          sub: block ?? 'One tap: same six parts, balanced budget',
+          icon: b.art ?? NG_PLUS_ART.blueprint,
+          accent: C.purple,
+          disabled: !!block,
+          onTap: () => {
+            if (campaign.rebuildBlueprint(b.id).ok) sheet.close(); // the build starts on the Assembly Bay
+          },
+        };
+      }),
+      columns: 1,
+    };
+  }
+
   function competeButtons() {
     const ready = campaign.openCompetitions.some((e) => campaign.competitions.records[e.id]?.lastPeriod !== campaign.monthIndex) && campaign.competitionRobots.length > 0;
     return [
@@ -115,6 +140,8 @@ export function createStationMenus({ campaign, router, workshop, sheet }) {
       { id: 'products', label: 'Products', sub: `${campaign.products.active.length}/${campaign.products.slotCount} on sale${waiting ? ` · ${waiting} to launch` : ''}`, icon: 'ui_icon_13', badge: waiting && campaign.products.freeSlots ? '!' : null, onTap: go('products') },
       { id: 'contracts', label: 'Contracts', sub: `${k.active.length}/${k.maxActive} taken`, icon: 'ui_icon_14', badge: k.offers.length && k.canAccept ? k.offers.length : null, onTap: go('contracts', { tab: 'offered' }) },
       { id: 'save', label: workshop.topBar.savedNote ?? 'Save now', sub: 'It also saves every month', icon: 'ui_icon_28', accent: C.progress, onTap: () => workshop.topBar.save() },
+      // After the Year 16 ending (playing on): New Game+ can start from here too (Milestone 20, §30.1).
+      ...(campaign.ngPlusBlock() ? [] : [{ id: 'ngplus', label: 'New Game+', sub: `Start NG+${campaign.nextNgPlusLevel}`, icon: NG_PLUS_ART.icon, accent: C.purple, onTap: go('ngplus', { back: 'workshop' }) }]),
     ];
   }
 
@@ -130,6 +157,7 @@ export function createStationMenus({ campaign, router, workshop, sheet }) {
       case 'F01':
         menu.subtitle = job() ? `Building ${job().name}` : 'The robot-building machine';
         menu.sections.push({ title: 'Robot', lines: projectLines(), buttons: robotButtons() });
+        if (blueprintSection()) menu.sections.push(blueprintSection());
         break;
       case 'F11':
       case 'F33':

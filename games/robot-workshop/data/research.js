@@ -1,5 +1,5 @@
 // Research (bible §19): the 36 visible nodes in six branches, the business milestones (§19.6),
-// the queue rules (§18.2 F11 / F33), RP sources (§19.7) and the NG+ research bonuses (§30.5, stored for later).
+// the queue rules (§18.2 F11 / F33) and RP sources (§19.7). The NG+ research bonuses (§30.5) are in data/ngplus.js.
 // Plain data for core/ResearchSystem.js. Secret/prestige research (CH10, MO08, AI08, PO08, SP08) is not here.
 //
 // node: { id, branch, level, name, cost (RP), requires: [node ids], condition: unlock rule | null, actions }
@@ -128,9 +128,6 @@ export const RP_SOURCES = {
   competition: { min: 15, max: 150 },
   researchPrototype: { min: 30, max: 120 },
 };
-
-// §30.5 NG+ research bonuses per completed campaign, capped at NG+3 (used when NG+ arrives).
-export const NG_PLUS_RESEARCH = { costPctPerRun: -5, speedPctPerRun: 5, maxRuns: 3 };
 
 // Art (already in the folder).
 export const RESEARCH_ART = {

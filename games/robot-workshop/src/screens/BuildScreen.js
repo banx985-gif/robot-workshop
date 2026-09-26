@@ -212,7 +212,7 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
     if (block) return say(block, RED);
     confirm = {
       text: `Buy ${z.name}?`,
-      sub: `${z.note} of floor for ${fmt(z.cost)} credits.`,
+      sub: `${z.note} of floor for ${fmt(campaign.expansionCost(z.id))} credits.`,
       yes: 'Buy',
       no: 'Not now',
       onYes: () => {
@@ -536,7 +536,7 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
     const x = r.x + 150;
     const mw = r.w - 150 - 270;
     text(ctx, `${z.name} · ${z.note}`, x, r.y + 20, { size: 32, bold: true, maxWidth: mw });
-    text(ctx, `${fmt(z.cost)} credits · needs ${describeUnlock(z.unlock)}`, x, r.y + 64, { size: 24, color: COL.gold, maxWidth: mw });
+    text(ctx, `${fmt(campaign.expansionCost(z.id))} credits · needs ${describeUnlock(z.unlock)}`, x, r.y + 64, { size: 24, color: COL.gold, maxWidth: mw });
     const state = owned ? 'Open ✓' : !z.buyable ? LOCKED_LATER : block ?? 'Ready to buy';
     text(ctx, state, x, r.y + 102, { size: 24, bold: true, color: owned ? GREEN : block ? COL.textMuted : GREEN, maxWidth: mw });
     if (!owned) drawButton(ctx, buyRect(i), z.buyable ? 'Buy' : 'Later', { font: font(34, true), active: !block, disabled: !!block, locked: !z.buyable, accent: GREEN });

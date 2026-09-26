@@ -34,7 +34,7 @@ export const SECRET_RULES = {
   currencyTypes: ['currency'], // rewards paid only the first time per account
 };
 
-// Engine event names → the game's bus events (bible §28 "checks occur after", plus contracts and hires).
+// Engine event names → the game's bus event(s) (bible §28 "checks occur after", plus contracts and hires).
 export const SECRET_TRIGGERS = {
   projectFinished: 'project:complete',
   monthRollover: 'clock:month',
@@ -44,7 +44,7 @@ export const SECRET_TRIGGERS = {
   staffLevelUp: 'staff:levelup',
   contractDone: 'contract:success',
   hire: 'staff:hired',
-  runEnded: 'campaign:ending', // the Year 16 ending / NG+ transition (sent once the ending exists)
+  runEnded: ['campaign:ending', 'campaign:transition'], // the Year 16 ending, and the NG+ transition (Milestone 20) just before the old run closes
 };
 
 // Reward action words (run through the unlock-action runner, so each fires once a run):
@@ -462,6 +462,8 @@ export const SECRETS = [
       is('account.eventsWon', 'has', 'C12', 'Win the Black Circuit once (any run)', 'competitions'),
     ],
     clueStages: clue('Every prestige part, every legend, one machine. Nobody has ever seen it.', 'The Singularity is one step away.'),
+    // §30.7 NG+2: an extra Rumour Archive clue stage before the rule itself opens at NG+3.
+    earlyClue: { ngPlus: 2, text: 'A whisper from the Secret Lab: "Bring every prestige part and a secret mind together — one more New Game+ and it can be built."' },
     rewardActions: [
       { type: 'combo', id: 'SYN20' },
       { type: 'family', id: 'V20' },
@@ -469,6 +471,7 @@ export const SECRETS = [
       pay('prestigeTokens', 5, 'SEC-ROBOT-03'),
       { type: 'event', id: 'EV_M08' },
       { type: 'flag', id: 'hiddenEndingVariant', value: true },
+      { type: 'accountFlag', id: 'finalSecretBadge' }, // §30.7 NG+3 final secret completion badge
     ],
   },
 

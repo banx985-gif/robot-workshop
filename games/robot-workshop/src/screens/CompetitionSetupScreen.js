@@ -203,7 +203,7 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
     const field = campaign.rivals.fieldFor(ev, { ...campaign.competitionContext, weights: campaign.competitionWeights(ev.id) });
     const top = field.reduce((b, x) => (!b || x.base > b.base ? x : b), null);
     const rv = rivalOf(top.id, shown);
-    const line = rivalLine(rv, 'before', campaign.competitionSeed(ev.id), { event: ev.name }) ?? '…';
+    const line = rivalLine(rv, 'before', campaign.competitionSeed(ev.id), { event: ev.name }, campaign.ngPlusRuns) ?? '…';
     drawSpeech(ctx, assets, rv, line, r);
   }
 

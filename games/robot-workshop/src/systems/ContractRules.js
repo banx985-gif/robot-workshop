@@ -1,6 +1,8 @@
 // Robot Workshop's rules for the shared ContractSystem (bible §14.6, §14.7):
 // making random offers, making the signature contracts, and checking a delivered robot.
-// ctx (from Campaign.contractContext()): { campaign, year, month, openPurposes, openParts, rankIndex }
+// ctx (from Campaign.contractContext()): { campaign, year, month, openPurposes, openParts, rankIndex, ngPlus }
+// New Game+ (Milestone 20, §30.7): each NG+ level asks a little more and pays more; from NG+2 some random offers are
+// Hard contracts (harder, much better paid, +1 Prestige Token). A first run is never touched.
 import { CONTRACT_RULES as CR, SIGNATURE_CONTRACTS } from '../../data/contracts.js';
 import { SEGMENTS, PURPOSE_SEGMENTS } from '../../data/segments.js';
 import { PURPOSES } from '../../data/purposes.js';
@@ -8,6 +10,9 @@ import { COMPONENTS } from '../../data/components.js';
 import { PROJECT_TIERS } from '../../data/phases.js';
 import { RANKS } from '../../data/economy.js';
 import { estimateBest } from './Capability.js';
+import { NG_PLUS_SCALING } from '../../data/ngplus.js';
+
+const NGC = NG_PLUS_SCALING.contracts;
 
 const SEG = Object.fromEntries(SEGMENTS.map((s) => [s.id, s]));
 const TIER_ORDER = PROJECT_TIERS.map((t) => t.id);
@@ -24,14 +29,15 @@ function topStats(purposeId, n) {
 }
 
 // Terms from a reference build: requirements = a share of what the team could build now.
-function termsFrom(est, { purposeId, segment, stats, difficulty, tier, requiredPart }) {
+function termsFrom(est, { purposeId, segment, stats, difficulty, tier, requiredPart, ngPlus = 0, hard = false }) {
+  const ng = ngScale(ngPlus, hard);
   const minStats = {};
-  for (const k of stats) minStats[k] = Math.max(5, Math.floor((est.stats[k] * difficulty) / 5) * 5);
-  const minQuality = Math.max(1, Math.floor(est.quality * CR.qualityDifficulty));
+  for (const k of stats) minStats[k] = Math.max(5, Math.floor((est.stats[k] * Math.min(ng.maxShare, difficulty * ng.difficulty)) / 5) * 5);
+  const minQuality = Math.max(1, Math.floor(est.quality * Math.min(ng.maxShare, CR.qualityDifficulty * ng.difficulty)));
   const minCx = CR.tierMinCx[tier];
   const deadlineDays = Math.max(CR.deadline.minDays, Math.ceil(est.days * CR.deadline.perEstimatedDay + CR.deadline.extraDays));
   const p = CR.payout;
-  const payout = Math.round((p.base + minQuality * p.perQuality + minCx * p.perComplexity) / p.roundTo) * p.roundTo;
+  const payout = Math.round(((p.base + minQuality * p.perQuality + minCx * p.perComplexity) * ng.payout) / p.roundTo) * p.roundTo;
   return {
     purpose: purposeId,
     segment,
@@ -47,6 +53,16 @@ function termsFrom(est, { purposeId, segment, stats, difficulty, tier, requiredP
     specialChance: CR.special.chance,
     suggested: est.components, // the reference build (shown as a hint)
     estimate: { stats: est.stats, quality: est.quality, days: est.days },
+    ...(hard ? { hard: true, prestigeTokens: NGC.hard.prestigeTokens } : {}),
+  };
+}
+
+// How much harder / better paid a contract is at this NG+ level (1 / 1 on a first run).
+export function ngScale(level = 0, hard = false) {
+  return {
+    difficulty: 1 + (NGC.difficultyPctPerLevel * level + (hard ? NGC.hard.difficultyPct : 0)) / 100,
+    payout: 1 + (NGC.payoutPctPerLevel * level + (hard ? NGC.hard.payoutPct : 0)) / 100,
+    maxShare: 0.95, // never more than 95% of what the team could build now
   };
 }
 
@@ -73,7 +89,7 @@ export function contractHooks() {
       const requiredPart = def.requiredPart && ctx.openParts.has(def.requiredPart) ? def.requiredPart : null;
       const est = estimateBest(ctx.campaign, { purposeId: def.purpose, openParts: ctx.openParts, minCx: CR.tierMinCx[tier], maxCx: tierMax(tier), requiredPart });
       if (!est) return null; // try again next month
-      const t = termsFrom(est, { purposeId: def.purpose, segment: def.segment, stats: def.stats, difficulty: def.difficulty, tier, requiredPart });
+      const t = termsFrom(est, { purposeId: def.purpose, segment: def.segment, stats: def.stats, difficulty: def.difficulty, tier, requiredPart, ngPlus: ctx.ngPlus ?? 0 });
       t.payout = Math.round((t.payout * def.payoutBonus) / CR.payout.roundTo) * CR.payout.roundTo;
       t.reputation += def.repBonus;
       return { ...t, title: def.name, customer: def.customer, blurb: def.blurb, setsFlag: def.setsFlag ?? null };
@@ -104,8 +120,10 @@ export function contractHooks() {
       const stats = rng.shuffle(topStats(purposeId, CR.statsFrom)).slice(0, n);
       const difficulty = rng.range(CR.difficulty.min, CR.difficulty.max);
       const customer = rng.pick(SEG[segment].customers);
-      const t = termsFrom(est, { purposeId, segment, stats, difficulty, tier, requiredPart });
-      return { ...t, title: `${PURPOSES[purposeId].shortName} for ${customer}`, customer, blurb: null, setsFlag: null };
+      // NG+2 Hard contracts: rolled last, so the rest of the offer is the same dice as without it.
+      const hard = (ctx.ngPlus ?? 0) >= NGC.hard.fromLevel && rng.chance(NGC.hard.chance);
+      const t = termsFrom(est, { purposeId, segment, stats, difficulty, tier, requiredPart, ngPlus: ctx.ngPlus ?? 0, hard });
+      return { ...t, title: `${hard ? 'Hard: ' : ''}${PURPOSES[purposeId].shortName} for ${customer}`, customer, blurb: hard ? `A demanding customer: +${NGC.hard.prestigeTokens} Prestige Token on delivery.` : null, setsFlag: null };
     },
 
     // deliverable: a finished robot's history record.

@@ -5,12 +5,12 @@
 //     fieldOffset  where this rival sits in this event's field (event data)
 //     specialty    (event weight on the rival's strengths − specialtyBase) × specialtyPctPerPoint
 //     growth       growthPctPerYear × (campaign year − the event's beat year), clamped to ±growthClampPct
-//     ngPlus       ngPlusPct per New Game+ run
+//     ngPlus       ngPlusPct per New Game+ run, plus the rival's own ngPlusBonus.pct from ngPlusBonus.fromLevel on
 //   The event run then adds seeded variance per entry and seeded form per segment (core/CompetitionSystem.js).
 //
 // Nothing here reads the player's robot, pilot or results: no rubber-banding (§22.1).
 //
-// rivals: [{ id, name, strengths: [stat], growthPctPerYear, hidden?: true }]
+// rivals: [{ id, name, strengths: [stat], growthPctPerYear, hidden?: true, ngPlusBonus?: { fromLevel, pct } }]
 // rules:  { specialtyBase, specialtyPctPerPoint, ngPlusPct, growthClampPct }
 export class RivalSystem {
   constructor({ rivals, rules }) {
@@ -48,7 +48,7 @@ export class RivalSystem {
       offset,
       specialty: this.specialtyPct(r, weights),
       growth: this.growthPct(r, year, ev.beatYear ?? 1),
-      ngPlus: ngPlusRuns * this.rules.ngPlusPct,
+      ngPlus: ngPlusRuns * this.rules.ngPlusPct + (r.ngPlusBonus && ngPlusRuns >= r.ngPlusBonus.fromLevel ? r.ngPlusBonus.pct : 0),
     };
     const pct = parts.offset + parts.specialty + parts.growth + parts.ngPlus;
     return { id, name: r.name, base: ev.target * (1 + pct / 100), parts };

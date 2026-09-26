@@ -32,7 +32,7 @@ export const ACHIEVEMENT_TRIGGERS = {
   contract: 'contract:success',
   expansion: 'facility:expansion',
   month: 'clock:month',
-  runEnded: 'campaign:ending',
+  runEnded: ['campaign:ending', 'campaign:transition'], // the Year 16 ending and the NG+ transition (Milestone 20)
 };
 
 // Combos ACH23 counts: all but the secret one(s) that can't be hinted at.
