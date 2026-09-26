@@ -32,6 +32,9 @@ import { RESEARCH_NODES, RESEARCH_BRANCH_ORDER, RESEARCH_BRANCH_INFO, RESEARCH_M
 
 import { EVENTS, MILESTONE_EVENTS, REPEATABLE_EVENTS, EVENT_CAPS, EVENT_ICONS, EVENT_CONDITIONS, NOTIFY_RULES } from '../../data/events.js';
 import { SPONSORS, SPONSOR_RULES } from '../../data/sponsors.js';
+import { ACHIEVEMENTS, ACHIEVEMENT_TRIGGERS, ACHIEVEMENT_ART } from '../../data/achievements.js';
+import { RECORDS, RECORD_GROUPS } from '../../data/records.js';
+import { ACHIEVEMENT_OPS } from '../../../../core/AchievementSystem.js';
 import { SECRETS, SECRET_TRIGGERS, SECRET_REWARD_TYPES, SECRET_RULES, SECRET_ART } from '../../data/secrets.js';
 import { SECRET_OPS } from '../../../../core/SecretEngine.js';
 
@@ -639,6 +642,26 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
     v.check((s.rewardActions ?? []).every((a) => SECRET_REWARD_TYPES.includes(a.type) && (a.type !== 'currency' || a.id)), `${o}: unknown reward action (currency needs an id)`);
   }
   for (const k of Object.values(SECRET_ART)) v.check(typeof k === 'string', 'secret art: bad key');
+
+  // --- §27 achievements and records (Milestone 18) ---
+  v.uniqueIds('achievements', ACHIEVEMENTS);
+  v.check(ACHIEVEMENTS.length === 30 && ACHIEVEMENTS.every((a, i) => a.id === `ACH${String(i + 1).padStart(2, '0')}`), 'achievements: expected ACH01–ACH30 of §27.1');
+  const achCond = (o, c) => {
+    if (c.all || c.any) return (c.all ?? c.any).forEach((x) => achCond(o, x));
+    v.check(ACHIEVEMENT_OPS.includes(c.op), `${o}: unknown operator "${c.op}"`);
+    v.check(/^run./.test(c.fact ?? ''), `${o}: fact "${c.fact}" must be a run.* fact`);
+  };
+  for (const a of ACHIEVEMENTS) {
+    const o = `achievement ${a.id}`;
+    v.check(!!a.name && !!a.text, `${o}: needs a name and its words`);
+    v.check(a.triggerEvents?.length > 0 && a.triggerEvents.every((e) => e in ACHIEVEMENT_TRIGGERS), `${o}: needs trigger events from ACHIEVEMENT_TRIGGERS`);
+    achCond(o, a.requires);
+    v.check(a.reward?.length > 0 && a.reward.every((r) => ['credits', 'techChips', 'rp', 'prestigeTokens'].includes(r.currency) && r.amount > 0), `${o}: bad reward`);
+    if (a.progress) v.check(a.progress.target > 0 && /^run./.test(a.progress.fact), `${o}: bad progress bar`);
+  }
+  for (const k of Object.values(ACHIEVEMENT_ART)) v.check(typeof k === 'string', 'achievement art: bad key');
+  v.uniqueIds('records', RECORDS);
+  for (const r of RECORDS) v.check(['max', 'min'].includes(r.better) && RECORD_GROUPS.some((g) => g.id === r.group) && !!r.label && !!r.icon, `record ${r.id}: needs better, a group, a label and an icon`);
 
   // --- every image the game loads ---
   for (const [key, path] of Object.entries(manifest)) v.art(`image "${key}"`, path, { placeholder: placeholders.includes(key) });

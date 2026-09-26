@@ -21,7 +21,8 @@ export const EVENT_RULES = {
 };
 
 // §40: at most 20 pop-ups wait; older minor ones fold into the inbox. The inbox keeps the newest 200 messages.
-export const NOTIFY_RULES = { maxQueue: 20, inboxMax: 200, toastSec: 3.6, maxToasts: 2 };
+// Milestone 18: one toast at a time, shorter; past one waiting, toasts go straight to the Inbox.
+export const NOTIFY_RULES = { maxQueue: 20, inboxMax: 200, toastSec: 2.8, maxToasts: 1, toastQueueMax: 1 };
 
 // Icons (already in the folder): warning, customers/contracts, reward crate + the ones the game already loads.
 export const EVENT_ICONS = {

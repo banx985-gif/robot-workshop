@@ -9,13 +9,15 @@ import { robotArtOf } from '../systems/robotVisual.js';
 import { PRICE_POSITIONS } from '../../data/market.js';
 import { SEGMENTS, TREND_NEWS } from '../../data/segments.js';
 import { createTopBar } from '../ui/TopBar.js';
-import { panel, text, contained, bar, hit, fmt } from '../ui/widgets.js';
+import { panel, text, contained, bar, hit, fmt, wrapText } from '../ui/widgets.js';
 const COL = THEME.color;
 
-const MARKET_H = 420;
-const CARD_H = 400;
+// Milestone 18: every line at the §33.2 sizes (body 34, small 28), so the cards and the market panel are taller.
+const SEG_ROW = 54; // one market segment per row
+const NEWS_LINE = 44;
+const CARD_H = 640;
 const GAP = 20;
-const ROW_H = 136;
+const ROW_H = 140;
 const SEG_NAME = Object.fromEntries(SEGMENTS.map((s) => [s.id, s.name]));
 
 export function createProductCatalogueScreen({ renderer, layout, assets, campaign, router, goProject, hud }) {
@@ -47,15 +49,16 @@ export function createProductCatalogueScreen({ renderer, layout, assets, campaig
   }
   const unlaunched = () => campaign.history.records.filter((r) => !r.launchedProductId && !r.deliveredContractId).reverse();
 
-  const HEAD_Y = MARKET_H + 24;
+  let marketH = 72 + 8 * SEG_ROW + 80; // measured each frame (the trend news wraps)
+  const headY = () => marketH + 24;
   const HEAD_H = 70;
-  const cardRect = (i) => ({ x: 0, y: HEAD_Y + HEAD_H + i * (CARD_H + GAP), w: cw(), h: CARD_H });
+  const cardRect = (i) => ({ x: 0, y: headY() + HEAD_H + i * (CARD_H + GAP), w: cw(), h: CARD_H });
   const retireRect = (i) => {
     const c = cardRect(i);
     return { x: c.x + c.w - 24 - 230, y: c.y + 24, w: 230, h: 110 };
   };
-  const EMPTY_H = 90; // room for the "Nothing launched yet" line, so the next heading never sits on it
-  const unlaunchedTop = () => HEAD_Y + HEAD_H + (products().length ? products().length * (CARD_H + GAP) : EMPTY_H) + 30;
+  const EMPTY_H = 110; // room for the "Nothing launched yet" line, so the next heading never sits on it
+  const unlaunchedTop = () => headY() + HEAD_H + (products().length ? products().length * (CARD_H + GAP) : EMPTY_H) + 30;
   const rowRect = (i) => ({ x: 0, y: unlaunchedTop() + 60 + i * (ROW_H + 12), w: cw(), h: ROW_H });
   const rowButtonRect = (i) => {
     const r = rowRect(i);
@@ -105,64 +108,85 @@ export function createProductCatalogueScreen({ renderer, layout, assets, campaig
       const w = cw();
       const list = products();
       const waiting = unlaunched();
+      const news = newsLines(ctx, w);
+      marketH = 72 + SEGMENTS.length * SEG_ROW + 16 + news.length * NEWS_LINE + 20;
       scroll.contentHeight = unlaunchedTop() + 60 + Math.max(1, waiting.length) * (ROW_H + 12) + 20;
 
       scroll.begin(ctx);
-      drawMarket(ctx, w);
-      contained(ctx, assets, 'ui_icon_13', { x: 0, y: HEAD_Y, w: 56, h: 56 });
-      text(ctx, `Products on sale (${campaign.products.active.length}/${campaign.products.slotCount} slots)`, 70, HEAD_Y + 28, { size: 38, bold: true, baseline: 'middle', maxWidth: w - 80 });
-      if (!list.length) text(ctx, 'Nothing launched yet. Finish a robot, then press Launch on its result screen.', 4, HEAD_Y + HEAD_H + 10, { size: 28, color: COL.textMuted, maxWidth: w });
+      drawMarket(ctx, w, news);
+      contained(ctx, assets, 'ui_icon_13', { x: 0, y: headY(), w: 56, h: 56 });
+      text(ctx, `Products on sale (${campaign.products.active.length}/${campaign.products.slotCount} slots)`, 70, headY() + 28, { size: THEME.size.heading, bold: true, baseline: 'middle', maxWidth: w - 80 });
+      if (!list.length) wrapText(ctx, 'Nothing launched yet. Finish a robot, then press Launch on its result screen.', 4, headY() + HEAD_H + 6, w, { size: THEME.size.body, lineH: 44, color: COL.textMuted });
 
       list.forEach((p, i) => drawProduct(ctx, p, i));
 
       const uy = unlaunchedTop();
-      text(ctx, 'Finished robots not on sale', 4, uy, { size: 32, bold: true });
-      if (!waiting.length) text(ctx, 'None', 4, uy + 60, { size: 26, color: COL.textMuted });
+      text(ctx, 'Finished robots not on sale', 4, uy, { size: THEME.size.heading - 4, bold: true });
+      if (!waiting.length) text(ctx, 'None', 4, uy + 60, { size: THEME.size.body, color: COL.textMuted });
       waiting.forEach((rec, i) => {
         const r = rowRect(i);
         panel(ctx, r);
-        text(ctx, `#${rec.number} ${rec.name}`, r.x + 24, r.y + 22, { size: 32, bold: true, maxWidth: r.w - 290 });
-        text(ctx, `Review ${rec.result.review.toFixed(1)} · Quality ${rec.result.quality.toFixed(1)}`, r.x + 24, r.y + 66, { size: 24, color: COL.textMuted });
-        drawButton(ctx, rowButtonRect(i), 'Launch…', { font: font(30, true), disabled: !campaign.products.freeSlots });
+        text(ctx, `#${rec.number} ${rec.name}`, r.x + 24, r.y + 22, { size: THEME.size.body + 2, bold: true, maxWidth: r.w - 290 });
+        text(ctx, `Review ${rec.result.review.toFixed(1)} · Quality ${rec.result.quality.toFixed(1)}`, r.x + 24, r.y + 74, { size: THEME.size.body, color: COL.textMuted, maxWidth: r.w - 290 });
+        drawButton(ctx, rowButtonRect(i), 'Launch…', { font: font(THEME.size.button, true), disabled: !campaign.products.freeSlots });
       });
       scroll.end(ctx);
     },
   };
 
-  // Market this month: 8 segments (two columns) with demand, change since last month, and trend news.
-  function drawMarket(ctx, w) {
+  // The market panel's news lines, wrapped at body size: [{ text, color, bold }]. Trends first, then the forecast.
+  function newsLines(ctx, w) {
     const m = campaign.market;
-    panel(ctx, { x: 0, y: 0, w, h: MARKET_H }, { stroke: COL.progress });
-    text(ctx, 'Market this month', 24, 18, { size: 34, bold: true });
-    text(ctx, 'demand (100 = normal)', w - 24, 30, { size: 22, color: COL.textMuted, align: 'right' });
-    const colW = (w - 72) / 2;
-    SEGMENTS.forEach((s, i) => {
-      const x = 24 + (i % 2) * (colW + 24);
-      const y = 72 + Math.floor(i / 2) * 58;
-      const d = m.demand(s.id);
-      const prev = m.previous(s.id);
-      const trend = m.trendFor(s.id);
-      text(ctx, s.name, x, y + 4, { size: 24, color: trend ? COL.gold : COL.text, maxWidth: colW * 0.5 });
-      bar(ctx, x + colW * 0.52, y + 8, colW * 0.3, 18, d / 160, d >= 100 ? COL.good : COL.action);
-      const arrow = prev === null || prev === d ? '' : d > prev ? ' ▲' : ' ▼';
-      text(ctx, `${d}${arrow}`, x + colW, y + 2, { size: 26, bold: true, align: 'right', color: d >= 100 ? COL.good : COL.action });
-    });
-    const news = m.trends.map((t) => {
+    const items = m.trends.map((t) => {
       const shift = Object.values(t.shifts)[0];
       const names = Object.keys(t.shifts).map((id) => SEG_NAME[id]).join(' & ');
       const line = pickBySeed(TREND_NEWS[shift > 0 ? 'up' : 'down'], `${campaign.seed}|trend${t.id}`).replace('{segment}', names);
-      return `${shift > 0 ? '▲' : '▼'} ${line} (${t.monthsLeft} more month${t.monthsLeft === 1 ? '' : 's'})`;
+      return { text: `${shift > 0 ? '▲' : '▼'} ${line} (${t.monthsLeft} more month${t.monthsLeft === 1 ? '' : 's'})`, color: COL.gold };
     });
-    const ny = 72 + 4 * 58 + 8;
-    text(ctx, news.length ? news.slice(0, 2).join('   ') : 'No big trends this month.', 24, ny, { size: 24, color: news.length ? COL.gold : COL.textMuted, maxWidth: w - 48 });
-    if (news.length > 2) text(ctx, news.slice(2).join('   '), 24, ny + 34, { size: 24, color: COL.gold, maxWidth: w - 48 });
+    if (!items.length) items.push({ text: 'No big trends this month.', color: COL.textMuted });
     // Research reward (§19.6, 8 topics): next month's trend, a month early.
     if (campaign.feature('trendForecast')) {
       const t = m.nextTrend;
       const shift = t ? Object.values(t.shifts)[0] : 0;
       const line = t ? `${shift > 0 ? '▲' : '▼'} ${Object.keys(t.shifts).map((id) => SEG_NAME[id]).join(' & ')} ${shift > 0 ? 'rising' : 'falling'} for ${t.months} month${t.months === 1 ? '' : 's'}` : 'no new trend expected';
-      text(ctx, `Forecast for next month: ${line}`, 24, ny + 68, { size: 24, bold: true, color: COL.progress, maxWidth: w - 48 });
+      items.push({ text: `Forecast for next month: ${line}`, color: COL.progress, bold: true });
     }
+    const out = [];
+    for (const it of items) {
+      ctx.font = font(THEME.size.body, !!it.bold);
+      let cur = '';
+      for (const word of it.text.split(' ')) {
+        const t = cur ? `${cur} ${word}` : word;
+        if (ctx.measureText(t).width > w - 48 && cur) {
+          out.push({ ...it, text: cur });
+          cur = word;
+        } else cur = t;
+      }
+      if (cur) out.push({ ...it, text: cur });
+    }
+    return out;
+  }
+
+  // Market this month: the 8 segments (one per row) with demand, change since last month, then the trend news.
+  function drawMarket(ctx, w, news) {
+    const m = campaign.market;
+    panel(ctx, { x: 0, y: 0, w, h: marketH }, { stroke: COL.progress });
+    text(ctx, 'Market this month', 24, 18, { size: THEME.size.body + 4, bold: true });
+    text(ctx, 'demand (100 = normal)', w - 24, 26, { size: THEME.size.small, color: COL.textMuted, align: 'right' });
+    const barX = w * 0.52;
+    const barW = w * 0.28;
+    SEGMENTS.forEach((s, i) => {
+      const y = 72 + i * SEG_ROW;
+      const d = m.demand(s.id);
+      const prev = m.previous(s.id);
+      const trend = m.trendFor(s.id);
+      text(ctx, s.name, 24, y + 4, { size: THEME.size.body, color: trend ? COL.gold : COL.text, maxWidth: barX - 40 });
+      bar(ctx, barX, y + 12, barW, 22, d / 160, d >= 100 ? COL.good : COL.action);
+      const arrow = prev === null || prev === d ? '' : d > prev ? ' ▲' : ' ▼';
+      text(ctx, `${d}${arrow}`, w - 24, y + 4, { size: THEME.size.body, bold: true, align: 'right', color: d >= 100 ? COL.good : COL.action });
+    });
+    const ny = 72 + SEGMENTS.length * SEG_ROW + 16;
+    news.forEach((l, i) => text(ctx, l.text, 24, ny + i * NEWS_LINE, { size: THEME.size.body, bold: !!l.bold, color: l.color, maxWidth: w - 48 }));
   }
 
   function drawProduct(ctx, p, i) {
@@ -170,23 +194,24 @@ export function createProductCatalogueScreen({ renderer, layout, assets, campaig
     const on = p.status === 'active';
     panel(ctx, r, { stroke: on ? COL.good : COL.line });
     contained(ctx, assets, robotArtOf(campaign.history.get(p.data.historyNumber)?.result ?? { purpose: p.data.purpose }), { x: r.x + 16, y: r.y + 16, w: 170, h: 180 });
-    text(ctx, p.name, r.x + 210, r.y + 24, { size: 40, bold: true, maxWidth: r.w - 480 });
+    const tx = r.x + 210;
+    const beside = r.w - 230 - (on ? 260 : 0); // clear of the Retire button
+    text(ctx, p.name, tx, r.y + 22, { size: 40, bold: true, maxWidth: beside });
+    text(ctx, `${PRICE_POSITIONS[p.data.position].name} price · ${SEG_NAME[p.data.segment] ?? p.data.segment}`, tx, r.y + 78, { size: THEME.size.body, color: on ? COL.good : COL.textMuted, maxWidth: beside });
     const status = on ? `On sale · ${campaign.products.monthsLeft(p)} of 6 months left` : p.status === 'retired' ? 'Retired' : 'Sales cycle over';
-    // Line 2 stops short of the Retire button on products still on sale.
-    text(ctx, `${PRICE_POSITIONS[p.data.position].name} price · ${SEG_NAME[p.data.segment] ?? p.data.segment}`, r.x + 210, r.y + 80, { size: 26, color: on ? COL.good : COL.textMuted, maxWidth: r.w - 230 - (on ? 260 : 0) });
-    text(ctx, status, r.x + r.w - 24, r.y + 122, { size: 24, color: on ? COL.good : COL.textMuted, align: 'right' });
+    text(ctx, status, tx, r.y + 128, { size: THEME.size.small, bold: true, color: on ? COL.good : COL.textMuted, maxWidth: beside });
     const last = p.sales[p.sales.length - 1];
-    text(ctx, last ? `Last month: ${last.units} sold · ${fmt(last.revenue)} credits (demand ${last.demand ?? '–'})` : 'First sales at the end of this month', r.x + 210, r.y + 126, { size: 26, maxWidth: r.w - 230 - 330 });
+    wrapText(ctx, last ? `Last month: ${last.units} sold · ${fmt(last.revenue)} credits (demand ${last.demand ?? '–'})` : 'First sales at the end of this month', tx, r.y + 170, r.w - 230, { size: THEME.size.body, lineH: 44 });
     const novelty = p.novelty ?? p.data.novelty ?? 1;
-    text(ctx, `Total: ${p.totalUnits} sold · ${fmt(p.totalRevenue)} credits · Quality ${p.data.quality}${novelty < 1 ? ' · same build as before: −15%' : ''}`, r.x + 210, r.y + 164, {
-      size: 26,
+    wrapText(ctx, `Total: ${p.totalUnits} sold · ${fmt(p.totalRevenue)} credits · Quality ${p.data.quality}${novelty < 1 ? ' · same build as before: −15%' : ''}`, r.x + 24, r.y + 266, r.w - 48, {
+      size: THEME.size.body,
+      lineH: 44,
       color: novelty < 1 ? COL.action : COL.textMuted,
-      maxWidth: r.w - 230,
     });
 
     // Six little bars, one per month on sale.
     const bx = r.x + 24;
-    const by = r.y + 220;
+    const by = r.y + 370;
     const bw = (r.w - 48) / 6;
     const maxRev = Math.max(1, ...p.sales.map((s) => s.revenue));
     for (let m = 0; m < 6; m++) {
@@ -198,13 +223,13 @@ export function createProductCatalogueScreen({ renderer, layout, assets, campaig
         ctx.fillStyle = COL.good;
         ctx.fillRect(bx + m * bw + 4, by + 60 - h, bw - 8, h);
       }
-      text(ctx, `M${m + 1}`, bx + m * bw + bw / 2, by + 68, { size: 20, color: COL.textMuted, align: 'center' });
+      text(ctx, `M${m + 1}`, bx + m * bw + bw / 2, by + 66, { size: THEME.size.small, color: COL.textMuted, align: 'center' });
     }
     const review = (p.data.reviews ?? []).at(-1);
-    text(ctx, review ? `${review.month ? 'Month 3' : 'Launch'} feedback: ${review.text}` : 'Customer feedback arrives at launch and month 3.', r.x + 24, r.y + 330, { size: 23, color: COL.textMuted, maxWidth: r.w - 48 });
+    wrapText(ctx, review ? `${review.month ? 'Month 3' : 'Launch'} feedback: ${review.text}` : 'Customer feedback arrives at launch and month 3.', r.x + 24, r.y + 484, r.w - 48, { size: THEME.size.body, lineH: 44, maxLines: 3, color: COL.textMuted });
     if (on) {
       const confirm = confirmRetire === p.id;
-      drawButton(ctx, retireRect(i), confirm ? 'Tap again' : 'Retire', { active: confirm, accent: COL.bad, font: font(30, true) });
+      drawButton(ctx, retireRect(i), confirm ? 'Tap again' : 'Retire', { active: confirm, accent: COL.bad, font: font(34, true) });
     }
   }
 

@@ -68,6 +68,11 @@ import { PRODUCT_SLOT_STEPS, SALES_RULES } from '../../data/market.js';
 import { FACILITIES, EXPANSIONS, WORKSHOP_START, PROJECT_BAYS, DISPLAY_RULES, LOCKED_LATER, PRESTIGE_DISPLAY } from '../../data/facilities.js';
 import { RESEARCH_NODES, RESEARCH_MILESTONES, RESEARCH_QUEUES, RESEARCH_RULES, RESEARCH_BRANCH_INFO, RP_SOURCES, NG_PLUS_RESEARCH, researchNodeId, SECRET_RESEARCH } from '../../data/research.js';
 import { describeUnlock } from '../systems/unlockRules.js';
+import { AchievementSystem } from '../../../../core/AchievementSystem.js';
+import { AccountRecords } from '../../../../core/AccountRecords.js';
+import { ACHIEVEMENTS, ACHIEVEMENT_TRIGGERS } from '../../data/achievements.js';
+import { RECORDS } from '../../data/records.js';
+import { syncRecords, recordSale } from '../systems/gameRecords.js';
 import { RobotBuildSystem } from '../systems/RobotBuildSystem.js';
 import { Sales } from '../systems/Sales.js';
 import { contractHooks, checkRecord } from '../systems/ContractRules.js';
@@ -128,6 +133,8 @@ export const SAVE_MIGRATIONS = {
 const PROMISED = new Set([...RESEARCH_NODES, ...SECRET_RESEARCH].flatMap((n) => n.actions.map((a) => `${a.type}:${a.id}`)).concat(SECRETS.flatMap((s) => s.rewardActions.filter((a) => ['part', 'facility'].includes(a.type)).map((a) => `${a.type}:${a.id}`))));
 const QUEUE_RULES = new Set(RESEARCH_QUEUES.map((q) => q.rule));
 // Project tiers that count as an "advanced robot" (C09 needs 5): Advanced and above.
+// Credits that count as "earned" for Market Leader (ACH24): not the starting money, loans or facility refunds.
+const EARNED_CATEGORIES = new Set(['sales', 'contract', 'competition', 'event', 'reward']);
 const ADVANCED_TIERS = PROJECT_TIERS.slice(PROJECT_TIERS.findIndex((t) => t.id === 'advanced')).map((t) => t.id);
 
 export class Campaign {
@@ -414,6 +421,38 @@ export class Campaign {
     bus.on('recruit:expired', ({ candidate }) => this._arrivalGone(candidate));
     bus.on('staff:hired', () => this._arrivalGone(null));
     for (const [ev, busEvent] of Object.entries(SECRET_TRIGGERS)) bus.on(busEvent, (payload) => this.checkSecrets(ev, payload));
+
+    // Achievements and account records (Milestone 18, §27): both live in the account save, so a new run keeps them.
+    // Achievements read the secret engine's fact registry; their rewards are paid once per account, into this run.
+    const when = () => ({ day: this.clock.totalDays, year: this.clock.year, runId: this.campaignId });
+    this.achievements = new AchievementSystem({ bus, defs: ACHIEVEMENTS, facts: this.secrets.facts, pay: (r, def) => this._achievementPay(r, def), now: when });
+    this.records = new AccountRecords({ bus, defs: RECORDS, now: when });
+    for (const [ev, busEvent] of Object.entries(ACHIEVEMENT_TRIGGERS)) bus.on(busEvent, () => this.checkAchievements(ev));
+    for (const e of ['project:complete', 'competition:enter', 'clock:month', 'staff:levelup', 'product:launch']) bus.on(e, () => this.campaignId && syncRecords(this));
+    bus.on('product:sales', ({ product, sale }) => this.campaignId && recordSale(this, product, sale));
+    bus.on('economy:change', (l) => {
+      if (l.currency === 'credits' && l.amount > 0 && EARNED_CATEGORIES.has(l.category)) this.flags.creditsEarned = (this.flags.creditsEarned ?? 0) + l.amount;
+    });
+    bus.on('economy:debt', ({ inDebt }) => inDebt && (this.flags.everInDebt = true)); // Emergency Credit (ACH26)
+  }
+
+  // --- achievements (§27.1) ---
+  checkAchievements(ev) {
+    if (!this.campaignId) return [];
+    return this.achievements.notify(ev);
+  }
+
+  _achievementPay(r, def) {
+    const why = `Achievement: ${def.name}`;
+    if (r.currency === 'rp') this.research.addRp(r.amount, why, this.clock.totalDays);
+    else if (this.economy.currencies[r.currency]) this.economy.add(r.currency, r.amount, why, 'reward');
+  }
+
+  // Runs saved before Milestone 18: what they earned so far, from the ledger.
+  _backfillAchievementFlags() {
+    const credits = this.economy.ledger.filter((l) => l.currency === 'credits');
+    this.flags.creditsEarned ??= credits.filter((l) => l.amount > 0 && EARNED_CATEGORIES.has(l.category)).reduce((t, l) => t + l.amount, 0);
+    this.flags.everInDebt ??= credits.some((l) => l.balance < 0);
   }
 
   // --- secrets (§28) ---
@@ -578,7 +617,7 @@ export class Campaign {
 
   setDebugEnding(on) {
     this.flags.endingReached = !!on;
-    if (on) this.checkSecrets('runEnded', {});
+    if (on) this.bus.emit('campaign:ending', {}); // secrets and achievements both listen (Milestone 19 sends it for real)
   }
 
   get closed() {
@@ -1653,7 +1692,7 @@ export class Campaign {
     this.events.reset(0);
     this.sponsors.reset();
     this.notes.reset();
-    this.flags = {};
+    this.flags = { creditsEarned: 0, everInDebt: false };
     this.guideState = undefined; // a brand-new run: the guide starts from step 1
     this.reputation.load({ value: 0, highestRankIndex: 0 });
     this.clock.load({ year: 1, month: 1, day: 1, totalDays: 0, dayProgress: 0, speed: CALENDAR.speeds[0] });
@@ -1762,6 +1801,7 @@ export class Campaign {
     this.secrets.loadRun(data.secrets); // null before Milestone 16
     if (data.removeTestSecrets) this._removeTestSecrets();
     this._payStoredPrestige();
+    this._backfillAchievementFlags();
     this.applyFeatures();
     this.guideState = data.guide ?? null;
     this.assignments.refresh();
@@ -1772,7 +1812,8 @@ export class Campaign {
     if (!this.saveManager) return null;
     try {
       this.syncSecretFacts();
-      if (this.accountManager) await this.accountManager.save({ synergies: this.synergyArchive.serializeAccount(), secrets: this.secrets.serializeAccount() });
+      syncRecords(this);
+      if (this.accountManager) await this.accountManager.save({ synergies: this.synergyArchive.serializeAccount(), secrets: this.secrets.serializeAccount(), achievements: this.achievements.serialize(), records: this.records.serialize() });
       const rec = await this.saveManager.save(this.serialize());
       this.lastSaveError = null;
       return rec;
@@ -1789,6 +1830,8 @@ export class Campaign {
       const account = await this.accountManager?.load();
       this.synergyArchive.loadAccount(account?.synergies);
       this.secrets.loadAccount(account?.secrets); // secret history + facts across runs
+      this.achievements.load(account?.achievements); // Milestone 18: achievements and records across runs
+      this.records.load(account?.records);
       for (const id of Object.keys(this.secrets.account.history)) if (id.startsWith('TEST-')) delete this.secrets.account.history[id]; // M16 test rules
     } catch (err) {
       console.error('[Campaign] could not load the account record', err);

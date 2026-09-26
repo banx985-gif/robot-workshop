@@ -14,7 +14,8 @@
 import { THEME, font } from '../Theme.js';
 import { drawButton } from './Button.js';
 const COL = THEME.color;
-export const STAFF_CARD_HEIGHT = 470;
+// Milestone 18: body text at the §33.2 body size (34), secondary labels 28 — the card grew to fit.
+export const STAFF_CARD_HEIGHT = 540;
 
 export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent = COL.progress } = {}) {
   ctx.save();
@@ -49,16 +50,16 @@ export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent 
   ctx.fillText(view.title, tx, y, tw - 230);
   y += 56;
   ctx.fillStyle = COL.textMuted;
-  ctx.font = font(30);
+  ctx.font = font(THEME.size.body);
   ctx.fillText(view.subtitle || '', tx, y, tw - 230);
-  y += 44;
+  y += 50;
 
   if (view.xp) {
     drawBar(ctx, tx, y, sw, 14, view.xp.value / view.xp.max, COL.purple);
     ctx.fillStyle = COL.textMuted;
-    ctx.font = font(22);
+    ctx.font = font(THEME.size.small);
     ctx.fillText(`XP ${view.xp.value} / ${view.xp.max}`, tx, y + 20);
-    y += 54;
+    y += 60;
   }
 
   // Stats row.
@@ -78,26 +79,34 @@ export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent 
   // Bars.
   for (const b of view.bars || []) {
     ctx.fillStyle = COL.textMuted;
-    ctx.font = font(26);
+    ctx.font = font(THEME.size.body);
     ctx.fillText(b.label, tx, y - 2);
-    const bx = tx + 130;
-    const bw = sw - 130 - 70;
-    drawBar(ctx, bx, y + 2, bw, 22, b.value / b.max, b.color);
+    const bx = tx + 160;
+    const bw = sw - 160 - 80;
+    drawBar(ctx, bx, y + 6, bw, 24, b.value / b.max, b.color);
     ctx.textAlign = 'right';
     ctx.fillStyle = COL.text;
     ctx.fillText(String(Math.round(b.value)), tx + sw, y - 2);
     ctx.textAlign = 'left';
-    y += 40;
+    y += 48;
   }
   y += 6;
 
   // Trait chips, then status icons.
   let cx = tx;
-  ctx.font = font(26, true);
-  for (const c of view.chips || []) {
+  ctx.font = font(THEME.size.body, true);
+  const chips = view.chips || [];
+  for (const [i, c] of chips.entries()) {
     const w = ctx.measureText(c.label).width + 32;
+    // No room for this one: a "+N" chip says how many more (the detail screen lists them all).
+    if (cx + w > tx + tw - (i < chips.length - 1 ? 90 : 0)) {
+      ctx.fillStyle = COL.purple;
+      ctx.fillText(`+${chips.length - i}`, cx + 4, y + 6);
+      cx += 90;
+      break;
+    }
     ctx.fillStyle = COL.panelInfo;
-    roundRect(ctx, cx, y, w, 42, 21);
+    roundRect(ctx, cx, y, w, 50, 25);
     ctx.fill();
     ctx.fillStyle = COL.purple;
     ctx.fillText(c.label, cx + 16, y + 6);
@@ -107,11 +116,11 @@ export function drawStaffCard(ctx, r, view, assets, { highlight = false, accent 
     drawContained(ctx, assets, key, cx, y - 6, 54, 54);
     cx += 60;
   }
-  y += 54;
+  y += 62;
 
   if (view.footer) {
     ctx.fillStyle = COL.gold;
-    ctx.font = font(28);
+    ctx.font = font(THEME.size.body);
     ctx.fillText(view.footer, tx, y, sw);
   }
 

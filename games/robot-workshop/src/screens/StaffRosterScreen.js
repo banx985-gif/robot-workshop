@@ -183,19 +183,19 @@ export function createStaffRosterScreen({ renderer, layout, assets, bus, debug, 
       // §39.1: the cap grows with Company Rank (hiring arrives in Milestone 10).
       ctx.fillText(`Staff ${campaign.staff.staff.length} / ${campaign.employeeCap}`, lr.x + 8, lr.y - 24);
       const waiting = campaign.recruitment.special && !campaign.hireBlock(campaign.recruitment.special.id);
-      drawButton(ctx, headerButton(0), 'Hire', { accent: COL.good, badge: waiting ? '!' : null, font: font(34, true) });
-      drawButton(ctx, headerButton(1), 'Training', { font: font(34, true), badge: campaign.training.active.length || null });
+      drawButton(ctx, headerButton(0), 'Hire', { accent: COL.good, badge: waiting ? '!' : null, font: font(THEME.size.button, true) });
+      drawButton(ctx, headerButton(1), 'Training', { font: font(THEME.size.button, true), badge: campaign.training.active.length || null });
 
       list.render(ctx);
       if (message && performance.now() < message.until) {
-        const r = { x: lr.x + 30, y: lr.y + lr.h - 110, w: lr.w - 60, h: 84 };
+        const r = { x: lr.x + 30, y: lr.y + lr.h - 120, w: lr.w - 60, h: 96 };
         ctx.fillStyle = COL.panel;
         ctx.fillRect(r.x, r.y, r.w, r.h);
         ctx.strokeStyle = message.color;
         ctx.lineWidth = 3;
         ctx.strokeRect(r.x, r.y, r.w, r.h);
         ctx.fillStyle = message.color;
-        ctx.font = font(28, true);
+        ctx.font = font(THEME.size.body, true);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(message.text, r.x + r.w / 2, r.y + r.h / 2, r.w - 30);

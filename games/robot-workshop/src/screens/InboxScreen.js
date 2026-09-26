@@ -5,10 +5,10 @@ import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton, hitRect } from '../../../../core/ui/Button.js';
 import { createTopBar } from '../ui/TopBar.js';
-import { panel, text, wrapText, contained } from '../ui/widgets.js';
+import { panel, text, contained } from '../ui/widgets.js';
 const COL = THEME.color;
 
-const ROW_H = 168;
+const ROW_H = 252; // title, up to three lines of body text and the "waiting" tag, all at the §33.2 sizes
 const GAP = 14;
 const HEAD_H = 140;
 const LEVEL_COLOR = { minor: COL.textMuted, medium: COL.progress, major: COL.gold };
@@ -49,6 +49,31 @@ export function createInboxScreen({ renderer, layout, assets, campaign, router, 
     return { x: h.x + h.w - 290 - 16 - 220, y: h.y + 6, w: 220, h: h.h - 12 };
   }
 
+  // A message body wrapped to at most three lines at body size; a longer one ends with "…" (it opens in full on tap).
+  function bodyLines(ctx, str, w, max = 3) {
+    ctx.font = font(THEME.size.body);
+    const words = String(str).split(' ');
+    const out = [];
+    let cur = '';
+    let i = 0;
+    for (; i < words.length; i++) {
+      const t = cur ? `${cur} ${words[i]}` : words[i];
+      if (ctx.measureText(t).width > w && cur) {
+        out.push(cur);
+        cur = words[i];
+        if (out.length === max) break;
+      } else cur = t;
+    }
+    if (out.length < max) {
+      if (cur) out.push(cur);
+      return out;
+    }
+    let last = out[max - 1];
+    while (last.includes(' ') && ctx.measureText(`${last}…`).width > w) last = last.slice(0, last.lastIndexOf(' '));
+    out[max - 1] = `${last}…`;
+    return out;
+  }
+
   const rowRect = (i) => ({ x: 0, y: i * (ROW_H + GAP), w: listRect().w, h: ROW_H });
 
   const screen = {
@@ -84,16 +109,16 @@ export function createInboxScreen({ renderer, layout, assets, campaign, router, 
       topBar.render(ctx);
       const notes = campaign.notes;
       const hr = headRect();
-      text(ctx, 'Inbox', hr.x + 4, hr.y + hr.h / 2, { size: 48, bold: true, baseline: 'middle' });
-      text(ctx, `${notes.inbox.length} messages · ${notes.unread} new${notes.pending ? ` · ${notes.pending} waiting` : ''}`, hr.x + 180, hr.y + hr.h / 2, { size: 28, color: COL.textMuted, baseline: 'middle', maxWidth: hr.w - 180 - 310 - 236 });
-      drawButton(ctx, rumoursRect(), 'Rumours', { accent: COL.purple, font: font(28, true) });
-      drawButton(ctx, readAllRect(), 'Mark all read', { font: font(28, true), disabled: !notes.unread });
+      text(ctx, 'Inbox', hr.x + 4, hr.y + hr.h / 2, { size: THEME.size.title - 8, bold: true, baseline: 'middle' });
+      text(ctx, `${notes.inbox.length} messages · ${notes.unread} new${notes.pending ? ` · ${notes.pending} waiting` : ''}`, hr.x + 180, hr.y + hr.h / 2, { size: THEME.size.small, color: COL.textMuted, baseline: 'middle', maxWidth: hr.w - 180 - 310 - 236 });
+      drawButton(ctx, rumoursRect(), 'Rumours', { accent: COL.purple, font: font(34, true) });
+      drawButton(ctx, readAllRect(), 'Mark all read', { font: font(34, true), disabled: !notes.unread });
 
       const list = notes.inbox;
       const lr = listRect();
       scroll.contentHeight = Math.max(1, list.length * (ROW_H + GAP));
       scroll.begin(ctx);
-      if (!list.length) text(ctx, 'No messages yet. Events, sponsors and big moments will land here.', 12, 20, { size: 30, color: COL.textMuted, maxWidth: lr.w - 24 });
+      if (!list.length) text(ctx, 'No messages yet. Events, sponsors and big moments will land here.', 12, 20, { size: THEME.size.body, color: COL.textMuted, maxWidth: lr.w - 24 });
       // Only the rows on screen are drawn.
       const first = Math.max(0, Math.floor(scroll.scrollY / (ROW_H + GAP)));
       const last = Math.min(list.length, first + Math.ceil(lr.h / (ROW_H + GAP)) + 2);
@@ -113,11 +138,11 @@ export function createInboxScreen({ renderer, layout, assets, campaign, router, 
           ctx.arc(r.x + r.w - 30, r.y + 34, 10, 0, Math.PI * 2);
           ctx.fill();
         }
-        text(ctx, clock.shortLabel(e.day), r.x + r.w - 52, r.y + 20, { size: 22, color: COL.textMuted, align: 'right' });
-        text(ctx, e.title, x, r.y + 18, { size: 32, bold: true, color: e.read ? COL.text : COL.text, maxWidth: mw - 190 });
-        wrapText(ctx, e.body, x, r.y + 66, mw, { size: 25, maxLines: 2, color: COL.textMuted });
+        text(ctx, clock.shortLabel(e.day), r.x + r.w - 52, r.y + 20, { size: THEME.size.small, color: COL.textMuted, align: 'right' });
+        text(ctx, e.title, x, r.y + 16, { size: THEME.size.body, bold: true, color: COL.text, maxWidth: mw - 200 });
+        bodyLines(ctx, e.body, mw).forEach((l, j) => text(ctx, l, x, r.y + 64 + j * 44, { size: THEME.size.body, color: COL.textMuted, maxWidth: mw }));
         const tag = waiting ? 'Waiting to pop up — tap to open now' : e.folded ? 'Folded into the inbox (too many at once)' : '';
-        if (tag) text(ctx, tag, x, r.y + ROW_H - 36, { size: 22, color: waiting ? COL.gold : COL.textMuted, maxWidth: mw });
+        if (tag) text(ctx, tag, x, r.y + ROW_H - 44, { size: THEME.size.small, color: waiting ? COL.gold : COL.textMuted, maxWidth: mw });
       }
       scroll.end(ctx);
     },

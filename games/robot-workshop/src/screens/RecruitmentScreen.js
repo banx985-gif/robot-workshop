@@ -15,9 +15,27 @@ import { panel, text, contained, fmt } from '../ui/widgets.js';
 const COL = THEME.color;
 
 const HEADER_H = 150;
-const INFO_H = 230;
 const GAP = 22;
-const CH_H = 150;
+const LINE = 44; // one line of body text (34 px) with its spacing
+const CH_BTN_W = 300;
+const SIZE = THEME.size;
+
+// Word-wrap for layout: heights are measured before drawing, so taps and the guide see the same rects.
+const measure = document.createElement('canvas').getContext('2d');
+function wrapLines(str, w, size = SIZE.body, bold = false) {
+  measure.font = font(size, bold);
+  const lines = [];
+  let cur = '';
+  for (const word of String(str).split(' ')) {
+    const t = cur ? `${cur} ${word}` : word;
+    if (measure.measureText(t).width > w && cur) {
+      lines.push(cur);
+      cur = word;
+    } else cur = t;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
 const GREEN = COL.good;
 const GOLD = COL.gold;
 const RED = COL.bad;
@@ -37,16 +55,34 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
     return { x: s.x + 24, y, w: s.w - 48, h: s.y + s.h - 24 - y };
   }
   const cw = () => bodyRect().w - 12;
+  // The free-refresh panel: how refreshes work (wrapped), taps left, then the two refresh buttons.
+  const infoLines = () => wrapLines('New candidates arrive free on day 1 of every odd month.', cw() - 40, SIZE.body, true);
+  const infoH = () => 20 + infoLines().length * LINE + LINE + 16 + 110 + 20;
   const infoButton = (k) => {
     const w = (cw() - 40 - 20) / 2;
-    return { x: 20 + k * (w + 20), y: INFO_H - 20 - 110, w, h: 110 };
+    return { x: 20 + k * (w + 20), y: infoH() - 20 - 110, w, h: 110 };
   };
-  const cardRect = (i) => ({ x: 0, y: INFO_H + GAP + i * (STAFF_CARD_HEIGHT + GAP), w: cw(), h: STAFF_CARD_HEIGHT });
-  const channelsTop = () => INFO_H + GAP + rec.cards.length * (STAFF_CARD_HEIGHT + GAP) + 10;
-  const channelRect = (i) => ({ x: 0, y: channelsTop() + 60 + i * (CH_H + 14), w: cw(), h: CH_H });
+  const cardRect = (i) => ({ x: 0, y: infoH() + GAP + i * (STAFF_CARD_HEIGHT + GAP), w: cw(), h: STAFF_CARD_HEIGHT });
+  const channelsTop = () => infoH() + GAP + rec.cards.length * (STAFF_CARD_HEIGHT + GAP) + 10;
+  // A channel row: name, who it finds (wrapped), then its tier odds or what opens it (wrapped), beside the button.
+  function channelLines(ch) {
+    const textW = cw() - 48 - CH_BTN_W - 20;
+    const open = campaign.channelOpen(ch.id);
+    const tiers = Object.entries(campaign.recruitment.hooks.tierWeights(ch)).filter(([, v]) => v > 0).map(([t, v]) => `${TIERS[t].name} ${v}%`).join(' · ');
+    return { open, textW, pool: wrapLines(ch.pool, textW), odds: wrapLines(open ? tiers : `Needs ${describeUnlock(ch.unlock)}`, textW, SIZE.body, !open) };
+  }
+  const channelHeight = (ch) => {
+    const l = channelLines(ch);
+    return Math.max(150, 20 + 50 + (l.pool.length + l.odds.length) * LINE + 16);
+  };
+  const channelRect = (i) => {
+    let y = channelsTop() + 110;
+    for (let k = 0; k < i; k++) y += channelHeight(CHANNELS[k]) + 14;
+    return { x: 0, y, w: cw(), h: channelHeight(CHANNELS[i]) };
+  };
   const channelButton = (i) => {
     const r = channelRect(i);
-    return { x: r.x + r.w - 20 - 250, y: r.y + (r.h - 110) / 2, w: 250, h: 110 };
+    return { x: r.x + r.w - 20 - CH_BTN_W, y: r.y + (r.h - 110) / 2, w: CH_BTN_W, h: 110 };
   };
 
   function inScroll(r) {
@@ -156,24 +192,29 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
       ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const s = sr();
-      drawButton(ctx, backRect(), '‹ Back', { font: font(32, true) });
+      drawButton(ctx, backRect(), '‹ Back', { font: font(SIZE.button, true) });
       contained(ctx, assets, RECRUIT_ART.icon, { x: s.x + 224, y: s.y + 26, w: 80, h: 80 });
       text(ctx, 'Hiring', s.x + 318, s.y + 66, { size: 48, bold: true, baseline: 'middle' });
       const full = campaign.staff.staff.length >= campaign.employeeCap;
       text(ctx, `Staff ${campaign.staff.staff.length} / ${campaign.employeeCap}`, s.x + s.w - 24, s.y + 50, { size: 38, bold: true, align: 'right', baseline: 'middle', color: full ? RED : COL.text });
-      text(ctx, `${fmt(campaign.economy.balance('credits'))} cr · ${campaign.economy.balance('techChips')} TC`, s.x + s.w - 24, s.y + 94, { size: 26, align: 'right', baseline: 'middle', color: COL.textMuted });
+      text(ctx, `${fmt(campaign.economy.balance('credits'))} cr · ${campaign.economy.balance('techChips')} TC`, s.x + s.w - 24, s.y + 94, { size: SIZE.small, align: 'right', baseline: 'middle', color: COL.textMuted });
 
       const w = cw();
-      scroll.contentHeight = channelsTop() + 60 + CHANNELS.length * (CH_H + 14) + 20;
+      const lastCh = channelRect(CHANNELS.length - 1);
+      scroll.contentHeight = lastCh.y + lastCh.h + 20;
       scroll.begin(ctx);
       // Free refresh info
-      panel(ctx, { x: 0, y: 0, w, h: INFO_H });
+      panel(ctx, { x: 0, y: 0, w, h: infoH() });
       const left = rec.freeManualLeft(campaign.clock.year);
-      text(ctx, 'New candidates arrive free on day 1 of every odd month.', 20, 18, { size: 28, bold: true, maxWidth: w - 40 });
-      text(ctx, `Free refresh taps left this year: ${left}`, 20, 58, { size: 25, color: left ? GREEN : COL.textMuted, maxWidth: w - 40 });
-      drawButton(ctx, infoButton(0), left ? 'Free refresh' : 'Free refresh used', { disabled: !left, font: font(30, true), accent: GREEN });
+      let iy = 20;
+      for (const line of infoLines()) {
+        text(ctx, line, 20, iy, { size: SIZE.body, bold: true, maxWidth: w - 40 });
+        iy += LINE;
+      }
+      text(ctx, `Free refresh taps left this year: ${left}`, 20, iy, { size: SIZE.body, color: left ? GREEN : COL.textMuted, maxWidth: w - 40 });
+      drawButton(ctx, infoButton(0), left ? 'Free refresh' : 'Free refresh used', { disabled: !left, font: font(36, true), accent: GREEN });
       const tc = STORE_ITEMS[RECRUIT_RULES.techChipItem];
-      drawButton(ctx, infoButton(1), `Refresh · ${tc.cost} Tech Chips`, { disabled: !!campaign.refreshBlock('techChips'), font: font(30, true), accent: COL.purple });
+      drawButton(ctx, infoButton(1), `Refresh · ${tc.cost} Tech Chips`, { disabled: !!campaign.refreshBlock('techChips'), font: font(36, true), accent: COL.purple });
 
       rec.cards.forEach((c, i) => {
         // Legendary / secret arrivals (M17): the legendary aura behind their card.
@@ -185,12 +226,13 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
           ctx.restore();
         }
         drawStaffCard(ctx, cardRect(i), viewFor(c), assets, { highlight: !!c.special, accent: GOLD });
-        if (c.special) text(ctx, `★ ${c.special.note ?? 'Special arrival'}`, cardRect(i).x + 262, cardRect(i).y + cardRect(i).h - 24, { size: 26, bold: true, color: GOLD, baseline: 'bottom', maxWidth: cardRect(i).w - 290 });
+        if (c.special) text(ctx, `★ ${c.special.note ?? 'Special arrival'}`, cardRect(i).x + 262, cardRect(i).y + cardRect(i).h - 24, { size: SIZE.small, bold: true, color: GOLD, baseline: 'bottom', maxWidth: cardRect(i).w - 290 });
       });
-      if (!rec.cards.length) text(ctx, 'No candidates right now — refresh below.', w / 2, INFO_H + GAP + 60, { size: 30, align: 'center', color: COL.textMuted });
+      if (!rec.cards.length) text(ctx, 'No candidates right now — refresh below.', w / 2, infoH() + GAP + 60, { size: SIZE.body, align: 'center', color: COL.textMuted, maxWidth: w - 20 });
 
       const ct = channelsTop();
-      text(ctx, 'Advertise (replaces the 3 cards above)', 4, ct + 10, { size: 30, bold: true });
+      text(ctx, 'Advertise', 4, ct + 6, { size: SIZE.heading, bold: true });
+      text(ctx, 'A paid advert replaces the candidates above.', 4, ct + 62, { size: SIZE.small, color: COL.textMuted, maxWidth: w - 8 });
       CHANNELS.forEach((ch, i) => drawChannel(ctx, ch, i));
       scroll.end(ctx);
 
@@ -198,22 +240,29 @@ export function createRecruitmentScreen({ renderer, layout, assets, bus, campaig
         const b = bodyRect();
         const r = { x: b.x + 40, y: b.y + b.h - 110, w: b.w - 80, h: 84 };
         panel(ctx, r, { fill: COL.panel, stroke: message.color, radius: 20 });
-        text(ctx, message.text, r.x + r.w / 2, r.y + r.h / 2, { size: 30, bold: true, align: 'center', baseline: 'middle', color: message.color, maxWidth: r.w - 30 });
+        text(ctx, message.text, r.x + r.w / 2, r.y + r.h / 2, { size: SIZE.body, bold: true, align: 'center', baseline: 'middle', color: message.color, maxWidth: r.w - 30 });
       }
     },
   };
 
   function drawChannel(ctx, ch, i) {
     const r = channelRect(i);
-    const open = campaign.channelOpen(ch.id);
+    const l = channelLines(ch);
+    const open = l.open;
     const block = campaign.refreshBlock('paid', ch.id);
-    panel(ctx, r, { fill: open ? COL.panel : COL.panelDim, stroke: open ? COL.line : COL.line });
-    if (!open) drawPadlock(ctx, r.x + 34, r.y + 38, 26, COL.action);
-    text(ctx, ch.name, r.x + (open ? 24 : 64), r.y + 20, { size: 32, bold: true, color: open ? COL.text : COL.textMuted, maxWidth: r.w - 330 });
-    text(ctx, ch.pool, r.x + 24, r.y + 66, { size: 24, color: COL.textMuted, maxWidth: r.w - 310 });
-    const tiers = Object.entries(campaign.recruitment.hooks.tierWeights(ch)).filter(([, v]) => v > 0).map(([t, v]) => `${TIERS[t].name} ${v}%`).join(' · ');
-    text(ctx, open ? tiers : `Needs ${describeUnlock(ch.unlock)}`, r.x + 24, r.y + 102, { size: 24, bold: true, color: open ? COL.textMuted : COL.action, maxWidth: r.w - 310 });
-    drawButton(ctx, channelButton(i), open ? `Refresh · ${fmt(ch.cost)}` : 'Locked', { disabled: !!block, locked: !open, font: font(30, true) });
+    panel(ctx, r, { fill: open ? COL.panel : COL.panelDim, stroke: COL.line });
+    if (!open) drawPadlock(ctx, r.x + 34, r.y + 40, 26, COL.action);
+    text(ctx, ch.name, r.x + (open ? 24 : 64), r.y + 20, { size: SIZE.button, bold: true, color: open ? COL.text : COL.textMuted, maxWidth: l.textW - (open ? 0 : 40) });
+    let y = r.y + 70;
+    for (const line of l.pool) {
+      text(ctx, line, r.x + 24, y, { size: SIZE.body, color: COL.textMuted, maxWidth: l.textW });
+      y += LINE;
+    }
+    for (const line of l.odds) {
+      text(ctx, line, r.x + 24, y, { size: SIZE.body, bold: !open, color: open ? COL.text : COL.actionDark, maxWidth: l.textW });
+      y += LINE;
+    }
+    drawButton(ctx, channelButton(i), open ? `Refresh · ${fmt(ch.cost)}` : 'Locked', { disabled: !!block, locked: !open, font: font(SIZE.body, true) });
   }
 
   return screen;

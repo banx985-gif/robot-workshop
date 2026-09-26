@@ -9,12 +9,14 @@ import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { SECRETS, SECRET_ART, SECRET_GROUPS } from '../../data/secrets.js';
 import { ruleLines } from '../systems/secretText.js';
-import { panel, text, hit, wrapText } from '../ui/widgets.js';
+import { panel, text, hit } from '../ui/widgets.js';
+import { wrapLines } from '../ui/competitionDraw.js';
 const COL = THEME.color;
 
 const HEAD_H = 150;
 const LINE = 38;
-const GROUP_H = 60;
+const GROUP_H = 70;
+const SZ = THEME.size;
 
 export function createRumourArchiveScreen({ renderer, layout, assets, campaign, router, debugEnabled = false }) {
   const W = renderer.width;
@@ -81,21 +83,26 @@ export function createRumourArchiveScreen({ renderer, layout, assets, campaign, 
       ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const h = headRect();
-      drawButton(ctx, backRect(), '‹ Back', { font: font(32, true) });
+      drawButton(ctx, backRect(), '‹ Back');
       assets.drawContained(ctx, SECRET_ART.records, { x: h.x + 196, y: h.y, w: 86, h: 86 });
       text(ctx, 'Rumour Archive', h.x + 292, h.y + 43, { size: 44, bold: true, baseline: 'middle', maxWidth: h.w - 292 - (debugEnabled ? 240 : 0) });
-      if (debugEnabled) drawButton(ctx, whyRect(), 'Why not?', { accent: COL.gold, font: font(30, true) });
+      if (debugEnabled) drawButton(ctx, whyRect(), 'Why not?', { accent: COL.gold });
       const w = bodyRect().w - 12;
       scroll.begin(ctx);
       const groups = rows();
-      text(ctx, groups.length ? 'Secrets you have heard about. Discovered ones show exactly what they took — for good.' : 'No rumours yet. Keep building — people talk.', 4, 8, { size: 26, color: COL.textMuted, maxWidth: w });
-      let y = 60;
+      let y = 8;
+      for (const l of wrapLines(groups.length ? 'Secrets you have heard about. Discovered ones show exactly what they took — for good.' : 'No rumours yet. Keep building — people talk.', w - 8, SZ.small)) {
+        text(ctx, l, 4, y, { size: SZ.small, color: COL.textMuted, maxWidth: w });
+        y += 36;
+      }
+      y += 12;
       for (const g of groups) {
-        text(ctx, g.group, 4, y + 12, { size: 30, bold: true, color: COL.purple });
+        text(ctx, g.group, 4, y + 12, { size: SZ.button, bold: true, color: COL.purple });
         y += GROUP_H;
         for (const r of g.rows) {
-          drawRow(ctx, r, y, w);
-          y += r.h + 14;
+          const L = rowOps(r, w);
+          drawRow(ctx, r, y, w, L);
+          y += L.h + 14;
         }
       }
       scroll.contentHeight = y + 20;
@@ -103,26 +110,45 @@ export function createRumourArchiveScreen({ renderer, layout, assets, campaign, 
     },
   };
 
-  function drawRow(ctx, r, y, w) {
+  // A row's wrapped lines (Milestone 18: §33.2 sizes, wrapped rather than squeezed). y is from the row top.
+  function rowOps(r, w) {
     const rule = r.rule;
-    const found = r.stage === 3;
-    panel(ctx, { x: 0, y, w, h: r.h }, { stroke: found ? COL.gold : r.stage ? COL.purple : COL.line, lineWidth: found ? 4 : 3 });
-    assets.drawContained(ctx, found ? SECRET_ART.badge : SECRET_ART.marker, { x: 16, y: y + 20, w: 110, h: 110 });
     const x = 146;
     const mw = w - x - 20;
-    if (found) {
+    const ops = [];
+    let y = 18;
+    const put = (str, size, opts = {}, indent = 0, maxLines = 6) => {
+      const lh = Math.round(size * 1.26);
+      wrapLines(str, mw - indent, size, !!opts.bold)
+        .slice(0, maxLines)
+        .forEach((l) => {
+          ops.push([l, x + indent, y, { size, maxWidth: mw - indent, ...opts }]);
+          y += lh;
+        });
+    };
+    if (r.stage === 3) {
       const got = S().run.unlocked[rule.id] ?? S().account.history[rule.id]?.first;
-      text(ctx, rule.name, x, y + 20, { size: 34, bold: true, color: COL.gold, maxWidth: mw });
-      text(ctx, `${S().unlockedInRun(rule.id) ? `Discovered ${campaign.clock.shortLabel(got?.day ?? 0)}` : 'Discovered in an earlier run'}${S().isRepeat(rule.id) ? ' · repeat: easier numbers this run' : ''}`, x, y + 66, { size: 24, color: COL.textMuted, maxWidth: mw });
-      r.lines.forEach((l, i) => text(ctx, `${'   '.repeat(l.depth)}${l.ok ? '✓' : '•'} ${l.text}`, x, y + 112 + i * LINE, { size: 25, color: l.ok ? COL.good : COL.text, maxWidth: mw }));
+      put(rule.name, SZ.button, { bold: true, color: COL.gold }, 0, 2);
+      put(`${S().unlockedInRun(rule.id) ? `Discovered ${campaign.clock.shortLabel(got?.day ?? 0)}` : 'Discovered in an earlier run'}${S().isRepeat(rule.id) ? ' · repeat: easier numbers this run' : ''}`, SZ.small, { color: COL.textMuted });
+      y += 6;
+      for (const l of r.lines) put(`${l.ok ? '✓' : '•'} ${l.text}`, SZ.body, { color: l.ok ? COL.good : COL.text }, l.depth * 40);
     } else if (r.stage === 0) {
-      text(ctx, '???', x, y + 30, { size: 40, bold: true, color: COL.textMuted });
-      text(ctx, 'No rumours yet.', x, y + 86, { size: 26, color: COL.textMuted, maxWidth: mw });
+      ops.push(['???', x, y + 6, { size: 40, bold: true, color: COL.textMuted }]);
+      y += 62;
+      put('No rumours yet.', SZ.body, { color: COL.textMuted });
     } else {
-      text(ctx, r.stage === 2 ? 'A clue' : 'A rumour', x, y + 20, { size: 32, bold: true, color: COL.purple });
-      wrapText(ctx, rule.clueStages[r.stage - 1]?.text ?? '', x, y + 66, mw, { size: 26, maxLines: 2 });
-      if (r.stage === 2 && r.missing?.length) text(ctx, `Missing: ${r.missing.join(', ')}`, x, y + 142, { size: 26, bold: true, color: COL.gold, maxWidth: mw });
+      put(r.stage === 2 ? 'A clue' : 'A rumour', SZ.body, { bold: true, color: COL.purple });
+      put(rule.clueStages[r.stage - 1]?.text ?? '', SZ.body);
+      if (r.stage === 2 && r.missing?.length) put(`Missing: ${r.missing.join(', ')}`, SZ.body, { bold: true, color: COL.gold });
     }
+    return { ops, h: Math.max(150, y + 18) };
+  }
+
+  function drawRow(ctx, r, y, w, L) {
+    const found = r.stage === 3;
+    panel(ctx, { x: 0, y, w, h: L.h }, { stroke: found ? COL.gold : r.stage ? COL.purple : COL.line, lineWidth: found ? 4 : 3 });
+    assets.drawContained(ctx, found ? SECRET_ART.badge : SECRET_ART.marker, { x: 16, y: y + 20, w: 110, h: 110 });
+    for (const [str, x, ly, opts] of L.ops) text(ctx, str, x, y + ly, opts);
   }
   return screen;
 }

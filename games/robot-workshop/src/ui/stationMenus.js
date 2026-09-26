@@ -16,6 +16,7 @@ import { RECRUIT_ART } from '../../data/recruitment.js';
 import { TRAINING_ART } from '../../data/training.js';
 import { SYNERGY_ART } from '../../data/synergies.js';
 import { SECRET_ART } from '../../data/secrets.js';
+import { ACHIEVEMENTS, ACHIEVEMENT_ART } from '../../data/achievements.js';
 import { robotArtOf } from '../systems/robotVisual.js';
 import { describeUnlock } from '../systems/unlockRules.js';
 
@@ -80,6 +81,8 @@ export function createStationMenus({ campaign, router, workshop, sheet }) {
       { id: 'competitions', label: 'Competitions', sub: `${campaign.openCompetitions.length} open`, icon: COMPETITION_ART.icon, badge: ready ? '!' : null, onTap: go('competitions') },
       { id: 'rankings', label: 'Rankings', icon: COMPETITION_ART.rankingsIcon, accent: C.progress, onTap: go('rankings') },
       { id: 'trophies', label: 'Trophies', sub: `${campaign.trophies.count} won`, icon: COMPETITION_ART.trophiesIcon, accent: C.gold, onTap: go('trophies') },
+      // Milestone 18: achievements, account records and completion.
+      { id: 'records', label: 'Records', sub: `${campaign.achievements.count} of ${ACHIEVEMENTS.length} achievements`, icon: ACHIEVEMENT_ART.records, accent: C.progress, badge: campaign.achievements.unseen || null, onTap: go('records', { back: 'workshop' }) },
     ];
   }
 
@@ -240,7 +243,7 @@ export function createStationMenus({ campaign, router, workshop, sheet }) {
       if (v) return station(v);
       return { title: 'Research', subtitle: 'Build a Research Desk to research new parts', art: RESEARCH_ART.icon, sections: [{ lines: researchLines(), buttons: [{ id: 'research', label: 'Research tree', icon: RESEARCH_ART.icon, onTap: go('research') }, { id: 'build', label: 'Build & expand', icon: BUILD_ART.buildIcon, onTap: go('build') }] }] };
     })
-    .register('compete', () => ({ title: 'Compete', subtitle: 'Events, rankings and trophies', art: COMPETITION_ART.icon, sections: [{ buttons: competeButtons() }] }))
+    .register('compete', () => ({ title: 'Compete', subtitle: 'Events, rankings, trophies and records', art: COMPETITION_ART.icon, sections: [{ buttons: competeButtons() }] }))
     .register('money', () => {
       const e = campaign.economy;
       return { title: 'Money', subtitle: `${fmt(e.balance('credits'))} credits · ${e.balance('techChips')} Tech Chips${e.balance('prestigeTokens') ? ` · ${e.balance('prestigeTokens')} Prestige Tokens` : ''}`, art: 'reward_01', sections: [{ buttons: moneyButtons() }] };

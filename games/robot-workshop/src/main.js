@@ -54,6 +54,10 @@ import { createSecretDebugScreen } from './screens/SecretDebugScreen.js';
 import { SECRET_ART } from '../data/secrets.js';
 import { createEventPopup } from './ui/EventPopup.js';
 import { drawToasts } from '../../../core/ui/Toast.js';
+import { FloatFeed } from '../../../core/FloatFeed.js';
+import { createRecordsScreen } from './screens/RecordsScreen.js';
+import { createAchievementMoment } from './ui/achievementMoment.js';
+import { ACHIEVEMENT_ART, rewardLabel } from '../data/achievements.js';
 import { wireMessages, effectsText, fillText } from './app/Messages.js';
 import { EVENTS_BY_ID, EVENT_ICONS, MILESTONE_EVENTS } from '../data/events.js';
 import { SPONSORS } from '../data/sponsors.js';
@@ -150,6 +154,9 @@ const ASSETS = {
   // Milestone 17: legendary aura, Prestige Token, secret badge (the 09/10 staff, prestige parts, F34/F35, robots 18–20,
   // event art 07/08 and the Nocturne logo come in with their own lists above).
   ...Object.fromEntries([art('ui', SECRET_ART.marker), art('vfx', SECRET_ART.discover), art('ui', SECRET_ART.records), art('vfx', SECRET_ART.aura), art('rewards', SECRET_ART.token), art('badges', SECRET_ART.badge)]),
+  // Achievements and records (Milestone 18): records icon, trophies icon, reward badge, rank-up burst, reputation stars.
+  ...Object.fromEntries([art('ui', ACHIEVEMENT_ART.records), art('ui', ACHIEVEMENT_ART.icon), art('rewards', ACHIEVEMENT_ART.badge), art('vfx', ACHIEVEMENT_ART.burst), art('vfx', ACHIEVEMENT_ART.stars)]),
+  ...Object.fromEntries(['ui_icon_04_research', 'ui_icon_08_competition', 'ui_icon_10_secret', 'ui_icon_12'].map((k) => art('ui', k))),
   // Deliberately missing file: proves the placeholder fallback.
   placeholderTest: 'assets/m0-missing-test.png',
 };
@@ -221,12 +228,15 @@ const loop = new FixedStepLoop({
     }
     router.update(dt);
     vfx.update(dt); // real time: effects keep playing while the calendar is paused
+    floats.update(dt, { hold: modal.active || !campaignReady || router.currentName !== 'workshop' });
     major.update(dt);
     eventPopup.update(dt);
     if (router.currentName === 'workshop') sheet.update(dt);
     coach.update(dt);
     if (campaignReady) {
       campaign.notes.update(dt, { hold: !toastPlace() }); // toasts fade in real time, only while they can show
+      flushAchievements();
+      if (presentPlace()) achMoment.update(dt);
       presentNext();
       guide.update();
     }
@@ -236,6 +246,7 @@ const loop = new FixedStepLoop({
     router.render(ctx, alpha);
     if (router.currentName === 'workshop') sheet.render(ctx); // station menus (Milestone 17b)
     if (campaignReady && toastPlace()) drawToastStack(ctx);
+    if (campaignReady && presentPlace()) achMoment.render(ctx);
     if (guide.active) {
       const step = guide.current;
       coach.render(ctx, step, guideTarget(step.target), { block: step.block, next: !!step.advance.next });
@@ -265,6 +276,8 @@ async function startCampaign() {
   if (!loaded) await campaign.save().catch(() => {});
   debug.log(`campaign ${loaded ? 'loaded' : 'new'} (${adapter.kind})`);
   campaignReady = true;
+  // Milestone 18: a run from before achievements catches up on everything it has already done.
+  campaign.achievements.checkAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -556,10 +569,23 @@ const hud = {
   goHelp: () => router.go('help'),
   goHome: () => router.go('workshop'),
   goInbox: () => router.go('inbox'),
+  floats: null, // the float feed (below)
 };
 // Station menus (Milestone 17b): tap a station, a worker or a bottom-bar button → a bottom sheet (core/ui/BottomSheet).
 const sheet = new BottomSheet({ layout, assets, onClose: () => workshopScreen.selection.clear() });
 const menuHolder = { reg: null, for: (kind, target) => menuHolder.reg?.for(kind, target) ?? null };
+// Floating numbers (Milestone 18 fix): one after another, at most three at once, each from the thing that earned it.
+// They only float on the workshop view (other screens have text where they would go; the money is in the ledger
+// anyway): elsewhere they wait a moment, then are dropped. With no source they rise from just under the top bar.
+const floats = new FloatFeed({
+  vfx,
+  where: (source, lane) => (sheet.active ? null : workshopScreen.floatPoint(source, lane)),
+  fallback: (lane) => {
+    const t = topBarRect(layout);
+    return { x: W / 2, y: t.y + t.h + 110 + lane * 58 };
+  },
+});
+hud.floats = floats;
 const workshopScreen = createWorkshopScreen({ renderer, layout, assets, bus, debug, campaign, router, goProject, hud, sheet, menus: menuHolder });
 menuHolder.reg = createStationMenus({ campaign, router, workshop: workshopScreen, sheet });
 // Every screen change closes the sheet and tells the guide which screen opened ('screen:builder', …).
@@ -598,6 +624,9 @@ const guide = new GuideSystem({
 });
 const coach = new CoachMark({ layout, assets, face: GUIDE_FACE });
 router.layers.push({ get active() { return guide.active; }, handleInput: (hook, p) => guide.handleInput(hook, p, hook === 'onTap' ? coach.hit(p) : null) });
+// "Achievement unlocked!" (Milestone 18): a small card above the bottom bar; a tap on it opens Records.
+const achMoment = createAchievementMoment({ assets, layout, bottomBar: workshopScreen.bottomBar, vfx, onOpen: () => router.go('records', { back: 'workshop' }) });
+router.layers.push({ get active() { return achMoment.active && presentPlace(); }, handleInput: (hook, p) => achMoment.handleInput(hook, p) });
 // The open menu sheet takes its taps and drags before the workshop does (the guide still comes first).
 router.layers.push({ get active() { return sheet.active && router.currentName === 'workshop'; }, handleInput: (hook, p) => sheet.handleInput(hook, p) });
 bus.on('guide:change', () => (campaign.guideState = guide.serialize()));
@@ -643,6 +672,25 @@ const rumourScreen = createRumourArchiveScreen({ renderer, layout, assets, campa
 const secretDebugScreen = createSecretDebugScreen({ renderer, layout, campaign, router });
 bus.on('secret:unlocked', ({ rule, eased, actions }) => debug.log(`secret ${rule.id}${eased ? ' (eased)' : ''}: ${actions.map((a) => a.type).join(', ')}`));
 bus.on('secret:clue', ({ rule, stage }) => debug.log(`clue ${rule.id} → stage ${stage}`));
+const recordsScreen = createRecordsScreen({ renderer, layout, assets, campaign, router });
+// Achievements unlocked in the same moment become one pop-up in the queue (three or more: one summary card).
+const pendingAch = [];
+bus.on('achievement:unlocked', (res) => {
+  pendingAch.push(res);
+  debug.log(`achievement ${res.def.id} ${res.def.name}${res.paidNow ? ' (paid)' : ''}`);
+});
+function flushAchievements() {
+  if (!pendingAch.length) return;
+  const list = pendingAch.splice(0);
+  const day = campaign.clock.totalDays;
+  const one = (d) => ({ kind: 'achievement', level: 'medium', popup: true, day, icon: ACHIEVEMENT_ART.badge, title: 'Achievement unlocked!', body: rewardLabel(d.reward), data: { id: d.id, name: d.name } });
+  if (list.length <= 2) for (const r of list) campaign.notes.post(one(r.def));
+  else {
+    const e = one(list[0].def);
+    campaign.notes.post({ ...e, title: `${list.length} achievements unlocked!`, body: list.map((r) => r.def.name).join(', '), data: { ids: list.map((r) => r.def.id), name: 'See them all in Records' } });
+  }
+  campaign.save().catch(() => {});
+}
 const inboxScreen = createInboxScreen({ renderer, layout, assets, campaign, router, goProject, hud, openEntry });
 bus.on('event:fired', ({ instance, def }) => debug.log(`event ${def.id} (${def.kind}) day ${instance.day}`));
 bus.on('sponsor:signed', ({ def }) => debug.log(`sponsor signed: ${def.name}`));
@@ -686,7 +734,7 @@ bus.on('project:complete', ({ record }) => {
 // the workshop view and only when nothing else is open there — never over another pop-up, a guide step or a screen.
 const presentPlace = () => campaignReady && !campaign.closed && router.currentName === 'workshop' && !sheet.active; // never over an open menu
 function presentNext() {
-  if (modal.active || !presentPlace() || guide.active) return;
+  if (modal.active || !presentPlace() || guide.active || achMoment.active) return;
   const e = campaign.notes.take();
   if (e) present(e);
 }
@@ -722,6 +770,9 @@ function present(e) {
       return showComboDiscovered(e.data);
     case 'secret':
       return showSecretDiscovered(e);
+    case 'achievement':
+      audio.play('levelUp');
+      return achMoment.show(e);
     case 'rankUp':
       audio.play('levelUp');
       return major.show({ title: e.title, subtitle: e.body, accent: COL.gold });
@@ -775,17 +826,18 @@ function openEntry(e) {
   else showMessage(e);
 }
 
-// Toasts: on the workshop view, over the room under the project strip — never over another screen's content or a
+// Toasts: on the workshop view, just above the bottom bar — never over another screen's content or a
 // pop-up (they wait, and every one is in the inbox anyway).
-const toastPlace = () => presentPlace() && !modal.active;
+const toastPlace = () => presentPlace() && !modal.active && !achMoment.active;
 function drawToastStack(ctx) {
   const toasts = campaign.notes.toasts;
   if (!toasts.length) return;
-  const t = topBarRect(layout);
   const sr = layout.safeRect;
+  // Milestone 18 fix: one at a time, just above the bottom bar (over the floor, not the machines).
   drawToasts(ctx, toasts, {
+    anchor: 'bottom',
     x: sr.x + 48,
-    y: t.y + t.h + 170,
+    y: workshopScreen.bottomBar.rect().y - 24,
     w: sr.w - 96,
     life: campaign.notes.toastSec,
     accent: (e) => (e.icon === EVENT_ICONS.warning ? COL.bad : LEVEL_ACCENT[e.level]),
@@ -850,44 +902,51 @@ function showComboDiscovered({ id, firstEver }) {
 // Small and medium feedback: sounds, and money / reputation numbers floating off the top bar.
 bus.on('project:phase', () => audio.play('phaseDone'));
 bus.on('staff:levelup', () => audio.play('levelUp'));
-let floatStack = 0; // numbers arriving together are stacked, not drawn on top of each other
-let floatStackAt = 0;
-function floatNumber(text, color, icon, xFrac) {
-  const now = performance.now();
-  floatStack = now - floatStackAt < 400 ? floatStack + 1 : 0;
-  floatStackAt = now;
-  // Just under the top bar, floating up towards the money row without covering the buttons.
-  const m = moneyBarRect(layout);
-  const t = topBarRect(layout);
-  vfx.text('screen', text, m.x + m.w * xFrac, t.y + t.h + 50 + (floatStack % 3) * 52, { color, icon, size: 42, rise: 45, life: 1.9, delay: floatStack * 0.12 });
+// Numbers go through the float feed (Milestone 18): the same kind from the same source adds up while it waits.
+// source: where it was earned — a station ({ facility }) — or null (then it floats from under the top bar).
+const plus = (unit) => (n) => `+${Math.round(n).toLocaleString('en-US')}${unit}`;
+function floatNumber(key, amount, unit, color, icon, source = null) {
+  floats.push({ key, amount, label: plus(unit), color, icon, source });
+}
+// The station that earned a number, from its ledger / reputation / RP reason.
+const firstStation = (...ids) => ids.find((id) => campaign.facilities.has(id)) ?? null;
+function sourceFor(reason = '') {
+  const r = String(reason);
+  let id = null;
+  if (/^(Sales|Launch|On display)|sales$/.test(r)) id = firstStation('F31', 'F15', 'F09');
+  else if (/^Contract/.test(r)) id = firstStation('F13', 'F05');
+  else if (/^(Competition|Prize)/.test(r)) id = firstStation('F08', 'F35');
+  else if (/^(Robot finished|First use|Combo)/.test(r)) id = firstStation('F05', 'F01');
+  else if (/research/i.test(r)) id = firstStation('F11', 'F33');
+  return id ? { facility: id } : null;
 }
 bus.on('product:sales', ({ sale }) => {
   const m = moneyBarRect(layout);
   vfx.sprite('screen', VFX_ART.cashBurst, m.x + 42, m.y + m.h / 2, { size: 130, life: 1.0, from: 0.4, to: 1, hold: 0.15 });
-  floatNumber(`+${sale.revenue.toLocaleString('en-US')}`, FLOAT_COLORS.credits, 'ui_icon_01_money', 0.24);
+  floatNumber('credits', sale.revenue, '', FLOAT_COLORS.credits, 'ui_icon_01_money', sourceFor('Sales'));
   audio.play('sale');
 });
 bus.on('economy:change', (line) => {
-  if (line.currency === 'techChips' && line.amount > 0 && line.category !== 'start') floatNumber(`+${line.amount} Tech Chips`, FLOAT_COLORS.techChips, 'ui_icon_02_premium', 0.5);
+  if (line.currency === 'techChips' && line.amount > 0 && line.category !== 'start') floatNumber('techChips', line.amount, ' Tech Chips', FLOAT_COLORS.techChips, 'ui_icon_02_premium', sourceFor(line.reason));
 });
 // Contracts: pay-out floats up; a failure floats red. The very first offer gets a "first customer" moment.
 bus.on('contract:success', ({ contract }) => {
-  floatNumber(`+${(contract.result?.paid ?? contract.payout).toLocaleString('en-US')}`, FLOAT_COLORS.credits, 'ui_icon_01_money', 0.24);
+  floatNumber('credits', contract.result?.paid ?? contract.payout, '', FLOAT_COLORS.credits, 'ui_icon_01_money', sourceFor('Contract'));
   audio.play('sale');
 });
 // A failed contract is a toast and an inbox message; the first contract offer is an illustrated milestone event
 // (both from src/app/Messages.js).
-bus.on('reputation:change', ({ amount, quiet }) => {
-  if (amount > 0 && !quiet) floatNumber(`+${amount} Rep`, FLOAT_COLORS.reputation, 'ui_icon_03_reputation', 0.74);
+bus.on('reputation:change', ({ amount, quiet, reason }) => {
+  if (amount > 0 && !quiet) floatNumber('rep', amount, ' Rep', FLOAT_COLORS.reputation, 'ui_icon_03_reputation', sourceFor(reason));
 });
 // A new Company Rank (§8.3) is a big moment (a queued pop-up): what it opens, then carry on.
 bus.on('reputation:rankUp', () => campaignReady && campaign.save().catch(() => {}));
 // Money for building shows in the ledger; a sale floats its refund.
 // Research (Milestone 9): RP float up in cyan; a finished topic is a medium moment (sound + note in the workshop);
 // the first RP ever and a business milestone get a short message.
-bus.on('research:rp', ({ amount, first }) => {
+bus.on('research:rp', ({ amount, first, reason }) => {
   if (amount <= 0 || !campaignReady) return;
-  floatNumber(`+${amount} RP`, FLOAT_COLORS.research, RESEARCH_ART.rp, 0.5);
+  floatNumber('rp', amount, ' RP', FLOAT_COLORS.research, RESEARCH_ART.rp, sourceFor(reason));
   if (first) debug.log('first Research Points earned');
 });
 // (A finished topic is a toast; a research milestone a queued pop-up — src/app/Messages.js.)
@@ -907,7 +966,7 @@ bus.on('training:complete', ({ staff, course, gains }) => {
   campaign.save().catch(() => {});
   workshopScreen.celebrateTraining(staff, txt || 'At the tier cap');
 });
-bus.on('facility:sold', ({ refund }) => floatNumber(`+${refund.toLocaleString('en-US')}`, FLOAT_COLORS.credits, 'ui_icon_01_money', 0.24));
+bus.on('facility:sold', ({ refund }) => floatNumber('credits', refund, '', FLOAT_COLORS.credits, 'ui_icon_01_money'));
 bus.on('project:phase', ({ job, phase }) => debug.log(`${job.name}: ${phase.name} done`));
 bus.on('robot:fault', ({ job }) => debug.log(`${job.name}: fault (${job.data.faults.length} open)`));
 bus.on('robot:breakthroughRoll', ({ job, phase, hit }) => debug.log(`${job.name}: ${phase.name} 60% check → ${hit ? 'BREAKTHROUGH' : 'none'}`));
@@ -946,6 +1005,7 @@ if (debug.enabled) {
   window.__m15 = { ...window.__m14, bus, inbox: inboxScreen, eventPopup, modal, events: campaign.events, sponsors: campaign.sponsors, notes: campaign.notes, presentPlace, EVENTS_BY_ID };
   window.__m16 = { ...window.__m15, rumours: rumourScreen, secretDebug: secretDebugScreen, secrets: campaign.secrets, research: researchScreen, build: buildScreen, recruit: recruitScreen };
   window.__m17b = { ...window.__m16, sheet, menus: menuHolder, bottomBar: workshopScreen.bottomBar, debug, guideTarget };
+  window.__m18 = { ...window.__m17b, records: recordsScreen, achievements: campaign.achievements, accountRecords: campaign.records, floats, achMoment };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
   bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));
@@ -980,6 +1040,7 @@ router
   .register('combos', comboArchiveScreen)
   .register('inbox', inboxScreen)
   .register('rumours', rumourScreen)
+  .register('records', recordsScreen)
   .register('debugbuilder', debugBuilderScreen);
 if (debug.enabled) router.register('staffdebug', staffDebugScreen).register('secretdebug', secretDebugScreen); // ?debug=1 only // ?debug=1 only: spawn any of the 50
 router.go('boot');

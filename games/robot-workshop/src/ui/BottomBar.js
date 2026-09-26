@@ -14,7 +14,7 @@ export function createBottomBar({ layout, assets, campaign, open }) {
     { id: 'build', label: 'Build', icon: 'ui_icon_11', badge: () => (!campaign.activeProject && campaign.canStartProject().ok ? '!' : null) },
     { id: 'staff', label: 'Staff', icon: 'ui_icon_05_staff', badge: () => (campaign.recruitment.special && !campaign.hireBlock(campaign.recruitment.special.id) ? '!' : null) },
     { id: 'research', label: 'Research', icon: RESEARCH_ART.icon, badge: () => (campaign.research.queueOpen(0) && !campaign.research.queues[0].nodeId && campaign.research.nodes.some((n) => campaign.research.canStart(0, n.id).ok) ? '!' : null) },
-    { id: 'compete', label: 'Compete', icon: COMPETITION_ART.icon, badge: () => (campaign.openCompetitions.some((e) => campaign.competitions.records[e.id]?.lastPeriod !== campaign.monthIndex) && campaign.competitionRobots.length ? '!' : null) },
+    { id: 'compete', label: 'Compete', icon: COMPETITION_ART.icon, badge: () => ((campaign.openCompetitions.some((e) => campaign.competitions.records[e.id]?.lastPeriod !== campaign.monthIndex) && campaign.competitionRobots.length) || campaign.achievements.unseen ? '!' : null) }, // + new achievements (M18)
     { id: 'money', label: 'Money', icon: 'ui_icon_01_money', badge: () => {
       const k = campaign.contracts;
       const waiting = campaign.history.records.some((r) => !r.launchedProductId && !r.deliveredContractId) && campaign.products.freeSlots;

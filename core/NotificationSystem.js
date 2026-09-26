@@ -1,5 +1,6 @@
 // Messages for the player (any game): an inbox of past messages you can reopen, small toasts that fade on their
-// own, and a queue of pop-ups shown one at a time.
+// own (maxToasts at a time; past a short waiting line they go straight to the inbox), and a queue of pop-ups shown
+// one at a time.
 //
 //   post({ kind, level, title, body, icon, art, data, popup, toast, day }) → the inbox entry
 //     level: 'minor' | 'medium' | 'major' (bible §33.4)
@@ -33,6 +34,7 @@ export class NotificationSystem {
     this.peakQueue = 0;
     this.toasts = []; // showing: { entry, age }
     this.toastWaiting = [];
+    this.toastsToInbox = 0; // toasts that went straight to the inbox (tests)
   }
 
   get pending() {
@@ -125,9 +127,17 @@ export class NotificationSystem {
   }
 
   // --- toasts (real time) ---
+  // maxToasts on screen plus a waiting line of toastQueueMax; anything past that goes straight to the inbox (it is already there) and the
+  // toast on screen counts it ("+2 more in the Inbox").
   _toast(entry) {
+    if (this.toasts.length + this.toastWaiting.length >= this.maxToasts + this.toastQueueMax) {
+      this.toastsToInbox++;
+      const showing = this.toasts.at(-1);
+      if (showing) showing.more++;
+      else this.toastWaiting.at(-1).more = (this.toastWaiting.at(-1).more ?? 0) + 1;
+      return;
+    }
     this.toastWaiting.push(entry);
-    while (this.toastWaiting.length > this.toastQueueMax) this.toastWaiting.shift(); // the rest are in the inbox
   }
 
   // hold: the game has no free space for toasts right now (a pop-up or another screen is open) — they wait.
@@ -135,7 +145,11 @@ export class NotificationSystem {
     if (hold) return;
     for (const t of this.toasts) t.age += dt;
     this.toasts = this.toasts.filter((t) => t.age < this.toastSec);
-    while (this.toasts.length < this.maxToasts && this.toastWaiting.length) this.toasts.push({ entry: this.toastWaiting.shift(), age: 0 });
+    while (this.toasts.length < this.maxToasts && this.toastWaiting.length) {
+      const entry = this.toastWaiting.shift();
+      this.toasts.push({ entry, age: 0, more: entry.more ?? 0 });
+      delete entry.more;
+    }
   }
 
   serialize() {

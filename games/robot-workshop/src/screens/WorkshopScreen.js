@@ -1107,6 +1107,13 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
   }
 
   // --- effects hooked to game events ---------------------------------------------
+  // Words floating up from a spot in the room ("Software done!", "Level 3!"): through the shared float feed
+  // (Milestone 18: staggered, at most three at once, from the thing that earned them), else straight to the effects.
+  function floatText(str, x, y, color, key = null) {
+    if (hud.floats) hud.floats.push({ key, amount: str, source: { world: { x, y } }, color, size: 40, life: 2, rise: 55 });
+    else vfx.text('world', str, x, y, { color, size: 20, life: 2 });
+  }
+
   // Point on a station's top where the welding happens.
   function weldPoint(st) {
     const r = facilityRectFor(defOf(st), st.fp);
@@ -1120,7 +1127,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     st.pop = 0.35;
     vfx.sprite('world', VFX_ART.blueprintPop, p.x, p.y - 30, { size: 140, life: 1.1, rise: 30 });
     // The last phase ends in the robot-finished moment, which says it louder.
-    if (job.phaseIndex < PHASES.length - 1) vfx.text('world', `${phase.name} done!`, p.x, p.y - 120, { color: FLOAT_COLORS.info, size: 20, life: 1.8 });
+    if (job.phaseIndex < PHASES.length - 1) floatText(`${phase.name} done!`, p.x, p.y - 120, FLOAT_COLORS.info);
   });
 
   // Breakthroughs: a gold sparkle on the bay. Faults: a puff of smoke and the warning icon on the bay (Milestone 17b).
@@ -1131,7 +1138,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     const p = topOf(st, 0.2);
     vfx.sprite('world', 'vfx_12', p.x, p.y - 40, { size: 190, life: 1.6, from: 0.4, to: 1.1, hold: 0.3 });
     vfx.sprite('world', STATUS_ART.breakthrough, p.x, p.y - 90, { size: 96, life: 2.2, rise: 40, hold: 0.6 });
-    vfx.text('world', 'Breakthrough!', p.x, p.y - 150, { color: COL.gold, size: 20, life: 2 });
+    floatText('Breakthrough!', p.x, p.y - 150, COL.gold);
   });
   bus.on('robot:fault', () => {
     const st = bayView();
@@ -1156,7 +1163,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     if (!p) return;
     vfx.sprite('world', RESEARCH_ART.glow, p.x, p.y - 20, { size: 200, life: 1.4, from: 0.4, to: 1.1, hold: 0.3 });
     vfx.sprite('world', RESEARCH_ART.blueprint, p.x, p.y - 40, { size: 150, life: 1.3, rise: 40, delay: 0.2 });
-    vfx.text('world', `${node.name} done!`, p.x, p.y - 140, { color: FLOAT_COLORS.research, size: 20, life: 2.2 });
+    floatText(`${node.name} done!`, p.x, p.y - 140, FLOAT_COLORS.research);
   });
 
   // Training finished: the level-up sparkle and the gains over the worker's head.
@@ -1165,7 +1172,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     if (!a) return;
     const f = agentFeet(a, { x: 0, y: 0 });
     vfx.sprite('world', VFX_ART.levelUp, f.x, f.y - a.height * 0.5, { size: 130, life: 1.2, hold: 0.2 });
-    vfx.text('world', txt, f.x, f.y - a.height - 14, { color: FLOAT_COLORS.info, size: 19, life: 2.2, rise: 50 });
+    floatText(txt, f.x, f.y - a.height - 14, FLOAT_COLORS.info, 'training:' + staff.id);
   }
 
   bus.on('staff:levelup', ({ staff, level }) => {
@@ -1173,7 +1180,7 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     if (!a) return;
     const f = agentFeet(a, { x: 0, y: 0 });
     vfx.sprite('world', VFX_ART.levelUp, f.x, f.y - a.height * 0.5, { size: 140, life: 1.2, hold: 0.2 });
-    vfx.text('world', `Level ${level}!`, f.x, f.y - a.height - 14, { color: FLOAT_COLORS.level, size: 20, life: 1.9, rise: 50, delay: 0.15 });
+    floatText(`Level ${level}!`, f.x, f.y - a.height - 14, FLOAT_COLORS.level);
   });
 
   // A new facility lands with a puff and a pop.
@@ -1225,6 +1232,26 @@ export function createWorkshopScreen({ renderer, layout, assets, bus, debug, cam
     // First station of a type (tests, guide).
     stationOf: (defId) => stations.find((s) => s.item.def === defId) ?? null,
     stationFor,
+    // Where a floating number starts (core/FloatFeed): a spot in the room, a station or a worker, as a screen point,
+    // lifted one lane per number already showing. Kept inside the room view (clear of the top and bottom bars);
+    // null when the source is not on screen.
+    floatPoint(source, lane = 0) {
+      if (!source) return null;
+      let p = null;
+      if (source.world) p = camera.worldToScreen(source.world.x, source.world.y);
+      else if (source.facility) {
+        const r = screen.stationScreenRect(source.facility);
+        if (r) p = { x: r.x + r.w / 2, y: r.y + r.h * 0.2 };
+      } else if (source.staffId) {
+        const a = screen.agentFor(source.staffId);
+        if (a) p = screen.screenRectOf(a);
+      }
+      if (!p) return null;
+      const top = topBar.rect().y + topBar.rect().h + 70;
+      const bottom = bottomBar.rect().y - 60;
+      if (p.x < -40 || p.x > W + 40 || p.y < top - 200 || p.y > bottom + 200) return null;
+      return { x: Math.min(W - 170, Math.max(170, p.x)), y: Math.min(bottom, Math.max(top + 2 * 58, p.y)) - lane * 58 }; // room for 3 lanes
+    },
     agentFor: (staffId) => agents.find((a) => a.staffId === staffId) || null,
     taskLabel: (staffId) => {
       const a = screen.agentFor(staffId);

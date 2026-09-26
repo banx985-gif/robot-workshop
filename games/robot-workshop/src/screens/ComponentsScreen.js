@@ -12,7 +12,26 @@ const COL = THEME.color;
 
 const HEADER_H = 150;
 const TABS_H = 2 * 110 + 16 + 24;
-const ROW_H = 196;
+const ROW_MIN = 196;
+const LINE = 44; // one line of body text (34 px) with its spacing
+const SIZE = THEME.size;
+
+// Word-wrap for layout: row heights are measured before drawing.
+const measure = document.createElement('canvas').getContext('2d');
+function wrapLines(str, w, size = SIZE.body, bold = false) {
+  measure.font = font(size, bold);
+  const lines = [];
+  let cur = '';
+  for (const word of String(str).split(' ')) {
+    const t = cur ? `${cur} ${word}` : word;
+    if (measure.measureText(t).width > w && cur) {
+      lines.push(cur);
+      cur = word;
+    } else cur = t;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
 
 export function createComponentsScreen({ renderer, layout, assets, campaign, router }) {
   const W = renderer.width;
@@ -36,7 +55,31 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
     const y = sr.y + HEADER_H + TABS_H;
     return { x: sr.x + 24, y, w: sr.w - 48, h: sr.y + sr.h - 24 - y };
   }
-  const rowRect = (i) => ({ x: 0, y: i * (ROW_H + 14), w: bodyRect().w - 12, h: ROW_H });
+  // A part's lines: cost, stats and open/locked, each wrapped to the space right of its picture.
+  function partLines(c) {
+    const mw = bodyRect().w - 12 - 200;
+    const open = campaign.partOpen(c.id);
+    const stats = ROBOT_STAT_KEYS.filter((k) => c.stats[k]).map((k) => `${k} ${c.stats[k] > 0 ? '+' : ''}${c.stats[k]}`);
+    if (c.inn) stats.push(`INN +${c.inn}`);
+    const lock = open ? 'Open — ready to use' : `Locked — needs ${missingParts(c.unlock, (r) => campaign.unlockMet(r, { type: 'part', id: c.id })).join(' + ') || describeUnlock(c.unlock)}`;
+    return {
+      open,
+      mw,
+      cost: wrapLines(`Cost ${fmt(c.cost)} · Complexity ${c.cx}${c.faultPct ? ` · fault chance +${c.faultPct}%` : ''}`, mw),
+      stats: wrapLines(stats.join('  '), mw, SIZE.body, true),
+      lock: wrapLines(lock, mw, SIZE.body, true),
+    };
+  }
+  const rowHeight = (c) => {
+    const l = partLines(c);
+    return Math.max(ROW_MIN, 18 + 50 + (l.cost.length + l.stats.length + l.lock.length) * LINE + 14);
+  };
+  const rowRect = (i) => {
+    const parts = partsInSlot(slotId);
+    let y = 0;
+    for (let k = 0; k < i; k++) y += rowHeight(parts[k]) + 14;
+    return { x: 0, y, w: bodyRect().w - 12, h: rowHeight(parts[i]) };
+  };
 
   const screen = {
     scroll,
@@ -76,7 +119,7 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
       ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const sr = layout.safeRect;
-      drawButton(ctx, backRect(), '‹ Back', { font: font(32, true) });
+      drawButton(ctx, backRect(), '‹ Back', { font: font(SIZE.button, true) });
       contained(ctx, assets, 'ui_icon_06_robot', { x: sr.x + 228, y: sr.y + 28, w: 76, h: 76 });
       text(ctx, 'Parts catalogue', sr.x + 320, sr.y + 66, { size: 48, bold: true, baseline: 'middle' });
 
@@ -84,11 +127,12 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
         const list = partsInSlot(s.id);
         const openSet = campaign.openParts;
         const open = list.filter((c) => openSet.has(c.id)).length;
-        drawButton(ctx, tabRect(i), `${s.name} ${open}/${list.length}`, { selected: s.id === slotId, font: font(28, true) });
+        drawButton(ctx, tabRect(i), `${s.name} ${open}/${list.length}`, { selected: s.id === slotId, font: font(SIZE.body, true) });
       });
 
       const parts = partsInSlot(slotId);
-      scroll.contentHeight = parts.length * (ROW_H + 14);
+      const last = rowRect(parts.length - 1);
+      scroll.contentHeight = last.y + last.h + 14;
       scroll.begin(ctx);
       parts.forEach((c, i) => drawPart(ctx, c, rowRect(i)));
       scroll.end(ctx);
@@ -96,7 +140,8 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
   };
 
   function drawPart(ctx, c, r) {
-    const open = campaign.partOpen(c.id);
+    const l = partLines(c);
+    const open = l.open;
     panel(ctx, r, { fill: open ? COL.panel : COL.panelDim, stroke: open ? COL.good : COL.line });
     ctx.save();
     if (!open) ctx.globalAlpha = 0.38; // greyed out
@@ -105,14 +150,18 @@ export function createComponentsScreen({ renderer, layout, assets, campaign, rou
     if (!open) drawPadlock(ctx, r.x + 128, r.y + 150, 34, COL.gold);
 
     const x = r.x + 186;
-    const mw = r.w - 200;
-    const dim = open ? COL.text : COL.textFaint;
-    text(ctx, `${c.id} · ${c.name}`, x, r.y + 18, { size: 34, bold: true, color: open ? COL.text : COL.textMuted, maxWidth: mw });
-    text(ctx, `Cost ${fmt(c.cost)} · Complexity ${c.cx}${c.faultPct ? ` · fault chance +${c.faultPct}%` : ''}`, x, r.y + 64, { size: 26, color: dim, maxWidth: mw });
-    const stats = ROBOT_STAT_KEYS.filter((k) => c.stats[k]).map((k) => `${k} ${c.stats[k] > 0 ? '+' : ''}${c.stats[k]}`);
-    if (c.inn) stats.push(`INN +${c.inn}`);
-    text(ctx, stats.join('  '), x, r.y + 102, { size: 28, bold: true, color: open ? COL.good : COL.textFaint, maxWidth: mw });
-    text(ctx, open ? 'Open — ready to use' : `Locked — needs ${missingParts(c.unlock, (r) => campaign.unlockMet(r, { type: 'part', id: c.id })).join(' + ') || describeUnlock(c.unlock)}`, x, r.y + 146, { size: 26, bold: true, color: open ? COL.good : COL.gold, maxWidth: mw });
+    const mw = l.mw;
+    text(ctx, `${c.id} · ${c.name}`, x, r.y + 18, { size: SIZE.button, bold: true, color: open ? COL.text : COL.textMuted, maxWidth: mw });
+    let y = r.y + 68;
+    const lines = (list, opts) => {
+      for (const line of list) {
+        text(ctx, line, x, y, { size: SIZE.body, maxWidth: mw, ...opts });
+        y += LINE;
+      }
+    };
+    lines(l.cost, { color: open ? COL.text : COL.textMuted });
+    lines(l.stats, { bold: true, color: open ? COL.good : COL.textMuted });
+    lines(l.lock, { bold: true, color: open ? COL.good : COL.gold });
   }
 
   return screen;

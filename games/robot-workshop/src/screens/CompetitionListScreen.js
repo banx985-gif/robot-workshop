@@ -11,11 +11,13 @@ import { createTopBar } from '../ui/TopBar.js';
 import { panel, text, hit, fmt } from '../ui/widgets.js';
 import { drawBackdrop, drawMarker, weightsLine, placeText, placeColor } from '../ui/competitionDraw.js';
 import { ordinal } from '../systems/CompetitionRules.js';
+import { wrapLines } from '../ui/competitionDraw.js';
 const COL = THEME.color;
 
-const CARD_H = 560;
 const GAP = 20;
-const HEAD_H = 170;
+const HEAD_H = 236;
+const ART = { w: 280, h: 230 };
+const S = THEME.size;
 const NAME = (list, id) => list.find((x) => x.id === id)?.name ?? id;
 
 export function createCompetitionListScreen({ renderer, layout, assets, campaign, router, goProject, hud, debugEnabled = false }) {
@@ -40,8 +42,13 @@ export function createCompetitionListScreen({ renderer, layout, assets, campaign
     return { x: sr.x + 24, y, w: sr.w - 48, h: sr.y + sr.h - 24 - y };
   }
   const cw = () => bodyRect().w - 12;
-  const headButton = (i) => ({ x: cw() - (i + 1) * 230 - i * 14 - 12, y: 30, w: 230, h: 110 });
-  const cardRect = (i) => ({ x: 0, y: HEAD_H + GAP + i * (CARD_H + GAP), w: cw(), h: CARD_H });
+  const headButton = (i) => ({ x: cw() - (i + 1) * 250 - i * 14 - 12, y: 20, w: 250, h: 110 });
+  // Cards grow with their wrapped text (Milestone 18: body text at the §33.2 size, wrapped, never squeezed).
+  const cardRect = (i) => {
+    let y = HEAD_H + GAP;
+    for (let k = 0; k < i; k++) y += layoutCard(COMPETITIONS[k]).h + GAP;
+    return { x: 0, y, w: cw(), h: layoutCard(COMPETITIONS[i]).h };
+  };
   const enterRect = (i) => {
     const c = cardRect(i);
     return { x: c.x + c.w - 24 - 260, y: c.y + c.h - 24 - 110, w: 260, h: 110 };
@@ -50,7 +57,11 @@ export function createCompetitionListScreen({ renderer, layout, assets, campaign
     const r = enterRect(i);
     return { x: r.x - 16 - 240, y: r.y, w: 240, h: r.h };
   };
-  const debugRect = () => ({ x: 0, y: HEAD_H + GAP + COMPETITIONS.length * (CARD_H + GAP), w: cw(), h: 110 });
+  const cardsBottom = () => {
+    const r = cardRect(COMPETITIONS.length - 1);
+    return r.y + r.h + GAP;
+  };
+  const debugRect = () => ({ x: 0, y: cardsBottom(), w: cw(), h: 110 });
   // A content rect → screen rect, only when fully in view (guide targets).
   function inScroll(r) {
     const b = bodyRect();
@@ -135,29 +146,74 @@ export function createCompetitionListScreen({ renderer, layout, assets, campaign
       scroll.begin(ctx);
       drawHeader(ctx);
       COMPETITIONS.forEach((ev, i) => drawCard(ctx, ev, i));
-      if (debugEnabled) drawButton(ctx, debugRect(), campaign.flags.debugCompetitions ? 'Debug: all events open (tap to turn off)' : 'Debug: open every event (C11/C12 too)', { accent: COL.action, selected: !!campaign.flags.debugCompetitions, font: font(28, true) });
+      if (debugEnabled) drawButton(ctx, debugRect(), campaign.flags.debugCompetitions ? 'Debug: all events open (tap to turn off)' : 'Debug: open every event (C11/C12 too)', { accent: COL.action, selected: !!campaign.flags.debugCompetitions });
       scroll.end(ctx);
     },
   };
 
   function contentHeight() {
-    return HEAD_H + GAP + COMPETITIONS.length * (CARD_H + GAP) + (debugEnabled ? 110 : 0);
+    return cardsBottom() + (debugEnabled ? 110 : 0);
+  }
+
+  // One card's text, wrapped to its width: { h, ops: [[str, x, y, opts]], fieldY } (y relative to the card top).
+  function layoutCard(ev) {
+    const w = cw();
+    const open = campaign.competitionOpen(ev.id);
+    const st = status(ev);
+    const hideAll = ev.secret && !open;
+    const ops = [];
+    const put = (str, x, y, mw, size, opts = {}, maxLines = 3) => {
+      const lines = wrapLines(str, mw, size, !!opts.bold).slice(0, maxLines);
+      const lh = Math.round(size * 1.24);
+      lines.forEach((l, i) => ops.push([l, x, y + i * lh, { size, maxWidth: mw, ...opts }]));
+      return y + lines.length * lh;
+    };
+    // Beside the picture: name, weights, the month's boost.
+    const x = 16 + ART.w + 20;
+    const mw = w - x - 20;
+    let y = put(`${ev.id} · ${ev.name}`, x, 18, mw, S.button, { bold: true }, 2) + 8;
+    const weights = campaign.competitionWeights(ev.id);
+    const hidden = !campaign.weightsKnown(ev.id);
+    y = put(weightsLine(weights, { hidden }), x, y, mw, S.body, { bold: true, color: COL.progress }) + 6;
+    const boosted = ev.rotate && !hidden ? `This month boosted: ${Object.entries(weights).filter(([, v]) => v > ev.rotate.base).map(([k]) => k).join(' & ')}` : ev.rotate ? 'Weights change every month' : null;
+    if (boosted) y = put(boosted, x, y, mw, S.small, { color: COL.progress }, 2);
+    // Full width below.
+    const fx = 24;
+    const fw = w - 48;
+    y = Math.max(y, 16 + ART.h) + 16;
+    y = put(hideAll ? 'An invitation only a few workshops ever receive.' : ev.blurb, fx, y, fw, S.small, { color: COL.textMuted }) + 8;
+    y = put(`Rivals ≈ ${ev.target} · Entry ${campaign.entryFee(ev.id) ? fmt(campaign.entryFee(ev.id)) : 'free'}`, fx, y, fw, S.body) + 4;
+    const extras = [ev.rewards.rep ? `${ev.rewards.rep} Rep` : null, ev.rewards.prestigeTokens ? `${ev.rewards.prestigeTokens} Prestige Token${ev.rewards.prestigeTokens > 1 ? 's' : ''}` : null, ev.rewards.trophy ? TROPHIES_BY_ID[ev.rewards.trophy].name : null].filter(Boolean);
+    y = put(`1st: ${fmt(ev.rewards.credits)}${extras.length ? ' + ' + extras.join(' · ') : ''}`, fx, y, fw, S.body, { bold: true, color: COL.gold }) + 12;
+    const fieldY = y; // the rival logos row (80 tall)
+    y += 92;
+    const rec = campaign.competitions.records[ev.id];
+    if (rec?.entries) {
+      const b = rec.best;
+      y = put(`Won ${rec.wins} of ${rec.entries} · podiums ${rec.podiums}${rec.bestSegment ? ` · best segment ${rec.bestSegment.score.toFixed(1)}` : ''}`, fx, y, fw, S.body, { bold: true });
+      if (b) y = put(`Best ${b.score.toFixed(1)} (${placeText(b.place)}) · ${b.entrant} · ${b.pilot} · ${NAME(STRATEGIES, b.strategy)}, ${NAME(TUNINGS, b.tuning)}`, fx, y + 4, fw, S.body, { color: COL.textMuted });
+    } else {
+      y = put(open ? 'Not entered yet.' : st.reason, fx, y, fw, S.body, { bold: !open, color: open ? COL.textMuted : COL.action });
+    }
+    return { h: y + 20 + 110 + 24, ops, fieldY };
   }
 
   function drawHeader(ctx) {
     const w = cw();
     panel(ctx, { x: 0, y: 0, w, h: HEAD_H });
-    assets.drawContained(ctx, COMPETITION_ART.icon, { x: 16, y: 20, w: 120, h: 120 });
-    text(ctx, 'Competitions', 150, 24, { size: 40, bold: true, maxWidth: w - 150 - 500 });
+    assets.drawContained(ctx, COMPETITION_ART.icon, { x: 12, y: 24, w: 100, h: 100 });
+    text(ctx, 'Competitions', 122, 74, { size: S.heading, bold: true, baseline: 'middle', maxWidth: headButton(1).x - 16 - 122 });
     const k = campaign.competitions;
     const pos = campaign.rankings.positionOf('player', campaign.rankingIds());
     const line = message?.text ?? `Won ${k.totalWins} of ${k.totalEntries}${pos ? ` · ranked ${ordinal(pos)}` : ''} · ${campaign.trophies.count} troph${campaign.trophies.count === 1 ? 'y' : 'ies'}`;
-    text(ctx, line, 150, 84, { size: 25, bold: !!message, color: message?.color ?? COL.textMuted, maxWidth: w - 150 - 500 });
+    wrapLines(line, w - 48, S.body, !!message)
+      .slice(0, 2)
+      .forEach((l, i) => text(ctx, l, 24, 146 + i * 42, { size: S.body, bold: !!message, color: message?.color ?? COL.textMuted, maxWidth: w - 48 }));
     const btn = (i, icon, label) => {
       const r = headButton(i);
       drawButton(ctx, r, '', { accent: COL.gold });
-      assets.drawContained(ctx, icon, { x: r.x + 8, y: r.y + 12, w: 76, h: 76 });
-      text(ctx, label, r.x + 90, r.y + r.h / 2 - 3, { size: 28, bold: true, baseline: 'middle', maxWidth: r.w - 96 });
+      assets.drawContained(ctx, icon, { x: r.x + 8, y: r.y + 14, w: 72, h: 72 });
+      text(ctx, label, r.x + 86, r.y + r.h / 2 - 3, { size: S.body, bold: true, baseline: 'middle', maxWidth: r.w - 94 });
     };
     btn(0, COMPETITION_ART.trophiesIcon, 'Trophies');
     btn(1, COMPETITION_ART.rankingsIcon, 'Rankings');
@@ -165,54 +221,33 @@ export function createCompetitionListScreen({ renderer, layout, assets, campaign
 
   function drawCard(ctx, ev, i) {
     const r = cardRect(i);
+    const L = layoutCard(ev);
     const open = campaign.competitionOpen(ev.id);
     const st = status(ev);
     const hideAll = ev.secret && !open;
     panel(ctx, r, { stroke: open ? COL.progress : COL.line, lineWidth: open ? 4 : 3 });
-    const art = { x: r.x + 16, y: r.y + 16, w: 300, h: 250 };
+    const art = { x: r.x + 16, y: r.y + 16, w: ART.w, h: ART.h };
     drawBackdrop(ctx, assets, ev, art);
     if (!open) {
-      ctx.fillStyle = hideAll ? COL.overlay : COL.overlay;
+      ctx.fillStyle = COL.overlay;
       ctx.fillRect(art.x, art.y, art.w, art.h);
       if (hideAll) text(ctx, '?', art.x + art.w / 2, art.y + art.h / 2, { size: 110, bold: true, align: 'center', baseline: 'middle', color: COL.textFaint });
     }
-    const x = r.x + 336;
-    const mw = r.w - 356;
-    text(ctx, `${ev.id} · ${ev.name}`, x, r.y + 20, { size: 32, bold: true, maxWidth: mw });
-    text(ctx, hideAll ? 'An invitation only a few workshops ever receive.' : ev.blurb, x, r.y + 64, { size: 22, color: COL.textMuted, maxWidth: mw });
-    const weights = campaign.competitionWeights(ev.id);
-    const hidden = !campaign.weightsKnown(ev.id);
-    text(ctx, weightsLine(weights, { hidden }), x, r.y + 100, { size: 24, bold: true, color: COL.progress, maxWidth: mw });
-    const boosted = ev.rotate && !hidden ? `This month boosted: ${Object.entries(weights).filter(([, v]) => v > ev.rotate.base).map(([k]) => k).join(' & ')}` : ev.rotate ? 'Weights change every month' : null;
-    if (boosted) text(ctx, boosted, x, r.y + 134, { size: 22, color: COL.progress, maxWidth: mw });
-    const y0 = r.y + (boosted ? 168 : 140);
-    text(ctx, `Rivals ≈ ${ev.target} · Entry ${campaign.entryFee(ev.id) ? fmt(campaign.entryFee(ev.id)) : 'free'}`, x, y0, { size: 25, maxWidth: mw });
-    const extras = [ev.rewards.rep ? `${ev.rewards.rep} Rep` : null, ev.rewards.prestigeTokens ? `${ev.rewards.prestigeTokens} Prestige Token${ev.rewards.prestigeTokens > 1 ? 's' : ''}` : null, ev.rewards.trophy ? TROPHIES_BY_ID[ev.rewards.trophy].name : null].filter(Boolean);
-    text(ctx, `1st: ${fmt(ev.rewards.credits)}${extras.length ? ' + ' + extras.join(' · ') : ''}`, x, y0 + 38, { size: 24, color: COL.gold, maxWidth: mw });
+    for (const [str, x, y, opts] of L.ops) text(ctx, str, r.x + x, r.y + y, opts);
 
     // The field: rival logos.
-    const fy = r.y + 284;
-    text(ctx, 'Field:', r.x + 24, fy + 22, { size: 24, color: COL.textMuted, baseline: 'middle' });
-    ev.field.forEach(([id], j) => drawMarker(ctx, assets, r.x + 140 + j * 74, fy + 22, 60, { rivalId: id, shown }));
+    const fy = r.y + L.fieldY + 40;
+    text(ctx, 'Field:', r.x + 24, fy, { size: S.small, color: COL.textMuted, baseline: 'middle' });
+    ev.field.forEach(([id], j) => drawMarker(ctx, assets, r.x + 150 + j * 84, fy, 70, { rivalId: id, shown }));
 
-    // Records (§21.7).
-    const rec = campaign.competitions.records[ev.id];
-    const y2 = r.y + 362;
-    if (rec?.entries) {
-      const b = rec.best;
-      text(ctx, `Won ${rec.wins} of ${rec.entries} · podiums ${rec.podiums}${rec.bestSegment ? ` · best segment ${rec.bestSegment.score.toFixed(1)}` : ''}`, r.x + 24, y2, { size: 25, bold: true, maxWidth: r.w - 48 });
-      if (b) text(ctx, `Best ${b.score.toFixed(1)} (${placeText(b.place)}) · ${b.entrant} · ${b.pilot} · ${NAME(STRATEGIES, b.strategy)}, ${NAME(TUNINGS, b.tuning)}`, r.x + 24, y2 + 36, { size: 21, color: COL.textMuted, maxWidth: r.w - 48 });
-    } else {
-      text(ctx, open ? 'Not entered yet.' : st.reason, r.x + 24, y2, { size: 25, bold: !open, color: open ? COL.textMuted : COL.action, maxWidth: r.w - 48 });
-    }
     const last = lastOf(ev.id);
     if (last) {
       const lr = lastRect(i);
-      drawButton(ctx, lr, '', { font: font(28, true) });
-      text(ctx, 'Last:', lr.x + 20, lr.y + lr.h / 2 - 3, { size: 26, bold: true, baseline: 'middle' });
-      text(ctx, placeText(last.place, last.player.dnf), lr.x + lr.w - 20, lr.y + lr.h / 2 - 3, { size: 30, bold: true, baseline: 'middle', align: 'right', color: placeColor(last.place, last.player.dnf) });
+      drawButton(ctx, lr, '');
+      text(ctx, 'Last:', lr.x + 20, lr.y + lr.h / 2 - 3, { size: S.body, bold: true, baseline: 'middle' });
+      text(ctx, placeText(last.place, last.player.dnf), lr.x + lr.w - 20, lr.y + lr.h / 2 - 3, { size: S.button, bold: true, baseline: 'middle', align: 'right', color: placeColor(last.place, last.player.dnf) });
     }
-    drawButton(ctx, enterRect(i), st.label, { active: st.ok, disabled: !st.ok, locked: !open && !st.stake, accent: st.stake ? COL.purple : COL.good, font: font(32, true), badge: st.ok ? '!' : null });
+    drawButton(ctx, enterRect(i), st.label, { active: st.ok, disabled: !st.ok, locked: !open && !st.stake, accent: st.stake ? COL.purple : COL.good, badge: st.ok ? '!' : null });
   }
 
   return screen;

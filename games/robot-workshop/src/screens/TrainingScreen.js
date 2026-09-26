@@ -12,15 +12,34 @@ import { panel, text, contained, bar, fmt } from '../ui/widgets.js';
 const COL = THEME.color;
 
 const HEADER_H = 150;
-const SLOT_ROW = 96;
-const ROW_H = 172;
+const SLOT_ROW = 124;
 const GAP = 14;
-const PICK_ROW = 112;
+const PICK_ROW = 128;
+const LINE = 44; // one line of body text (34 px) with its spacing
+const BTN_W = 240;
+const SIZE = THEME.size;
 const GREEN = COL.good;
 const GOLD = COL.gold;
 const RED = COL.bad;
 const CYAN = COL.progress;
 const SHORT = Object.fromEntries(WORK_STATS.map((s) => [s.key, s.short]));
+
+// Word-wrap for layout: row heights are measured before drawing, so taps and the guide see the same rects.
+const measure = document.createElement('canvas').getContext('2d');
+function wrapLines(str, w, size = SIZE.body, bold = false) {
+  measure.font = font(size, bold);
+  const lines = [];
+  let cur = '';
+  for (const word of String(str).split(' ')) {
+    const t = cur ? `${cur} ${word}` : word;
+    if (measure.measureText(t).width > w && cur) {
+      lines.push(cur);
+      cur = word;
+    } else cur = t;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
 
 function effectText(c) {
   const e = c.effect;
@@ -63,11 +82,31 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
     }
     return lines;
   }
-  const slotsH = () => 70 + slotLines().length * SLOT_ROW + 10;
-  const rowRect = (i) => ({ x: 0, y: slotsH() + 70 + i * (ROW_H + GAP), w: cw(), h: ROW_H });
+  const slotsH = () => 80 + slotLines().length * SLOT_ROW + 10;
+  const coursesTop = () => slotsH() + 124; // the Courses heading and its note sit above the first row
+  // Why a course can't start right now (locked, no slot, nobody free), or null.
+  function courseBlockNote(c) {
+    return tr.courseBlock(c.id) ?? (campaign.staff.staff.some((s) => !tr.workerBlock(c.id, s.id)) ? null : tr.active.length >= tr.slots.reduce((t, sl) => t + tr.slotCount(sl), 0) ? 'All training slots are busy' : 'Nobody free for this right now');
+  }
+  // A course row: name, cost · days, then the effect and any note, wrapped beside the Train button.
+  function courseLines(c) {
+    const textW = cw() - 48 - BTN_W - 20;
+    const locked = tr.courseBlock(c.id) === 'Locked';
+    const note = locked ? `Needs ${describeUnlock(c.requires)}` : courseBlockNote(c) ?? '';
+    return { effect: wrapLines(effectText(c), textW), note: note ? wrapLines(note, textW, SIZE.body, true) : [], textW, locked };
+  }
+  const rowHeight = (c) => {
+    const l = courseLines(c);
+    return Math.max(250, 116 + (l.effect.length + l.note.length) * LINE + 20);
+  };
+  const rowRect = (i) => {
+    let y = coursesTop();
+    for (let k = 0; k < i; k++) y += rowHeight(COURSES[k]) + GAP;
+    return { x: 0, y, w: cw(), h: rowHeight(COURSES[i]) };
+  };
   const rowButton = (i) => {
     const r = rowRect(i);
-    return { x: r.x + r.w - 20 - 220, y: r.y + r.h - 20 - 110, w: 220, h: 110 };
+    return { x: r.x + r.w - 20 - BTN_W, y: r.y + r.h - 20 - 110, w: BTN_W, h: 110 };
   };
 
   function inScroll(r) {
@@ -77,14 +116,22 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
     return { x: b.x + r.x, y, w: r.w, h: r.h };
   }
 
+  // The picker's heading lines (course details and the question), wrapped to the dialog width.
+  function pickerHead() {
+    const c = tr.course(picker.courseId);
+    const w = sr().w - 80 - 60;
+    const sub = wrapLines(`${fmt(c.cost)} cr · ${c.days} days · ${effectText(c)}`, w);
+    const ask = wrapLines('Who trains? They leave projects and research until it is done.', w, SIZE.body, true);
+    return { sub, ask, h: 96 + sub.length * LINE + 16 + ask.length * LINE + 20 };
+  }
   function dialogRect() {
     const s = sr();
-    const h = 250 + campaign.staff.staff.length * (PICK_ROW + 10) + 140;
+    const h = pickerHead().h + campaign.staff.staff.length * (PICK_ROW + 10) + 150;
     return { x: s.x + 40, y: Math.max(s.y + 40, s.y + s.h / 2 - h / 2), w: s.w - 80, h };
   }
   const pickRowRect = (i) => {
     const d = dialogRect();
-    return { x: d.x + 30, y: d.y + 230 + i * (PICK_ROW + 10), w: d.w - 60, h: PICK_ROW };
+    return { x: d.x + 30, y: d.y + pickerHead().h + i * (PICK_ROW + 10), w: d.w - 60, h: PICK_ROW };
   };
   const dialogButton = (k) => {
     const d = dialogRect();
@@ -184,17 +231,19 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
       ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
       const s = sr();
-      drawButton(ctx, backRect(), '‹ Back', { font: font(32, true) });
+      drawButton(ctx, backRect(), '‹ Back', { font: font(SIZE.button, true) });
       contained(ctx, assets, TRAINING_ART.icon, { x: s.x + 224, y: s.y + 26, w: 80, h: 80 });
       text(ctx, 'Training', s.x + 318, s.y + 66, { size: 48, bold: true, baseline: 'middle' });
       contained(ctx, assets, TRAINING_ART.manual, { x: s.x + s.w - 24 - 270, y: s.y + 30, w: 72, h: 72 });
       text(ctx, `${fmt(campaign.economy.balance('credits'))} cr`, s.x + s.w - 24, s.y + 66, { size: 36, bold: true, align: 'right', baseline: 'middle', maxWidth: 190 });
 
       const w = cw();
-      scroll.contentHeight = rowRect(COURSES.length - 1).y + ROW_H + 30;
+      const lastRow = rowRect(COURSES.length - 1);
+      scroll.contentHeight = lastRow.y + lastRow.h + 30;
       scroll.begin(ctx);
       drawSlots(ctx, w);
-      text(ctx, 'Courses (gains never go past the tier cap)', 4, slotsH() + 18, { size: 30, bold: true });
+      text(ctx, 'Courses', 4, slotsH() + 14, { size: SIZE.heading, bold: true });
+      text(ctx, "Gains never go past the worker's tier cap.", 4, slotsH() + 72, { size: SIZE.small, color: COL.textMuted, maxWidth: w - 8 });
       COURSES.forEach((c, i) => drawCourse(ctx, c, i));
       scroll.end(ctx);
 
@@ -202,7 +251,7 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
         const b = bodyRect();
         const r = { x: b.x + 40, y: b.y + b.h - 110, w: b.w - 80, h: 84 };
         panel(ctx, r, { fill: COL.panel, stroke: message.color, radius: 20 });
-        text(ctx, message.text, r.x + r.w / 2, r.y + r.h / 2, { size: 30, bold: true, align: 'center', baseline: 'middle', color: message.color, maxWidth: r.w - 30 });
+        text(ctx, message.text, r.x + r.w / 2, r.y + r.h / 2, { size: SIZE.body, bold: true, align: 'center', baseline: 'middle', color: message.color, maxWidth: r.w - 30 });
       }
       if (picker) drawPicker(ctx);
     },
@@ -212,41 +261,49 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
     const lines = slotLines();
     panel(ctx, { x: 0, y: 0, w, h: slotsH() - 10 }, { stroke: CYAN });
     const open = lines.filter((l) => l.open).length;
-    text(ctx, `Training slots · ${tr.active.length}/${open} in use`, 20, 18, { size: 30, bold: true });
+    text(ctx, `Training slots · ${tr.active.length}/${open} in use`, 20, 18, { size: SIZE.button, bold: true, maxWidth: w - 40 });
     lines.forEach((l, i) => {
-      const y = 70 + i * SLOT_ROW;
+      const y = 80 + i * SLOT_ROW;
       if (!l.open && !l.t) {
-        drawPadlock(ctx, 36, y + 34, 24, COL.textFaint);
-        text(ctx, `${l.slot.name}${l.slot.roles ? ' (pilots only)' : ''} — ${l.slot.roles ? 'needs a Pilot Simulator' : 'needs a Training Station'} (later update)`, 70, y + 20, { size: 25, color: COL.textFaint, maxWidth: w - 90 });
+        drawPadlock(ctx, 36, y + 30, 24, COL.textFaint);
+        text(ctx, `${l.slot.name}${l.slot.roles ? ' (pilots only)' : ''}`, 70, y + 10, { size: SIZE.body, bold: true, color: COL.textMuted, maxWidth: w - 90 });
+        text(ctx, `${l.slot.roles ? 'Needs a Pilot Simulator' : 'Needs a Training Station'} (later update)`, 70, y + 58, { size: SIZE.small, color: COL.textMuted, maxWidth: w - 90 });
         return;
       }
       if (!l.t) {
-        text(ctx, `${l.slot.name}${l.slot.roles ? ' (pilots only)' : ''}: free`, 24, y + 20, { size: 27, color: GREEN, maxWidth: w - 48 });
+        text(ctx, `${l.slot.name}${l.slot.roles ? ' (pilots only)' : ''}: free`, 24, y + 30, { size: SIZE.body, bold: true, color: GREEN, maxWidth: w - 48 });
         return;
       }
       const st = campaign.staff.get(l.t.staffId);
       const c = tr.course(l.t.courseId);
-      contained(ctx, assets, st?.art, { x: 16, y: y + 2, w: 60, h: 84 });
-      text(ctx, `${st?.name ?? '?'} · ${c.name}`, 90, y + 6, { size: 27, bold: true, maxWidth: w - 300 });
-      bar(ctx, 90, y + 50, w - 330, 20, l.t.daysDone / l.t.days, CYAN);
-      text(ctx, `day ${l.t.daysDone}/${l.t.days}`, w - 20, y + 44, { size: 26, bold: true, align: 'right', color: CYAN });
+      contained(ctx, assets, st?.art, { x: 16, y: y + 4, w: 80, h: 108 });
+      text(ctx, `${st?.name ?? '?'} · ${c.name}`, 110, y + 8, { size: SIZE.body, bold: true, maxWidth: w - 130 });
+      bar(ctx, 110, y + 70, w - 110 - 240, 26, l.t.daysDone / l.t.days, CYAN);
+      text(ctx, `day ${l.t.daysDone}/${l.t.days}`, w - 20, y + 64, { size: SIZE.body, bold: true, align: 'right', color: CYAN });
     });
   }
 
   function drawCourse(ctx, c, i) {
     const r = rowRect(i);
-    const locked = tr.courseBlock(c.id) === 'Locked';
-    const block = tr.courseBlock(c.id) ?? (campaign.staff.staff.some((s) => !tr.workerBlock(c.id, s.id)) ? null : tr.active.length >= tr.slots.reduce((t, sl) => t + tr.slotCount(sl), 0) ? 'All training slots are busy' : 'Nobody free for this right now');
-    panel(ctx, r, { fill: locked ? COL.panelDim : COL.panel, stroke: locked ? COL.line : COL.line });
-    if (locked) drawPadlock(ctx, r.x + 30, r.y + 36, 24, COL.action);
+    const block = courseBlockNote(c);
+    const l = courseLines(c);
+    const locked = l.locked;
+    panel(ctx, r, { fill: locked ? COL.panelDim : COL.panel, stroke: COL.line });
+    if (locked) drawPadlock(ctx, r.x + 30, r.y + 38, 24, COL.action);
     const x = r.x + (locked ? 60 : 24);
-    text(ctx, c.name, x, r.y + 18, { size: 32, bold: true, color: locked ? COL.textMuted : COL.text, maxWidth: r.w - 330 });
+    text(ctx, c.name, x, r.y + 18, { size: SIZE.button, bold: true, color: locked ? COL.textMuted : COL.text, maxWidth: r.x + r.w - 24 - x });
     const cost = c.currency === 'credits' ? `${fmt(c.cost)} cr` : `${c.cost} Prestige Token`;
-    text(ctx, `${cost} · ${c.days} days`, r.x + r.w - 20, r.y + 22, { size: 28, bold: true, align: 'right', color: locked ? COL.textFaint : GOLD });
-    text(ctx, effectText(c), r.x + 24, r.y + 66, { size: 26, color: locked ? COL.textFaint : GREEN, maxWidth: r.w - 290 });
-    const note = locked ? `Needs ${describeUnlock(c.requires)}` : block ?? '';
-    if (note) text(ctx, note, r.x + 24, r.y + 110, { size: 24, bold: true, color: locked ? COL.action : RED, maxWidth: r.w - 290 });
-    drawButton(ctx, rowButton(i), locked ? 'Locked' : 'Train…', { disabled: !!block, locked, font: font(30, true), accent: CYAN });
+    text(ctx, `${cost} · ${c.days} days`, r.x + 24, r.y + 68, { size: SIZE.body, bold: true, color: locked ? COL.textMuted : GOLD, maxWidth: r.w - 48 });
+    let y = r.y + 116;
+    for (const line of l.effect) {
+      text(ctx, line, r.x + 24, y, { size: SIZE.body, color: locked ? COL.textMuted : GREEN, maxWidth: l.textW });
+      y += LINE;
+    }
+    for (const line of l.note) {
+      text(ctx, line, r.x + 24, y, { size: SIZE.body, bold: true, color: locked ? COL.actionDark : RED, maxWidth: l.textW });
+      y += LINE;
+    }
+    drawButton(ctx, rowButton(i), locked ? 'Locked' : 'Train…', { disabled: !!block, locked, font: font(SIZE.button, true), accent: CYAN });
   }
 
   function drawPicker(ctx) {
@@ -254,10 +311,19 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
     ctx.fillRect(0, 0, W, renderer.height);
     const d = dialogRect();
     const c = tr.course(picker.courseId);
+    const head = pickerHead();
     panel(ctx, d, { fill: COL.panel, stroke: CYAN, lineWidth: 5, radius: 28 });
-    text(ctx, c.name, d.x + d.w / 2, d.y + 34, { size: 42, bold: true, align: 'center', maxWidth: d.w - 60 });
-    text(ctx, `${fmt(c.cost)} cr · ${c.days} days · ${effectText(c)}`, d.x + d.w / 2, d.y + 96, { size: 27, align: 'center', color: GOLD, maxWidth: d.w - 60 });
-    text(ctx, 'Who trains? They leave projects and research until it is done.', d.x + 30, d.y + 160, { size: 26, bold: true, maxWidth: d.w - 60 });
+    text(ctx, c.name, d.x + d.w / 2, d.y + 30, { size: SIZE.heading, bold: true, align: 'center', maxWidth: d.w - 60 });
+    let hy = d.y + 96;
+    for (const line of head.sub) {
+      text(ctx, line, d.x + d.w / 2, hy, { size: SIZE.body, align: 'center', color: GOLD, maxWidth: d.w - 60 });
+      hy += LINE;
+    }
+    hy += 16;
+    for (const line of head.ask) {
+      text(ctx, line, d.x + 30, hy, { size: SIZE.body, bold: true, maxWidth: d.w - 60 });
+      hy += LINE;
+    }
     campaign.staff.staff.forEach((s, i) => {
       const r = pickRowRect(i);
       const block = tr.workerBlock(picker.courseId, s.id);
@@ -265,20 +331,20 @@ export function createTrainingScreen({ renderer, layout, assets, bus, campaign, 
       panel(ctx, r, { fill: on ? COL.panelGood : COL.panelDim, stroke: on ? GREEN : COL.line, lineWidth: on ? 5 : 3, radius: 18 });
       ctx.save();
       if (block) ctx.globalAlpha = 0.45;
-      contained(ctx, assets, s.art, { x: r.x + 10, y: r.y + 6, w: 80, h: r.h - 12 });
-      text(ctx, s.name, r.x + 104, r.y + 14, { size: 30, bold: true, maxWidth: r.w - 480 });
-      text(ctx, `${ROLES[s.role].name} · ${TIERS[s.tier].name} (cap ${campaign.staff.statCap(s)})`, r.x + 104, r.y + 58, { size: 23, color: COL.textMuted, maxWidth: r.w - 480 });
+      contained(ctx, assets, s.art, { x: r.x + 10, y: r.y + 6, w: 84, h: r.h - 12 });
+      text(ctx, s.name, r.x + 108, r.y + 16, { size: SIZE.body, bold: true, maxWidth: r.w - 108 - 400 });
+      text(ctx, `${ROLES[s.role].name} · ${TIERS[s.tier].name} · cap ${campaign.staff.statCap(s)}`, r.x + 108, r.y + 72, { size: SIZE.small, color: COL.textMuted, maxWidth: r.w - 108 - 400 });
       ctx.restore();
       let tag = block;
       if (!block) {
         const pv = tr.preview(picker.courseId, s.id).filter((g) => g.max > 0);
         tag = pv.length > 2 ? `${pv.length} stats +${Math.min(...pv.map((g) => g.min))}–${Math.max(...pv.map((g) => g.max))}` : pv.map((g) => `${SHORT[g.key]} ${g.from}→${g.from + g.min}–${g.from + g.max}`).join(', ');
       }
-      text(ctx, on ? `✓ ${tag}` : tag, r.x + r.w - 20, r.y + r.h / 2, { size: 25, bold: true, align: 'right', baseline: 'middle', color: block ? RED : on ? GREEN : COL.textMuted, maxWidth: 360 });
+      text(ctx, on ? `✓ ${tag}` : tag, r.x + r.w - 20, r.y + r.h / 2, { size: SIZE.body, bold: true, align: 'right', baseline: 'middle', color: block ? RED : on ? GREEN : COL.textMuted, maxWidth: 380 });
     });
     const ok = !!picker.staffId && !tr.workerBlock(picker.courseId, picker.staffId) && !tr.courseBlock(picker.courseId);
-    drawButton(ctx, dialogButton(0), `Start · ${fmt(c.cost)}`, { active: ok, disabled: !ok, accent: GREEN, font: font(36, true) });
-    drawButton(ctx, dialogButton(1), 'Cancel', { font: font(36, true) });
+    drawButton(ctx, dialogButton(0), `Start · ${fmt(c.cost)}`, { active: ok, disabled: !ok, accent: GREEN, font: font(SIZE.button, true) });
+    drawButton(ctx, dialogButton(1), 'Cancel', { font: font(SIZE.button, true) });
   }
 
   return screen;

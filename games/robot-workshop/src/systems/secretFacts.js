@@ -9,6 +9,12 @@ import { RANKS } from '../../data/economy.js';
 import { STAFF, STAFF_BY_ID, STARTER_IDS } from '../../data/staff.js';
 import { RESEARCH_NODES } from '../../data/research.js';
 import { CALENDAR } from '../../data/balance.js';
+import { EXPANSIONS } from '../../data/facilities.js';
+import { GUIDE_STEPS } from '../../data/guide.js';
+import { ACH23_COMBOS } from '../../data/achievements.js';
+
+const VISIBLE_RESEARCH = new Set(RESEARCH_NODES.map((n) => n.id));
+const NORMAL_EXPANSIONS = EXPANSIONS.filter((z) => !z.secret).map((z) => z.id);
 
 const NAMED = new Set(STAFF.map((s) => s.id));
 const partNo = (id) => Number(String(id ?? '').replace(/\D/g, '')) || 0; // CH08 → 8
@@ -189,6 +195,19 @@ export function createSecretFacts(c) {
     .define('run.expansionsOwned', () => [...c.facilities.owned])
     .define('run.eventsSeen', () => Object.keys(c.events.state.count))
     .define('run.secrets', () => Object.keys(S().run.unlocked))
+    // --- achievements (Milestone 18) ---
+    .define('run.tutorialDone', () => (c.guideState?.done ?? []).length >= GUIDE_STEPS.length || c.competitions.totalEntries > 0)
+    .define('run.bestReview', () => Math.max(0, ...robots(c).map((r) => r.review)))
+    .define('run.projectsRunning', () => c.projects.jobs.length)
+    .define('run.rolesEmployedCount', () => new Set(c.staff.staff.map((s) => s.role)).size)
+    .define('run.staffCount', () => c.staff.staff.length)
+    .define('run.mostTrainingOneWorker', () => Math.max(0, ...Object.values(c.careers.records).map((r) => r.counters.training ?? 0)))
+    .define('run.visibleResearchCount', () => c.research.nodes.filter((n) => VISIBLE_RESEARCH.has(n.id) && c.research.isDone(n.id)).length)
+    .define('run.normalCombosCount', () => ACH23_COMBOS.filter((id) => c.synergyArchive.inRun(id)).length)
+    .define('run.creditsEarned', () => c.flags.creditsEarned ?? 0)
+    .define('run.everInDebt', () => !!c.flags.everInDebt)
+    .define('run.normalExpansions', () => NORMAL_EXPANSIONS.filter((id) => c.facilities.isOwned(id)).length)
+    .define('run.maxStaffLevel', () => Math.max(0, ...c.staff.staff.map((s) => s.level)))
     .defineGroup('run.flag', (name) => c.flags[name] ?? false)
     // --- account (every run) ---
     .define('account.runs', () => Object.keys(S().account.facts.projectsFinished ?? {}).length || 1)
