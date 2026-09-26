@@ -22,6 +22,7 @@ import { SECRETS } from '../../data/secrets.js';
 import { panel, text, fmt } from '../ui/widgets.js';
 import { wrapLines } from '../ui/competitionDraw.js';
 import { blueprintLines } from '../systems/ngPlusRun.js';
+import { DISCARD } from '../../data/menu.js';
 const C = THEME.color;
 const Z = THEME.size;
 
@@ -32,13 +33,14 @@ const CARD_H = 330;
 const BP_H = 300;
 const MOD_H = 150;
 
-export function createNgPlusSetupScreen({ renderer, layout, assets, campaign, router, onStarted = () => {} }) {
+export function createNgPlusSetupScreen({ renderer, layout, assets, campaign, router, dialog, onStarted = () => {} }) {
   const W = renderer.width;
   let back = 'workshop';
   let picks = { legacyStaff: [], blueprints: [], modifier: null, guide: false };
   let options = { legacy: [], blueprints: [], modifiers: [] };
   let note = null; // { text, t }
-  let confirm = false;
+  const BLANK = JSON.stringify({ legacyStaff: [], blueprints: [], modifier: null, guide: false });
+  const dirty = () => JSON.stringify(picks) !== BLANK;
   let hits = []; // tap areas in content coordinates, rebuilt every frame
   const scroll = new ScrollPanel({ getRect: bodyRect, contentHeight: 0 });
 
@@ -53,19 +55,6 @@ export function createNgPlusSetupScreen({ renderer, layout, assets, campaign, ro
   const startRect = () => {
     const s = sr();
     return { x: s.x + 40, y: s.y + s.h - FOOT_H + 30, w: s.w - 80, h: 140 };
-  };
-  const confirmBox = () => {
-    const s = sr();
-    const h = 720;
-    return { x: s.x + 50, y: s.y + (s.h - h) / 2, w: s.w - 100, h };
-  };
-  const confirmYes = () => {
-    const b = confirmBox();
-    return { x: b.x + 40, y: b.y + b.h - 300, w: b.w - 80, h: 120 };
-  };
-  const confirmNo = () => {
-    const b = confirmBox();
-    return { x: b.x + 40, y: b.y + b.h - 160, w: b.w - 80, h: 120 };
   };
   const cw = () => bodyRect().w - 12;
 
@@ -83,9 +72,21 @@ export function createNgPlusSetupScreen({ renderer, layout, assets, campaign, ro
 
   function start() {
     const res = campaign.startNewGamePlus({ ...picks });
-    confirm = false;
     if (!res.ok) return flash(res.reason);
     onStarted(res);
+  }
+
+  // The start confirm (the shared dialog, Milestone 21): what will happen and what was picked.
+  function askStart() {
+    const sum = [`${picks.legacyStaff.length} Legacy Staff`, `${picks.blueprints.length} blueprint${picks.blueprints.length === 1 ? '' : 's'}`, picks.modifier ? NG_PLUS.modifiers.find((m) => m.id === picks.modifier)?.name : 'no challenge'].join(' · ');
+    dialog.confirm({ title: `Start NG+${level()}?`, body: `${NG_PLUS_TEXT.confirm} (${sum})`, art: NG_PLUS_ART.icon, yes: NG_PLUS_TEXT.start, no: 'Not yet', onYes: start });
+  }
+
+  // Leaving with picks made asks first (§6.2).
+  function leave() {
+    const go = () => router.go(back);
+    if (!dirty()) return go();
+    dialog.confirm({ title: DISCARD.title, body: DISCARD.body, art: 'ui_icon_29', yes: DISCARD.yes, no: DISCARD.no, danger: true, onYes: go });
   }
 
   const screen = {
@@ -97,10 +98,13 @@ export function createNgPlusSetupScreen({ renderer, layout, assets, campaign, ro
       return options;
     },
     get confirming() {
-      return confirm;
+      return dialog.active;
+    },
+    get dirty() {
+      return dirty();
     },
     startRect,
-    confirmYes,
+    confirmYes: () => dialog.buttonRect('yes'),
     // Tests: the tap area of a card / row by its key ('legacy:ENG01', 'blueprint:<id>', 'mod:leanStart', 'guide').
     hitRect(key) {
       const h = hits.find((x) => x.key === key);
@@ -118,29 +122,26 @@ export function createNgPlusSetupScreen({ renderer, layout, assets, campaign, ro
       campaign.clock.pause();
       options = campaign.ngPlusOptions();
       picks = { legacyStaff: [], blueprints: [], modifier: null, guide: false };
-      confirm = false;
       note = null;
       scroll.scrollY = 0;
     },
+    onBack() {
+      leave();
+      return true;
+    },
     onTap(p) {
-      if (confirm) {
-        if (hitRect(p, confirmYes())) return start();
-        if (hitRect(p, confirmNo()) || !hitRect(p, confirmBox())) confirm = false;
-        return;
-      }
-      if (hitRect(p, backRect())) return router.go(back);
+      if (hitRect(p, backRect())) return leave();
       if (hitRect(p, startRect())) {
         const block = campaign.ngPlusBlock();
         if (block) return flash(block);
-        confirm = true;
-        return;
+        return askStart();
       }
       if (!scroll.contains(p)) return;
       const q = scroll.toContent(p);
       const h = hits.find((x) => hitRect(q, x.r));
       h?.onTap();
     },
-    onDragStart: (p) => !confirm && scroll.beginDrag(p),
+    onDragStart: (p) => scroll.beginDrag(p),
     onDrag: (p) => scroll.drag(p),
     onDragEnd: (p) => scroll.endDrag(p),
     render(ctx) {
@@ -157,7 +158,6 @@ export function createNgPlusSetupScreen({ renderer, layout, assets, campaign, ro
       scroll.contentHeight = y + 30;
       scroll.end(ctx);
       drawFooter(ctx);
-      if (confirm) drawConfirm(ctx);
     },
   };
 
@@ -396,20 +396,6 @@ export function createNgPlusSetupScreen({ renderer, layout, assets, campaign, ro
       panel(ctx, m, { fill: C.panelBad, stroke: C.bad, lineWidth: 4, radius: 24 });
       text(ctx, msg, W / 2, m.y + m.h / 2, { size: Z.small, bold: true, align: 'center', baseline: 'middle', color: C.bad, maxWidth: m.w - 30 });
     }
-  }
-
-  function drawConfirm(ctx) {
-    ctx.fillStyle = C.overlay;
-    ctx.fillRect(0, 0, W, renderer.height);
-    const b = confirmBox();
-    panel(ctx, b, { fill: C.panel, stroke: C.outline, lineWidth: 5, radius: 32 });
-    assets.drawContained(ctx, NG_PLUS_ART.icon, { x: b.x + b.w / 2 - 50, y: b.y + 26, w: 100, h: 100 });
-    text(ctx, `Start NG+${level()}?`, b.x + b.w / 2, b.y + 140, { size: Z.heading, bold: true, align: 'center', maxWidth: b.w - 40 });
-    const sum = [`${picks.legacyStaff.length} Legacy Staff`, `${picks.blueprints.length} blueprint${picks.blueprints.length === 1 ? '' : 's'}`, picks.modifier ? NG_PLUS.modifiers.find((m) => m.id === picks.modifier)?.name : 'no challenge'].join(' · ');
-    para(ctx, NG_PLUS_TEXT.confirm, b.x + 40, b.y + 200, b.w - 80, { size: Z.body });
-    text(ctx, sum, b.x + b.w / 2, b.y + 330, { size: Z.small, bold: true, align: 'center', color: C.progress, maxWidth: b.w - 60 });
-    drawButton(ctx, confirmYes(), NG_PLUS_TEXT.start, { font: font(Z.button, true) });
-    drawButton(ctx, confirmNo(), 'Not yet', { accent: C.progress, font: font(Z.button, true) });
   }
 
   return screen;

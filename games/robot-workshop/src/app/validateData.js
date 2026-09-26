@@ -40,6 +40,7 @@ import { ACHIEVEMENT_OPS } from '../../../../core/AchievementSystem.js';
 import { SECRETS, SECRET_TRIGGERS, SECRET_REWARD_TYPES, SECRET_RULES, SECRET_ART } from '../../data/secrets.js';
 import { NG_PLUS, NG_PLUS_CONTENT, NG_PLUS_SCALING, NG_PLUS_ART, FINAL_BADGE } from '../../data/ngplus.js';
 import { NgPlusSystem } from '../../../../core/NgPlusSystem.js';
+import { GAME_TITLE, MENU_ART, COMPANY, SETTINGS, SETTINGS_DEFAULTS, TEXT_SCALES, COMING_SOON } from '../../data/menu.js';
 import { SECRET_OPS } from '../../../../core/SecretEngine.js';
 
 const SLOT_COUNTS ={ chassis: 10, mobility: 8, ai: 8, tool: 8, power: 8, special: 8 }; // §11
@@ -707,6 +708,21 @@ export async function validateGameData({ manifest = {}, placeholders = [] } = {}
   for (const k of [NG_PLUS_ART.keyArt]) v.art(`ngplus art ${k}`, `assets/images/brand/${k}.png`);
   v.art(`ngplus art ${NG_PLUS_ART.burst}`, `assets/images/vfx/${NG_PLUS_ART.burst}.png`);
   v.art(`ngplus art ${NG_PLUS_ART.icon}`, `assets/images/ui/${NG_PLUS_ART.icon}.png`);
+
+  // --- the front end (Milestone 21): BOTWORKS, Company Setup, Settings ---
+  v.check(GAME_TITLE === 'BOTWORKS', 'menu: the game is called BOTWORKS');
+  v.check(COMPANY.accents.length === 6 && new Set(COMPANY.accents.map((x) => x.id)).size === 6 && COMPANY.accents.every((x) => /^#[0-9A-F]{6}$/i.test(x.color)), 'company: six accent colours (§6.3)');
+  v.check(COMPANY.accents.some((x) => x.id === COMPANY.defaults.accent) && COMPANY.defaults.name.length <= COMPANY.maxLength, 'company: defaults must be valid');
+  v.check(COMPANY.names.every((n) => n.length <= COMPANY.maxLength) && COMPANY.managers.every((n) => n.length <= COMPANY.maxLength), 'company: random names must fit the limit');
+  for (const d of SETTINGS) {
+    v.check(d.id in SETTINGS_DEFAULTS, `settings: ${d.id} needs a default`);
+    if (d.kind === 'choice') v.check(d.options.some((o) => o.id === SETTINGS_DEFAULTS[d.id]), `settings: ${d.id} default is not an option`);
+    if (d.kind === 'steps') v.check(d.steps.includes(SETTINGS_DEFAULTS[d.id]), `settings: ${d.id} default is not a step`);
+  }
+  v.check(TEXT_SCALES.normal === 1 && Math.abs(TEXT_SCALES.large - 1.15) < 1e-9, 'settings: Large text = +15% (Milestone 21)');
+  v.check(COMING_SOON.store && COMING_SOON.vip, 'menu: Store and VIP "Coming soon" entries');
+  for (const k of [MENU_ART.keyArt, MENU_ART.logo, MENU_ART.seriesMark, MENU_ART.ngPlus]) v.art(`menu art ${k}`, `assets/images/brand/${k}.png`);
+  for (const k of [MENU_ART.store, MENU_ART.vip, MENU_ART.settings, MENU_ART.audio, MENU_ART.help, MENU_ART.lock, MENU_ART.warning]) v.art(`menu icon ${k}`, `assets/images/ui/${k}.png`);
 
   // --- every image the game loads ---
   for (const [key, path] of Object.entries(manifest)) v.art(`image "${key}"`, path, { placeholder: placeholders.includes(key) });

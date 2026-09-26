@@ -1,6 +1,9 @@
-// The running robot project: phase, progress, team, faults and a live look at the robot's stats.
-// The calendar keeps running here. Budget focus changes apply from the next phase.
-import { THEME, font } from '../../../../core/Theme.js';
+// Active Project (bible §6.3, rebuilt in the Milestone 21 style): the robot being built — all five stages, the
+// current stage's progress, the team, faults, breakthrough checks, the robot's projected stats and the things the
+// player can change mid-build (budget focus for the next stage, who is on the team). The calendar keeps running.
+// Everything stacks by its measured height, so a big team or large text never overlaps the next panel.
+// params.jobId: which bay's project (default: the first).
+import { THEME, font, lineH } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { PURPOSES } from '../../data/purposes.js';
@@ -9,26 +12,21 @@ import { ROBOT_STATS } from '../../data/stats.js';
 import { ROLES } from '../../data/staff.js';
 import { PROJECT_RULES } from '../../data/balance.js';
 import { createTopBar } from '../ui/TopBar.js';
-import { panel, text, bar, contained, statBars, hit, fmt, staffRow } from '../ui/widgets.js';
+import { card, text, para, bar, statBars, hit, fmt, listRow, listRowHeight, emptyState, stateHeight } from '../ui/widgets.js';
+import { robotArtOf } from '../systems/robotVisual.js';
 const COL = THEME.color;
+const Z = THEME.size;
 
-const CONTENT_H = 2290;
-const Y = { head: 0, steps: 220, phase: 370, budget: 640, team: 870, faults: 1350, stats: 1540, log: 2010 };
-const ROW_H = 120;
+const GAP = 22;
+const PAD = 24;
 const SHORT = { concept: 'Concept', engineering: 'Engineer', software: 'Software', assembly: 'Assembly', testing: 'Testing' };
 
 export function createProjectDetailScreen({ renderer, layout, assets, campaign, router, hud }) {
   const W = renderer.width;
-  const topBar = createTopBar({
-    layout,
-    campaign,
-    hud,
-    nav: [
-      { id: 'workshop', label: 'Workshop', onTap: () => router.go('workshop') },
-      { id: 'roster', label: 'Roster', onTap: () => router.go('roster') },
-    ],
-  });
-  const scroll = new ScrollPanel({ getRect: bodyRect, contentHeight: CONTENT_H });
+  let jobId = null;
+  const topBar = createTopBar({ layout, campaign, hud, back: { label: '‹ Back', onTap: () => router.back() } });
+  const scroll = new ScrollPanel({ getRect: bodyRect, contentHeight: 0 });
+  let L = { phase: { x: 0, y: 0, w: 0, h: 0 }, focus: [], rows: [] }; // content rects from the last frame
 
   function bodyRect() {
     const sr = layout.safeRect;
@@ -36,146 +34,174 @@ export function createProjectDetailScreen({ renderer, layout, assets, campaign, 
     const y = t.y + t.h + 16;
     return { x: sr.x + 24, y, w: sr.w - 48, h: sr.y + sr.h - 24 - y };
   }
-  const cw = () => bodyRect().w;
-  const focusRect = (i) => {
-    const w = (cw() - 32) / 3;
-    return { x: i * (w + 16), y: Y.budget + 56, w, h: 110 };
-  };
-  const rowRect = (i) => ({ x: 0, y: Y.team + 60 + i * (ROW_H + 14), w: cw(), h: ROW_H });
-
-  const job = () => campaign.activeProject;
+  const cw = () => bodyRect().w - 12;
+  const job = () => campaign.projects.jobs.find((j) => j.id === jobId) ?? campaign.activeProject;
 
   const screen = {
     scroll,
-    phaseRect: () => ({ x: 0, y: Y.phase, w: cw(), h: 250 }), // content rect of the current-phase panel
-    focusRect,
-    rowRect,
     topBar,
-
-    enter() {
-      if (!job()) router.go('builder');
+    phaseRect: () => L.phase, // content rect of the current-stage panel (the guide points at it)
+    focusRect: (i) => L.focus[i],
+    rowRect: (i) => L.rows[i],
+    enter(params = {}) {
+      jobId = params.jobId ?? null;
+      scroll.scrollY = 0;
+      if (!job()) router.go('builder', {}, { replace: true });
     },
-
     onTap(p) {
       if (topBar.handleTap(p)) return;
       const j = job();
       if (!j || !scroll.contains(p)) return;
       const c = scroll.toContent(p);
-      for (const [i, id] of BUDGET_ORDER.entries()) {
-        if (hit(c, focusRect(i))) {
-          campaign.robots.setFocus(j, id);
-          return;
-        }
-      }
-      campaign.staff.staff.forEach((s, i) => {
-        if (hit(c, rowRect(i))) campaign.assignments.toggle(j, s.id);
-      });
+      const f = L.focus.findIndex((r) => r && hit(c, r));
+      if (f >= 0) return campaign.robots.setFocus(j, BUDGET_ORDER[f]);
+      const i = L.rows.findIndex((r) => r && hit(c, r));
+      if (i >= 0) campaign.assignments.toggle(j, campaign.staff.staff[i].id);
     },
-
     onDragStart: (p) => scroll.beginDrag(p),
     onDrag: (p) => scroll.drag(p),
     onDragEnd: (p) => scroll.endDrag(p),
-
     render(ctx) {
       ctx.fillStyle = COL.bg;
       ctx.fillRect(0, 0, W, renderer.height);
-      topBar.render(ctx);
       const j = job();
-      if (!j) return;
-      const d = j.data;
-      const w = cw();
-      const purpose = PURPOSES[d.purpose];
-      const tier = PROJECT_TIERS.find((t) => t.id === d.tier);
-
-      scroll.begin(ctx);
-
-      // Header
-      panel(ctx, { x: 0, y: Y.head, w, h: 200 });
-      contained(ctx, assets, purpose.art, { x: 16, y: 10, w: 170, h: 180 });
-      text(ctx, j.name, 210, 26, { size: 48, bold: true, maxWidth: w - 230 });
-      text(ctx, `${purpose.name} · ${tier.name} tier`, 210, 88, { size: 28, color: COL.textMuted, maxWidth: w - 230 });
-      text(ctx, `Worked ${j.day} days · running cost ${fmt(campaign.operatingCostPerDay(j))} credits a day`, 210, 134, { size: 26, color: COL.textMuted, maxWidth: w - 230 });
-
-      // Phase steps
-      const stepW = w / PHASES.length;
-      PHASES.forEach((ph, i) => {
-        const cx = stepW * i + stepW / 2;
-        const done = i < j.phaseIndex;
-        const now = i === j.phaseIndex;
-        if (i > 0) {
-          ctx.fillStyle = i <= j.phaseIndex ? COL.good : COL.line;
-          ctx.fillRect(cx - stepW, Y.steps + 36, stepW, 8);
-        }
-        ctx.beginPath();
-        ctx.arc(cx, Y.steps + 40, 32, 0, Math.PI * 2);
-        ctx.fillStyle = done ? COL.good : now ? COL.gold : COL.line;
-        ctx.fill();
-        text(ctx, done ? '✓' : String(i + 1), cx, Y.steps + 41, { size: 32, bold: true, color: done || now ? COL.bg : COL.textMuted, align: 'center', baseline: 'middle' });
-        text(ctx, SHORT[ph.id], cx, Y.steps + 84, { size: 24, bold: now, color: now ? COL.text : COL.textMuted, align: 'center' });
-      });
-
-      // Current phase
-      const phase = PHASES[j.phaseIndex];
-      const perDay = campaign.projects.progressPerDay(j);
-      const left = perDay > 0 ? Math.ceil((j.phaseTarget - j.phaseProgress) / perDay) : null;
-      panel(ctx, { x: 0, y: Y.phase, w, h: 250 });
-      text(ctx, `Phase ${j.phaseIndex + 1}/5 · ${phase.name}`, 24, Y.phase + 20, { size: 40, bold: true, maxWidth: w - 48 });
-      bar(ctx, 24, Y.phase + 80, w - 48, 44, j.phaseProgress / j.phaseTarget, COL.good);
-      text(ctx, `${fmt(Math.min(j.phaseProgress, j.phaseTarget))} / ${fmt(j.phaseTarget)}`, w / 2, Y.phase + 102, { size: 28, bold: true, align: 'center', baseline: 'middle', color: COL.text });
-      if (perDay > 0) {
-        text(ctx, `+${perDay.toFixed(1)} work per day · about ${left} days left`, 24, Y.phase + 144, { size: 28, color: COL.text, maxWidth: w - 48 });
-      } else {
-        text(ctx, 'Nobody is assigned — work has stopped', 24, Y.phase + 144, { size: 30, bold: true, color: COL.bad });
+      if (j) {
+        scroll.begin(ctx);
+        scroll.contentHeight = draw(ctx, j) + 30;
+        scroll.end(ctx);
       }
-      const roll = d.breakthroughs.find((b) => b.phase === phase.id);
-      const rollText = roll
-        ? roll.hit
-          ? 'Breakthrough at 60%! (effects arrive in a later milestone)'
-          : `60% check: no breakthrough this phase (${Math.round(roll.chance * 100)}% chance)`
-        : 'Breakthrough check happens at 60%';
-      text(ctx, rollText, 24, Y.phase + 192, { size: 26, color: roll?.hit ? COL.gold : COL.textMuted, maxWidth: w - 48 });
-
-      // Budget focus
-      text(ctx, 'Budget focus', 4, Y.budget, { size: 30, bold: true });
-      BUDGET_ORDER.forEach((id, i) => {
-        const label = BUDGET_FOCUS[id].name + (d.pendingFocus === id ? ' (next)' : '');
-        drawButton(ctx, focusRect(i), label, { active: d.budgetFocus === id, accent: d.pendingFocus === id ? COL.gold : COL.progress, font: font(30, true) });
-      });
-      const note = d.pendingFocus
-        ? `Switches to ${BUDGET_FOCUS[d.pendingFocus].name} when the next phase starts`
-        : 'Budget focus can only change between phases — a new choice waits for the next phase';
-      text(ctx, note, 4, Y.budget + 170, { size: 24, color: d.pendingFocus ? COL.gold : COL.textMuted, maxWidth: w });
-
-      // Team
-      const teamCount = j.slots.filter(Boolean).length;
-      text(ctx, `Team (${teamCount}/${PROJECT_RULES.teamSlots}) — tap to add or remove`, 4, Y.team, { size: 30, bold: true, maxWidth: w });
-      campaign.staff.staff.forEach((s, i) => {
-        const on = j.slots.includes(s.id);
-        staffRow(ctx, assets, rowRect(i), s, { roleName: ROLES[s.role].name, on, tag: on ? 'Working' : 'Resting' });
-      });
-
-      // Faults
-      panel(ctx, { x: 0, y: Y.faults, w, h: 170 });
-      text(ctx, `Open faults: ${d.faults.length}`, 24, Y.faults + 20, { size: 40, bold: true, color: d.faults.length ? COL.bad : COL.good });
-      text(ctx, `Found ${d.faultsFound} · fixed ${d.faultsFixed} · each open fault: −3 REL, −1.5 Quality`, 24, Y.faults + 76, { size: 26, color: COL.textMuted, maxWidth: w - 48 });
-      text(ctx, 'Testing & Tuning tries to fix open faults at the end', 24, Y.faults + 116, { size: 26, color: COL.textMuted, maxWidth: w - 48 });
-
-      // Live stats
-      const stats = campaign.robots.currentStats(j);
-      panel(ctx, { x: 0, y: Y.stats, w, h: 450 });
-      text(ctx, 'Robot so far (parts + team work − faults)', 24, Y.stats + 20, { size: 30, bold: true, maxWidth: w - 48 });
-      statBars(ctx, 24, Y.stats + 74, w - 48, stats, ROBOT_STATS);
-
-      // Breakthrough rolls
-      text(ctx, 'Breakthrough checks (logged only for now)', 4, Y.log, { size: 30, bold: true });
-      if (!d.breakthroughs.length) text(ctx, 'None yet', 4, Y.log + 50, { size: 26, color: COL.textMuted });
-      d.breakthroughs.forEach((b, i) => {
-        const name = PHASES.find((p) => p.id === b.phase).name;
-        text(ctx, `${name} (day ${b.day}): ${b.hit ? 'BREAKTHROUGH' : 'no breakthrough'}`, 4, Y.log + 50 + i * 40, { size: 26, color: b.hit ? COL.gold : COL.textMuted });
-      });
-
-      scroll.end(ctx);
+      topBar.render(ctx);
     },
   };
+
+  function heading(ctx, str, y, w) {
+    text(ctx, str, 4, y, { size: Z.heading, bold: true, maxWidth: w });
+    return y + lineH(Z.heading, 1.35);
+  }
+
+  function draw(ctx, j) {
+    const d = j.data;
+    const w = cw();
+    const purpose = PURPOSES[d.purpose];
+    const tier = PROJECT_TIERS.find((t) => t.id === d.tier);
+    const next = { phase: null, focus: [], rows: [] };
+    let y = 0;
+
+    // Header card: the robot's look, name, purpose and tier, days and running cost.
+    const tx = 230;
+    const headLines = [`${purpose.name} · ${tier.name} tier`, `Worked ${j.day} days · ${fmt(campaign.operatingCostPerDay(j))} credits a day to run`];
+    const hh = Math.max(220, PAD * 2 + lineH(Z.heading, 1.3) + headLines.reduce((t, l) => t + para(null, l, 0, 0, w - tx - PAD, { size: Z.body }), 0));
+    card(ctx, { x: 0, y, w, h: hh });
+    assets.drawContained(ctx, robotArtOf({ purpose: d.purpose }), { x: PAD, y: y + 20, w: 180, h: hh - 40 });
+    text(ctx, j.name, tx, y + PAD, { size: Z.heading, bold: true, maxWidth: w - tx - PAD });
+    let ly = y + PAD + lineH(Z.heading, 1.3);
+    for (const l of headLines) ly += para(ctx, l, tx, ly, w - tx - PAD, { size: Z.body, color: COL.textMuted });
+    y += hh + GAP;
+
+    // All five stages.
+    const stepW = w / PHASES.length;
+    PHASES.forEach((ph, i) => {
+      if (!i) return; // the connecting lines first, so the circles sit on top of them
+      ctx.fillStyle = i <= j.phaseIndex ? COL.good : COL.line;
+      ctx.fillRect(stepW * i - stepW / 2, y + 36, stepW, 8);
+    });
+    PHASES.forEach((ph, i) => {
+      const cx = stepW * i + stepW / 2;
+      const done = i < j.phaseIndex;
+      const now = i === j.phaseIndex;
+      ctx.beginPath();
+      ctx.arc(cx, y + 40, 36, 0, Math.PI * 2);
+      ctx.fillStyle = done ? COL.good : now ? COL.gold : COL.panelDim;
+      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = COL.outline;
+      ctx.stroke();
+      text(ctx, done ? '✓' : String(i + 1), cx, y + 42, { size: Z.body, bold: true, color: done || now ? COL.textOnDark : COL.textMuted, align: 'center', baseline: 'middle' });
+      text(ctx, SHORT[ph.id], cx, y + 90, { size: Z.small, bold: now, color: now ? COL.text : COL.textMuted, align: 'center', maxWidth: stepW - 6 });
+    });
+    y += 90 + lineH(Z.small) + GAP;
+
+    // The current stage.
+    const phase = PHASES[j.phaseIndex];
+    const perDay = campaign.projects.progressPerDay(j);
+    const left = perDay > 0 ? Math.ceil((j.phaseTarget - j.phaseProgress) / perDay) : null;
+    const roll = d.breakthroughs.find((b) => b.phase === phase.id);
+    const rollText = roll ? (roll.hit ? 'Breakthrough at 60%! (its bonus effects come in a later update)' : `60% check: no breakthrough this stage (${Math.round(roll.chance * 100)}% chance)`) : 'A breakthrough check happens at 60%';
+    const workText = perDay > 0 ? `+${perDay.toFixed(1)} work a day · about ${left} days left` : 'Nobody is on the team — work has stopped';
+    const inner = w - 2 * PAD;
+    const ph = PAD + lineH(Z.heading, 1.3) + 60 + 16 + para(null, workText, 0, 0, inner, { size: Z.body }) + para(null, rollText, 0, 0, inner, { size: Z.small }) + PAD;
+    const phaseR = { x: 0, y, w, h: ph };
+    next.phase = phaseR;
+    card(ctx, phaseR, 'info');
+    text(ctx, `Stage ${j.phaseIndex + 1} of ${PHASES.length}: ${phase.name}`, PAD, y + PAD, { size: Z.heading, bold: true, maxWidth: inner });
+    let py = y + PAD + lineH(Z.heading, 1.3);
+    bar(ctx, PAD, py, inner, 50, j.phaseProgress / j.phaseTarget, COL.good);
+    text(ctx, `${fmt(Math.min(j.phaseProgress, j.phaseTarget))} / ${fmt(j.phaseTarget)}`, w / 2, py + 26, { size: Z.small, bold: true, align: 'center', baseline: 'middle' });
+    py += 60 + 16;
+    py += para(ctx, workText, PAD, py, inner, { size: Z.body, bold: perDay <= 0, color: perDay > 0 ? COL.text : COL.bad });
+    para(ctx, rollText, PAD, py, inner, { size: Z.small, color: roll?.hit ? COL.gold : COL.textMuted });
+    y += ph + GAP;
+
+    // Change mid-build: budget focus (from the next stage).
+    y = heading(ctx, 'Budget focus', y, w);
+    const fw = (w - 2 * 16) / 3;
+    BUDGET_ORDER.forEach((id, i) => {
+      const r = { x: i * (fw + 16), y, w: fw, h: 116 };
+      next.focus[i] = r;
+      drawButton(ctx, r, BUDGET_FOCUS[id].name + (d.pendingFocus === id ? ' (next)' : ''), { active: d.budgetFocus === id, accent: d.pendingFocus === id ? COL.gold : COL.progress, font: font(Z.button, true) });
+    });
+    y += 116 + 12;
+    const note = d.pendingFocus ? `Switches to ${BUDGET_FOCUS[d.pendingFocus].name} when the next stage starts` : 'Budget focus changes between stages — a new choice waits for the next stage';
+    y += para(ctx, note, 4, y, w, { size: Z.small, color: d.pendingFocus ? COL.gold : COL.textMuted }) + GAP;
+
+    // Change mid-build: the team (tap to add or remove).
+    const teamCount = j.slots.filter(Boolean).length;
+    y = heading(ctx, `Team (${teamCount}/${PROJECT_RULES.teamSlots}) — tap to add or remove`, y, w);
+    campaign.staff.staff.forEach((s, i) => {
+      const on = j.slots.includes(s.id);
+      const busy = !on && campaign.busyReason(s.id, 'project');
+      const spec = { art: s.art, title: s.name, state: on ? 'selected' : busy ? 'locked' : 'normal', right: on ? 'Working' : busy ? '' : 'Free', rightColor: on ? COL.good : COL.textMuted, lines: [`${ROLES[s.role].name} · Level ${s.level} · Energy ${Math.round(s.energy)} · Morale ${Math.round(s.morale)}`, ...(busy ? [{ text: busy, color: COL.textMuted, size: Z.small }] : [])], artSize: 110 };
+      const h = listRowHeight(w, spec);
+      const r = { x: 0, y, w, h };
+      next.rows[i] = r;
+      listRow(ctx, assets, r, spec);
+      y += h + 12;
+    });
+    y += GAP;
+
+    // Faults.
+    const faultLines = [`Found ${d.faultsFound} · fixed ${d.faultsFixed} · each open fault costs −3 REL and −1.5 Quality`, 'Testing & Tuning tries to fix open faults at the end'];
+    const fh = PAD + lineH(Z.heading, 1.3) + faultLines.reduce((t, l) => t + para(null, l, 0, 0, inner, { size: Z.body }), 0) + PAD;
+    card(ctx, { x: 0, y, w, h: fh }, d.faults.length ? 'bad' : 'good');
+    text(ctx, `Open faults: ${d.faults.length}`, PAD, y + PAD, { size: Z.heading, bold: true, color: d.faults.length ? COL.bad : COL.good });
+    let fy = y + PAD + lineH(Z.heading, 1.3);
+    for (const l of faultLines) fy += para(ctx, l, PAD, fy, inner, { size: Z.body, color: COL.textMuted });
+    y += fh + GAP;
+
+    // Projected stats.
+    const stats = campaign.robots.currentStats(j);
+    const rowH = Math.max(52, lineH(Z.body, 1.45));
+    const sh = PAD + lineH(Z.heading, 1.3) + ROBOT_STATS.length * rowH + PAD;
+    card(ctx, { x: 0, y, w, h: sh });
+    text(ctx, 'Robot so far (parts + team work − faults)', PAD, y + PAD, { size: Z.heading, bold: true, maxWidth: inner });
+    statBars(ctx, PAD, y + PAD + lineH(Z.heading, 1.3), inner, stats, ROBOT_STATS, { rowH });
+    y += sh + GAP;
+
+    // Breakthrough checks so far.
+    y = heading(ctx, 'Breakthrough checks', y, w);
+    if (!d.breakthroughs.length) {
+      const s = { art: 'vfx_03', text: 'None yet — each stage checks once at 60%.' };
+      const h = stateHeight(w, s);
+      emptyState(ctx, assets, { x: 0, y, w, h }, s);
+      y += h;
+    }
+    for (const b of d.breakthroughs) {
+      const name = PHASES.find((p) => p.id === b.phase).name;
+      y += para(ctx, `${name} (day ${b.day}): ${b.hit ? 'BREAKTHROUGH' : 'no breakthrough'}`, 4, y, w, { size: Z.body, bold: b.hit, color: b.hit ? COL.gold : COL.textMuted });
+    }
+    L = next;
+    return y;
+  }
+
   return screen;
 }

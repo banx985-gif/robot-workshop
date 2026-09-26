@@ -10,7 +10,7 @@ import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { SECRETS, SECRET_ART, SECRET_GROUPS } from '../../data/secrets.js';
 import { ruleLines } from '../systems/secretText.js';
-import { panel, text, hit } from '../ui/widgets.js';
+import { panel, text, hit, emptyState, stateHeight } from '../ui/widgets.js';
 import { wrapLines } from '../ui/competitionDraw.js';
 import { INVITATION, ENDING_ART } from '../../data/ending.js';
 import { scramble } from '../systems/invitationText.js';
@@ -24,6 +24,7 @@ const SZ = THEME.size;
 
 export function createRumourArchiveScreen({ renderer, layout, assets, campaign, router, debugEnabled = false }) {
   const W = renderer.width;
+  let emptyHit = null; // the empty state's button (Milestone 21)
   const scroll = new ScrollPanel({ getRect: bodyRect, contentHeight: 0 });
   let back = 'inbox';
 
@@ -80,6 +81,7 @@ export function createRumourArchiveScreen({ renderer, layout, assets, campaign, 
     },
     onTap(p) {
       if (hit(p, backRect())) return router.go(back);
+      if (emptyHit && scroll.contains(p) && hit(scroll.toContent(p), emptyHit.r)) return emptyHit.go();
       if (debugEnabled && hit(p, whyRect())) return router.go('secretdebug');
     },
     onDragStart: (p) => scroll.beginDrag(p),
@@ -97,11 +99,20 @@ export function createRumourArchiveScreen({ renderer, layout, assets, campaign, 
       scroll.begin(ctx);
       const groups = rows();
       let y = 8;
-      for (const l of wrapLines(groups.length ? 'Secrets you have heard about. Discovered ones show exactly what they took — for good.' : 'No rumours yet. Keep building — people talk.', w - 8, SZ.small)) {
-        text(ctx, l, 4, y, { size: SZ.small, color: COL.textMuted, maxWidth: w });
-        y += 36;
+      emptyHit = null;
+      if (groups.length) {
+        for (const l of wrapLines('Secrets you have heard about. Discovered ones show exactly what they took — for good.', w - 8, SZ.small)) {
+          text(ctx, l, 4, y, { size: SZ.small, color: COL.textMuted, maxWidth: w });
+          y += 36;
+        }
+        y += 12;
+      } else if (!campaign.invitationReceived) {
+        // Empty (Milestone 21): a friendly line and the way back to where rumours come from.
+        const s = { art: SECRET_ART.marker, text: 'No rumours yet. Keep building, racing and researching — people talk.', button: { label: 'Back to the workshop' } };
+        const h = stateHeight(w, s);
+        emptyHit = { r: emptyState(ctx, assets, { x: 0, y, w, h }, s), go: () => router.go('workshop') };
+        y += h + 20;
       }
-      y += 12;
       if (campaign.invitationReceived) y = drawInvitation(ctx, y, w) + 24;
       if (S().account.flags[FINAL_BADGE.flag]) y = drawFinalBadge(ctx, y, w) + 24;
       for (const g of groups) {

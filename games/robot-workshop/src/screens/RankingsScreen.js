@@ -7,7 +7,7 @@ import { COMPETITIONS, COMPETITION_ART } from '../../data/competitions.js';
 import { RANKING_POINTS } from '../../data/competitions.js';
 import { RANKS } from '../../data/economy.js';
 import { robotArtOf } from '../systems/robotVisual.js';
-import { panel, text, hit, fmt } from '../ui/widgets.js';
+import { panel, text, hit, fmt, emptyState, stateHeight } from '../ui/widgets.js';
 import { drawMarker, rivalOf, PLAYER_COLOR, wrapLines } from '../ui/competitionDraw.js';
 const COL = THEME.color;
 
@@ -18,6 +18,7 @@ const RIVAL_H = 190;
 
 export function createRankingsScreen({ renderer, layout, assets, campaign, router }) {
   const W = renderer.width;
+  let emptyHit = null; // the empty state's button (Milestone 21)
   const scroll = new ScrollPanel({ getRect: bodyRect, contentHeight: 0 });
   const shown = (id) => campaign.rivalShown(id);
 
@@ -49,6 +50,7 @@ export function createRankingsScreen({ renderer, layout, assets, campaign, route
     onTap(p) {
       if (hit(p, backRect())) return router.go('competitions');
       if (hit(p, trophiesRect())) return router.go('trophies');
+      if (emptyHit && scroll.contains(p) && hit(scroll.toContent(p), emptyHit.r)) return emptyHit.go();
     },
     onDragStart: (p) => scroll.beginDrag(p),
     onDrag: (p) => scroll.drag(p),
@@ -157,10 +159,17 @@ export function createRankingsScreen({ renderer, layout, assets, campaign, route
     const w = cw();
     const recs = COMPETITIONS.filter((e) => campaign.competitions.records[e.id]?.best);
     const RH = 92;
-    const h = 90 + Math.max(1, recs.length) * RH;
+    emptyHit = null;
+    if (!recs.length) {
+      text(ctx, 'Best robot at each event', 4, y, { size: S.heading, bold: true, maxWidth: w });
+      const s = { art: 'ui_icon_08_competition', text: 'No finishes yet — enter an event to put a robot on this table.', button: { label: 'Competitions' } };
+      const eh = stateHeight(w, s);
+      emptyHit = { r: emptyState(ctx, assets, { x: 0, y: y + 70, w, h: eh }, s), go: () => router.go('competitions') };
+      return y + 70 + eh;
+    }
+    const h = 90 + recs.length * RH;
     panel(ctx, { x: 0, y, w, h });
     text(ctx, 'Best robot at each event', 24, y + 18, { size: S.heading, bold: true, maxWidth: w - 48 });
-    if (!recs.length) text(ctx, 'No finishes yet.', 24, y + 90, { size: S.body, color: COL.textMuted });
     recs.forEach((e, i) => {
       const b = campaign.competitions.records[e.id].best;
       const ry = y + 84 + i * RH;

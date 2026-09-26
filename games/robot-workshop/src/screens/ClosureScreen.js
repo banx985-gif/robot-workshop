@@ -18,11 +18,14 @@ export function createClosureScreen({ renderer, layout, assets, campaign, router
     enter() {
       campaign.clock.pause();
     },
+    // A new game goes through Company Setup like any other (Milestone 21); back goes to the main menu.
     onTap(p) {
       if (!hit(p, newGameRect())) return;
-      campaign.newGame();
-      campaign.save().catch(() => {});
-      router.go('workshop');
+      router.go('company');
+    },
+    onBack() {
+      router.go('menu');
+      return true;
     },
     render(ctx) {
       ctx.fillStyle = COL.bg;

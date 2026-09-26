@@ -2,7 +2,7 @@
 // Energy/Morale, the five work stats against their tier cap, every trait in plain English (signature traits
 // marked), and their career record (Milestone 11). Opened by tapping a roster card; ‹ › flip through the team.
 // Buttons: Workshop (back to the room with them selected) and Train.
-import { THEME, font } from '../../../../core/Theme.js';
+import { THEME, font, lineH } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton, hitRect } from '../../../../core/ui/Button.js';
 import { ROLES, TIERS, STAFF_BY_ID, CAREER_COUNTERS } from '../../data/staff.js';
@@ -184,8 +184,9 @@ export function createStaffDetailScreen({ renderer, layout, assets, bus, campaig
           ctx.font = font(30, true);
           return ctx.measureText(b.t.name).width + 36;
         })();
-        panel(ctx, { x: 24, y: ty, w: chipW, h: 46 }, { fill: sig ? COL.panelGold : COL.panelInfo, stroke: sig ? GOLD : null, lineWidth: 2, radius: 23 });
-        text(ctx, b.t.name, 42, ty + 7, { size: 30, bold: true, color: sig ? GOLD : COL.panelInfo });
+        const chipH = Math.max(46, lineH(30, 1.45));
+        panel(ctx, { x: 24, y: ty, w: chipW, h: chipH }, { fill: sig ? COL.panelGold : COL.panelInfo, stroke: sig ? GOLD : COL.progress, lineWidth: 2, radius: chipH / 2 });
+        text(ctx, b.t.name, 42, ty + chipH / 2, { size: 30, bold: true, baseline: 'middle', color: sig ? GOLD : COL.progress }); // the name was drawn in the pill's own colour (M21 fix)
         if (sig) text(ctx, '★ Signature', 24 + chipW + 16, ty + 10, { size: 26, bold: true, color: GOLD });
         ty += 56;
         for (const line of b.lines) {

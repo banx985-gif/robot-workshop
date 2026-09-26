@@ -16,7 +16,7 @@ import { COMPETITIONS } from '../../data/competitions.js';
 import { CALENDAR } from '../../data/balance.js';
 import { completionFor } from '../systems/completion.js';
 import { GRADE_BANDS } from '../../data/ending.js';
-import { panel, text, bar, wrapText, fmt } from '../ui/widgets.js';
+import { panel, text, bar, wrapText, fmt, emptyState, stateHeight } from '../ui/widgets.js';
 const C = THEME.color;
 const Z = THEME.size;
 
@@ -272,10 +272,10 @@ export function createRecordsScreen({ renderer, layout, assets, campaign, router
       const r = { x: 0, y, w, h: 220 };
       panel(ctx, r, { fill: C.panelGold, stroke: C.gold, lineWidth: 5, radius: 28 });
       assets.drawContained(ctx, ACHIEVEMENT_ART.icon, { x: 18, y: y + 40, w: 140, h: 140 });
-      text(ctx, 'Company Completion', 180, y + 24, { size: Z.heading, bold: true, maxWidth: w - 200 });
+      text(ctx, 'Company Completion', 180, y + 24, { size: Z.heading, bold: true, maxWidth: w - 360 });
       text(ctx, `${v.company.pct}%`, w - 24, y + 24, { size: Z.title, bold: true, align: 'right', color: C.gold });
       bar(ctx, 180, y + 100, w - 204, 30, v.company.found / (v.company.total || 1), C.good);
-      text(ctx, `${fmt(v.company.found)} of ${fmt(v.company.total)} things in the catalogue`, 180, y + 150, { size: Z.body, maxWidth: w - 204 });
+      text(ctx, `Visible content: ${fmt(v.company.found)} of ${fmt(v.company.total)}`, 180, y + 150, { size: Z.body, maxWidth: w - 204 });
       y += r.h + GAP;
     }
     if (v.discovery) {
@@ -283,9 +283,18 @@ export function createRecordsScreen({ renderer, layout, assets, campaign, router
       panel(ctx, r, { fill: C.panelInfo, stroke: C.purple, lineWidth: 5, radius: 28 });
       assets.drawContained(ctx, 'ui_icon_10_secret', { x: 18, y: y + 40, w: 140, h: 140 });
       text(ctx, 'Discovery', 180, y + 24, { size: Z.heading, bold: true, color: C.purple });
-      text(ctx, v.discovery.text, w - 24, y + 24, { size: Z.title, bold: true, align: 'right', color: C.purple, maxWidth: w - 460 });
-      wrapText(ctx, v.discovery.total ? 'Every secret is on the map now.' : 'Secrets found. The total grows as you hear of new kinds of secret.', 180, y + 110, w - 204, { size: Z.body, lineH: 42, maxLines: 2 });
+      // Discovered secrets, kept apart from the visible total (§27.3): a % only once the full total is known.
+      const dpct = v.discovery.total ? `${Math.floor((v.discovery.found / v.discovery.total) * 100)}%` : null;
+      text(ctx, dpct ?? v.discovery.text, w - 24, y + 24, { size: Z.title, bold: true, align: 'right', color: C.purple, maxWidth: w - 460 });
+      wrapText(ctx, v.discovery.total ? `Every secret is on the map now: ${v.discovery.text} found.` : 'Secrets found. The total grows as you hear of new kinds of secret.', 180, y + 110, w - 204, { size: Z.body, lineH: 42, maxLines: 2 });
       y += r.h + GAP;
+    }
+    if (!v.company) {
+      // Before the first Year 16 ending only the catalogue counts show (§27.3).
+      const s = { art: ACHIEVEMENT_ART.icon, title: 'Completion', text: 'Company Completion (the visible content) and Discovery (secrets found) appear after your first Year 16 ending.' };
+      const h = stateHeight(w, s);
+      emptyState(ctx, assets, { x: 0, y, w, h }, s);
+      y += h + GAP;
     }
     text(ctx, 'Catalogue', 4, y + 10, { size: Z.heading, bold: true, color: C.actionDark });
     y += 74;

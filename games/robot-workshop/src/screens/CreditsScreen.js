@@ -55,6 +55,10 @@ export function createCreditsScreen({ renderer, layout, assets, campaign, router
       roll?.update(dt, { fast: holding, viewHeight: rollRect().h });
       if (roll?.done) leave();
     },
+    onBack() {
+      leave();
+      return true;
+    },
     onDown: () => (holding = true),
     onUp: () => (holding = false),
     onTap(p) {

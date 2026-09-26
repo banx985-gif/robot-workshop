@@ -1,6 +1,6 @@
 {
-  "name": "Robot Workshop",
-  "short_name": "Robot Workshop",
+  "name": "BOTWORKS",
+  "short_name": "BOTWORKS",
   "description": "Build robots, run your workshop, win the championship.",
   "start_url": "./index.html",
   "scope": "./",

@@ -61,6 +61,20 @@ import { createCeremonyScreen } from './screens/CeremonyScreen.js';
 import { createCreditsScreen } from './screens/CreditsScreen.js';
 import { createNgPlusSetupScreen } from './screens/NgPlusSetupScreen.js';
 import { NG_PLUS_ART } from '../data/ngplus.js';
+// Milestone 21: the front end (splash, main menu, company setup, settings, project list), back button, dialogs.
+import { SystemBack } from '../../../core/SystemBack.js';
+import { Dialog } from '../../../core/ui/Modal.js';
+import { TextPrompt } from '../../../core/ui/TextPrompt.js';
+import { Settings } from '../../../core/Settings.js';
+import { Haptics } from '../../../core/Haptics.js';
+import { setTextScale } from '../../../core/Theme.js';
+import { createSplashScreen } from './screens/SplashScreen.js';
+import { createMainMenuScreen } from './screens/MainMenuScreen.js';
+import { createCompanySetupScreen } from './screens/CompanySetupScreen.js';
+import { createSettingsScreen } from './screens/SettingsScreen.js';
+import { createProjectListScreen } from './screens/ProjectListScreen.js';
+import { MENU_ART, PAUSE_MENU, COMING_SOON, SETTINGS_DEFAULTS, TEXT_SCALES, SETTINGS_TEXT } from '../data/menu.js';
+import { CAMPAIGN_SEED } from '../data/balance.js';
 import { ENDING_ART, INVITATION } from '../data/ending.js';
 import { ACHIEVEMENT_ART, rewardLabel } from '../data/achievements.js';
 import { wireMessages, effectsText, fillText } from './app/Messages.js';
@@ -168,28 +182,50 @@ const ASSETS = {
   ...Object.fromEntries([art('events', ENDING_ART.worldMoment), art('events', ENDING_ART.nationalMoment), art('vfx', ENDING_ART.burst), art('vfx', ENDING_ART.stars)]),
   // New Game+ (Milestone 20): key art, the NG+ burst and icon (the Prestige Token, portraits and blueprint glow are above).
   ...Object.fromEntries([art('brand', NG_PLUS_ART.keyArt), art('vfx', NG_PLUS_ART.burst), art('ui', NG_PLUS_ART.icon)]),
+  // The front end (Milestone 21): every menu / settings / store icon and the splash art.
+  ...Object.fromEntries(['ui_icon_07_workshop', 'ui_icon_15', 'ui_icon_16', 'ui_icon_17', 'ui_icon_18', 'ui_icon_21', 'ui_icon_22', 'ui_icon_25', 'ui_icon_26', 'ui_icon_27', 'ui_icon_30'].map((k) => art('ui', k))),
+  ...Object.fromEntries([MENU_ART.keyArt, MENU_ART.logo, MENU_ART.seriesMark, MENU_ART.ngPlus].map((k) => art('brand', k))),
   // Deliberately missing file: proves the placeholder fallback.
   placeholderTest: 'assets/m0-missing-test.png',
 };
 // ?screen=test: the Milestone 0 test screen. ?debug=1&screen=debugbuilder: open straight into the debug builder.
 const SCREEN_PARAM = new URLSearchParams(window.location.search).get('screen');
 const DEBUG_PARAM = new URLSearchParams(window.location.search).get('debug') === '1';
-const START_SCREEN = SCREEN_PARAM === 'test' ? 'test' : SCREEN_PARAM === 'debugbuilder' && DEBUG_PARAM ? 'debugbuilder' : 'workshop';
+const START_SCREEN = SCREEN_PARAM === 'test' ? 'test' : SCREEN_PARAM === 'debugbuilder' && DEBUG_PARAM ? 'debugbuilder' : 'menu';
+// ?debug=1&safe=phone / safe=tablet: pretend the screen has a notch and a home bar (the safe-area check, Milestone 21).
+const SAFE_PARAM = DEBUG_PARAM ? new URLSearchParams(window.location.search).get('safe') : null;
+const FORCE_INSETS = { phone: { top: 47, bottom: 34, left: 0, right: 0 }, tablet: { top: 24, bottom: 20, left: 0, right: 0 } }[SAFE_PARAM] ?? null;
 
 const bus = new EventBus();
 const rng = new Rng('robot-workshop-m0');
 const renderer = new Renderer(document.getElementById('game'), { width: W, height: BASE_H, maxHeight: MAX_H, maxDpr: 2, bus });
 let H = renderer.height; // live logical height
-const layout = new UiLayout(renderer);
+const layout = new UiLayout(renderer, { forceInsets: FORCE_INSETS });
 bus.on('renderer:resize', () => layout.refresh());
 const input = new Input(renderer, bus);
 const assets = new AssetManager({ bus });
-const router = new ScreenRouter(bus);
+const router = new ScreenRouter(bus, { roots: ['workshop', 'menu'] }); // back from a root: pause menu / leave
 
+// Device settings (Milestone 21): text size, volumes, haptics, Reduced Flashes… (?flashes=reduced still works).
+const settings = new Settings({ key: 'robot-workshop:settings', defaults: { ...SETTINGS_DEFAULTS, reducedFlashes: readFlashSetting() } });
+const flashParam = new URLSearchParams(window.location.search).get('flashes');
+if (flashParam) settings.set('reducedFlashes', flashParam === 'reduced');
+const haptics = new Haptics({ enabled: () => !!settings.get('haptics') });
 // Game feel (Milestone 5): effects, sound hooks, and the "big moment" pause.
-// Reduced Flashes: add ?flashes=reduced to the address (remembered on this device) until the settings screen exists.
-const vfx = new VfxSystem({ assets, width: W, height: H, reducedFlashes: readFlashSetting() });
+const vfx = new VfxSystem({ assets, width: W, height: H, reducedFlashes: !!settings.get('reducedFlashes') });
 const audio = new AudioManager({ bus, sounds: SOUNDS });
+function applySettings() {
+  setTextScale(TEXT_SCALES[settings.get('textSize')] ?? 1);
+  vfx.reducedFlashes = !!settings.get('reducedFlashes');
+  audio.volume = (settings.get('soundVolume') ?? 100) / 100;
+  audio.setMuted(!settings.get('soundVolume'));
+}
+applySettings();
+settings.onChange((id) => {
+  applySettings();
+  if (id === 'reducedFlashes') try { localStorage.setItem('robot-workshop:reducedFlashes', settings.get(id) ? '1' : '0'); } catch { /* blocked */ }
+  if (id === 'haptics' && settings.get(id)) haptics.light();
+});
 const major = new MajorFeedback({ layout, width: W, height: H, pause: () => campaign.clock.pause() });
 // Text events and reopened inbox messages (Milestone 15). Together with the big moments they form the router's
 // modal: while either shows, it takes every tap. Only one of them is ever up (see presentNext below).
@@ -205,11 +241,21 @@ const eventPopup = createEventPopup({
   },
   resume: () => campaign.clock.resume(),
 });
+// Dialogs (Milestone 21 core/ui/Modal.js): confirm boxes, the pause menu, "Coming soon". Always on top.
+const dialog = new Dialog({ layout, assets });
+const textPrompt = new TextPrompt({ renderer });
 const modal = {
   get active() {
-    return major.active || eventPopup.active;
+    return dialog.active || major.active || eventPopup.active;
   },
-  onTap: (p) => (major.active ? major.onTap(p) : eventPopup.onTap(p)),
+  onTap: (p) => (dialog.active ? dialog.onTap(p) : major.active ? major.onTap(p) : eventPopup.onTap(p)),
+  // The back button (§6.2): a dialog closes if it may; a big moment is acknowledged like a tap; a text event with
+  // choices waits for an answer (it is in the Inbox too), a plain message closes.
+  onBack: () => {
+    if (dialog.active) return dialog.onBack();
+    if (major.active) return major.onTap({ x: W / 2, y: H / 2 });
+    if (eventPopup.active) eventPopup.onBack?.();
+  },
 };
 router.modal = modal;
 
@@ -242,6 +288,7 @@ const loop = new FixedStepLoop({
     floats.update(dt, { hold: modal.active || !campaignReady || router.currentName !== 'workshop' });
     major.update(dt);
     eventPopup.update(dt);
+    dialog.update(dt);
     if (router.currentName === 'workshop') sheet.update(dt);
     coach.update(dt);
     if (campaignReady) {
@@ -264,6 +311,7 @@ const loop = new FixedStepLoop({
     }
     major.render(ctx);
     eventPopup.render(ctx);
+    dialog.render(ctx);
     vfx.render(ctx, 'screen');
     debug.render(ctx);
   },
@@ -271,7 +319,7 @@ const loop = new FixedStepLoop({
 const debug = new DebugOverlay({ loop, renderer, layout, input, bus, top: H - 690, maxLines: 3 }); // under the room, clear of the top bar and project strip
 bus.on('loop:pause', () => input.reset());
 // The full debug box sits under the workshop room; on list screens it shrinks to one FPS line so it hides nothing.
-bus.on('screen:change', ({ to }) => (debug.compact = !['workshop', 'test', 'boot'].includes(to)));
+bus.on('screen:change', ({ to }) => (debug.compact = !['workshop', 'test'].includes(to)));
 
 // Campaign: calendar + staff + save slot.
 const campaign = new Campaign({ bus, debugAllowed: debug.enabled }); // the NG+ level setter only works with ?debug=1
@@ -279,46 +327,91 @@ let campaignReady = false;
 // Messages (Milestone 15): what happens in play becomes inbox entries, toasts and queued pop-ups. Wired before the
 // handlers below, so a moment's entry exists by the time they run.
 wireMessages({ bus, campaign, ready: () => campaignReady });
-async function startCampaign() {
-  const adapter = await createStorageAdapter({ dbName: 'robot-workshop', prefix: 'robot-workshop:' });
-  campaign.saveManager = new SaveManager({ adapter, key: 'campaign', version: SAVE_VERSION, migrations: SAVE_MIGRATIONS, bus });
-  campaign.accountManager = new SaveManager({ adapter, key: 'account', version: 1, bus }); // combo archive across runs
-  const loaded = await campaign.loadOrNew();
-  if (!loaded) await campaign.save().catch(() => {});
-  debug.log(`campaign ${loaded ? 'loaded' : 'new'} (${adapter.kind})`);
-  campaignReady = true;
+let loadError = null; // the save exists but could not be read (the main menu shows it)
+async function checkSave() {
+  if (!campaign.saveManager) {
+    const adapter = await createStorageAdapter({ dbName: 'robot-workshop', prefix: 'robot-workshop:' }); // the save key never changes
+    campaign.saveManager = new SaveManager({ adapter, key: 'campaign', version: SAVE_VERSION, migrations: SAVE_MIGRATIONS, bus });
+    campaign.accountManager = new SaveManager({ adapter, key: 'account', version: 1, bus }); // combo archive across runs
+    debug.log(`storage: ${adapter.kind}`);
+  }
+  const res = await campaign.loadSaved();
+  loadError = res.error;
+  campaignReady = res.loaded;
+  debug.log(res.loaded ? 'save loaded' : res.error ? `save unreadable: ${res.error.message}` : 'no save yet');
   // Milestone 18: a run from before achievements catches up on everything it has already done.
-  campaign.achievements.checkAll();
+  if (res.loaded) campaign.achievements.checkAll();
+  return res;
+}
+
+// --- the front-end flow (Milestone 21): Continue, New Game → Company Setup → workshop, Reset save ---
+function continueGame() {
+  if (!campaign.hasRun) return;
+  const resume = menuScreen.resumeOnContinue;
+  router.go(campaign.closed ? 'closed' : campaign.ending.pending ? 'ceremony' : 'workshop'); // an unfinished ending ceremony picks up again
+  if (resume && router.currentName === 'workshop') campaign.clock.resume();
+}
+function startNewGame(company) {
+  campaign.newGame(CAMPAIGN_SEED, { company });
+  campaignReady = true;
+  loadError = null;
+  campaign.save().catch(() => {});
+  debug.log(`new game: ${campaign.company.name}`);
+  router.go('workshop');
+}
+async function retryLoad() {
+  await checkSave();
+}
+async function resetSave() {
+  await campaign.resetSave();
+  campaignReady = false;
+  loadError = null;
+  sheet.close();
+  router.go('menu');
+  dialog.show({ title: SETTINGS_TEXT.resetDone, art: MENU_ART.warning, buttons: [{ id: 'ok', label: 'OK', accent: COL.progress }] });
+}
+// §6.2: back on the workshop opens a small pause menu instead of leaving.
+function openPauseMenu(saved = false) {
+  const wasRunning = !campaign.clock.paused;
+  campaign.clock.pause();
+  const resume = () => wasRunning && campaign.clock.resume();
+  dialog.show({
+    title: PAUSE_MENU.title,
+    body: `${campaign.company.name} · ${campaign.clock.label?.() ?? ''}`,
+    art: MENU_ART.logo,
+    onCancel: resume,
+    buttons: [
+      { id: 'resume', label: PAUSE_MENU.resume, onTap: resume },
+      { id: 'settings', label: PAUSE_MENU.settings, accent: COL.progress, onTap: () => router.go('settings', { back: 'workshop' }) },
+      { id: 'save', label: saved ? PAUSE_MENU.saved : PAUSE_MENU.save, accent: COL.progress, onTap: () => campaign.save().then(() => openPauseMenu(true)).catch(() => openPauseMenu(false)) },
+      { id: 'mainMenu', label: PAUSE_MENU.mainMenu, accent: COL.progress, onTap: () => campaign.save().catch(() => {}).then(() => router.go('menu')) },
+    ],
+  });
+}
+function comingSoon(kind) {
+  const c = COMING_SOON[kind];
+  dialog.show({ title: c.title, body: c.body, art: c.art, buttons: [{ id: 'ok', label: 'OK', accent: COL.progress }] });
 }
 
 // ---------------------------------------------------------------------------
-// Boot screen: shows while assets load, then hands over to the first real screen.
-const bootScreen = {
-  progress: 0,
-  enter() {
-    this.progress = 0;
-    // Art first: the workshop sizes each worker from their picture when the campaign arrives.
-    assets
-      .loadImages(ASSETS, (done, total) => (this.progress = done / total))
-      .then(startCampaign)
-      .then(() => router.go(START_SCREEN === 'test' ? 'test' : campaign.closed ? 'closed' : campaign.ending.pending ? 'ceremony' : START_SCREEN)) // an unfinished ending ceremony picks up again
-      .catch((err) => {
-        console.error('[boot] failed', err);
-        debug.log(`boot failed: ${err.message}`);
-      });
+// Splash (Milestone 21): the BOTWORKS logo over the key art while the art loads (the splash's own pictures first),
+// then the save check; then the main menu. Art first: the workshop sizes each worker from their picture.
+const splashScreen = createSplashScreen({
+  renderer,
+  layout,
+  assets,
+  load: async (progress) => {
+    await assets.loadImages({ [MENU_ART.keyArt]: ASSETS[MENU_ART.keyArt], [MENU_ART.logo]: ASSETS[MENU_ART.logo] });
+    const res = await assets.loadImages(ASSETS, (done, total) => progress(done / total));
+    return { missing: (res?.missing ?? []).filter((k) => k !== 'placeholderTest') };
   },
-  render(ctx) {
-    ctx.fillStyle = COL.text;
-    ctx.font = font(64, true);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('Robot Workshop', W / 2, H / 2 - 60);
-    ctx.fillStyle = COL.line;
-    ctx.fillRect(W / 2 - 300, H / 2 + 20, 600, 24);
-    ctx.fillStyle = COL.progress;
-    ctx.fillRect(W / 2 - 300, H / 2 + 20, 600 * this.progress, 24);
+  checkSave,
+  onDone: () => {
+    if (START_SCREEN === 'test') return router.go('test', {}, { replace: true });
+    if (START_SCREEN === 'debugbuilder' && campaign.hasRun) return router.go('debugbuilder', {}, { replace: true });
+    router.go('menu', {}, { replace: true });
   },
-};
+});
 
 // ---------------------------------------------------------------------------
 // Test screen: grid, corner markers, a circle (must stay round), safe-area frame,
@@ -560,7 +653,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key !== 'p' && e.key !== 'P' && e.key !== ' ') return;
   if (modal.active) return;
   if (router.currentName === 'test') loop.togglePause();
-  else if (campaignReady && !campaign.closed && !['ceremony', 'credits', 'ngplus'].includes(router.currentName)) campaign.clock.togglePause();
+  else if (campaignReady && !campaign.closed && !['ceremony', 'credits', 'ngplus', 'splash', 'menu', 'company', 'settings'].includes(router.currentName) && !dialog.active && !textPrompt.active) campaign.clock.togglePause();
 });
 
 // Test hook for automated checks (debug builds only).
@@ -598,7 +691,8 @@ const floats = new FloatFeed({
 });
 hud.floats = floats;
 const workshopScreen = createWorkshopScreen({ renderer, layout, assets, bus, debug, campaign, router, goProject, hud, sheet, menus: menuHolder });
-menuHolder.reg = createStationMenus({ campaign, router, workshop: workshopScreen, sheet });
+menuHolder.reg = createStationMenus({ campaign, router, workshop: workshopScreen, sheet, comingSoon });
+workshopScreen.onBack = () => (openPauseMenu(), true); // §6.2: the workshop's back opens the pause menu
 // Every screen change closes the sheet and tells the guide which screen opened ('screen:builder', …).
 bus.on('screen:change', ({ to }) => {
   if (to !== 'workshop') sheet.close();
@@ -606,7 +700,7 @@ bus.on('screen:change', ({ to }) => {
 });
 bus.on('renderer:resize', () => workshopScreen.resize());
 const rosterScreen = createStaffRosterScreen({ renderer, layout, assets, bus, debug, campaign, router, workshop: workshopScreen, goProject, hud });
-const builderScreen = createRobotBuilderScreen({ renderer, layout, assets, campaign, router, debugEnabled: debug.enabled });
+const builderScreen = createRobotBuilderScreen({ renderer, layout, assets, campaign, router, debugEnabled: debug.enabled, dialog });
 const projectScreen = createProjectDetailScreen({ renderer, layout, assets, campaign, router, hud });
 const resultScreen = createProjectResultScreen({ renderer, layout, assets, campaign, router });
 const productsScreen = createProductCatalogueScreen({ renderer, layout, assets, campaign, router, goProject, hud });
@@ -625,7 +719,7 @@ const guide = new GuideSystem({
   targetRect: guideTarget,
   screen: () => router.currentName,
   // A pop-up waiting on the workshop goes first; the guide steps back until it has been read.
-  canShow: () => campaignReady && !modal.active && !(campaign.notes.pending && presentPlace()) && !campaign.closed && !buildScreen?.confirm && !['boot', 'test', 'debugbuilder', 'help', 'components', 'staffdebug', 'secretdebug', 'ceremony', 'credits', 'ngplus'].includes(router.currentName),
+  canShow: () => campaignReady && !modal.active && !(campaign.notes.pending && presentPlace()) && !campaign.closed && !buildScreen?.confirm && !['splash', 'menu', 'company', 'settings', 'test', 'debugbuilder', 'help', 'components', 'staffdebug', 'secretdebug', 'ceremony', 'credits', 'ngplus'].includes(router.currentName) && !dialog.active,
   pause: () => {
     if (campaign.clock.paused) return false;
     campaign.clock.pause();
@@ -639,7 +733,7 @@ router.layers.push({ get active() { return guide.active; }, handleInput: (hook, 
 const achMoment = createAchievementMoment({ assets, layout, bottomBar: workshopScreen.bottomBar, vfx, onOpen: () => router.go('records', { back: 'workshop' }) });
 router.layers.push({ get active() { return achMoment.active && presentPlace(); }, handleInput: (hook, p) => achMoment.handleInput(hook, p) });
 // The open menu sheet takes its taps and drags before the workshop does (the guide still comes first).
-router.layers.push({ get active() { return sheet.active && router.currentName === 'workshop'; }, handleInput: (hook, p) => sheet.handleInput(hook, p) });
+router.layers.push({ get active() { return sheet.active && router.currentName === 'workshop'; }, handleInput: (hook, p) => sheet.handleInput(hook, p), onBack: () => sheet.onBack() });
 bus.on('guide:change', () => (campaign.guideState = guide.serialize()));
 bus.on('guide:done', ({ step }) => {
   if (step.id === 'S2') sheet.close(); // "Got it" also closes Mina's card
@@ -707,6 +801,10 @@ function flushAchievements() {
 // reaching the ending, so it still opens no ceremony.
 const ceremonyScreen = createCeremonyScreen({ renderer, layout, assets, campaign, router, vfx, audio });
 const creditsScreen = createCreditsScreen({ renderer, layout, assets, campaign, router });
+const menuScreen = createMainMenuScreen({ renderer, layout, assets, campaign, router, dialog, actions: { continueGame, newGame: () => router.go('company'), retry: retryLoad }, loadError: () => loadError });
+const companyScreen = createCompanySetupScreen({ renderer, layout, assets, router, dialog, textPrompt, onStart: startNewGame });
+const settingsScreen = createSettingsScreen({ renderer, layout, assets, router, dialog, settings, onReset: resetSave });
+const projectsScreen = createProjectListScreen({ renderer, layout, assets, campaign, router });
 // New Game+ (Milestone 20): the setup screen; once the new run is built the workshop opens on a big NG+ moment.
 const ngPlusScreen = createNgPlusSetupScreen({
   renderer,
@@ -714,6 +812,7 @@ const ngPlusScreen = createNgPlusSetupScreen({
   assets,
   campaign,
   router,
+  dialog,
   onStarted: ({ carry }) => {
     sheet.close();
     pendingAch.length = 0; // anything the old run just unlocked is already in the account
@@ -755,7 +854,7 @@ bus.on('event:fired', ({ instance, def }) => debug.log(`event ${def.id} (${def.k
 bus.on('sponsor:signed', ({ def }) => debug.log(`sponsor signed: ${def.name}`));
 bus.on('sponsor:ended', ({ def, record }) => debug.log(`sponsor ended: ${def.name} (${record.result})`));
 bus.on('notify:fold', ({ entry }) => debug.log(`folded into inbox: ${entry.title}`));
-const compSetupScreen = createCompetitionSetupScreen({ renderer, layout, assets, bus, campaign, router });
+const compSetupScreen = createCompetitionSetupScreen({ renderer, layout, assets, bus, campaign, router, dialog });
 const compWatchScreen = createCompetitionWatchScreen({ renderer, layout, assets, campaign, router, vfx, held: () => guide.active || major.active });
 const compResultScreen = createCompetitionResultScreen({ renderer, layout, assets, campaign, router, vfx });
 // An event invites the company. The first one (the Local Trial, §26: Kai West on the Roster) and the World
@@ -1067,6 +1166,7 @@ if (debug.enabled) {
   window.__m18 = { ...window.__m17b, records: recordsScreen, achievements: campaign.achievements, accountRecords: campaign.records, floats, achMoment };
   window.__m19 = { ...window.__m18, ceremony: ceremonyScreen, credits: creditsScreen, ending: campaign.ending, archive: campaign.archive, rumours: rumourScreen };
   window.__m20 = { ...window.__m19, ngplus: ngPlusScreen, ngPlusSys: campaign.ngPlusSys };
+  window.__m21 = { ...window.__m20, splash: splashScreen, menu: menuScreen, company: companyScreen, settingsScreen, settings, projects: projectsScreen, dialog, systemBack: null, haptics, textPrompt, eventPopup, major, layout, bus };
   const firedCount = {}; // every unlock action, counted as it fires (must end at 1 each)
   window.__m9.firedCount = firedCount;
   bus.on('unlock:fired', ({ action }) => (firedCount[`${action.type}:${action.id}`] = (firedCount[`${action.type}:${action.id}`] ?? 0) + 1));
@@ -1074,7 +1174,11 @@ if (debug.enabled) {
 }
 
 router
-  .register('boot', bootScreen)
+  .register('splash', splashScreen)
+  .register('menu', menuScreen)
+  .register('company', companyScreen)
+  .register('settings', settingsScreen)
+  .register('projects', projectsScreen)
   .register('test', testScreen)
   .register('workshop', workshopScreen)
   .register('roster', rosterScreen)
@@ -1107,7 +1211,17 @@ router
   .register('ngplus', ngPlusScreen)
   .register('debugbuilder', debugBuilderScreen);
 if (debug.enabled) router.register('staffdebug', staffDebugScreen).register('secretdebug', secretDebugScreen); // ?debug=1 only // ?debug=1 only: spawn any of the 50
-router.go('boot');
+// The phone's / browser's back button and Escape (§6.2): the router closes the top thing, or goes back.
+const systemBack = new SystemBack({ onBack: () => (textPrompt.active ? (textPrompt.close(), true) : router.back()) });
+bus.on('screen:change', () => systemBack.rearm());
+if (window.__m21) window.__m21.systemBack = systemBack;
+// A full screen opening clears any floating number still rising (FIXES_QUEUE, M20 note).
+bus.on('screen:change', ({ to }) => to !== 'workshop' && floats.clear());
+// Haptics (§7): light on building, launching and a stage done; medium on unlocks and wins.
+for (const e of ['facility:placed', 'product:launch', 'project:phase', 'staff:hired', 'research:complete']) bus.on(e, () => campaignReady && haptics.light());
+for (const e of ['project:complete', 'secret:unlocked', 'trophy:awarded', 'reputation:rankUp', 'achievement:unlocked']) bus.on(e, () => campaignReady && haptics.medium());
+bus.on('competition:result', ({ result }) => result?.won && haptics.medium());
+router.go('splash');
 loop.start();
 
 // Reduced Flashes (bible §36 accessibility): ?flashes=reduced or ?flashes=normal sets it, and it is remembered.

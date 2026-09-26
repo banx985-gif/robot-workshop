@@ -83,6 +83,7 @@ import { contractHooks, checkRecord } from '../systems/ContractRules.js';
 import { NgPlusSystem } from '../../../../core/NgPlusSystem.js';
 import { NG_PLUS, NG_PLUS_SCALING } from '../../data/ngplus.js';
 import { ngPlusOptions, ngPlusSnapshot } from '../systems/ngPlusRun.js';
+import { COMPANY } from '../../data/menu.js';
 
 // Save migrations (bible §37.6): each step upgrades one version.
 export const SAVE_MIGRATIONS = {
@@ -134,7 +135,16 @@ export const SAVE_MIGRATIONS = {
   14: (record) => ({ ...record, data: { ...record.data, removeTestSecrets: true } }),
   // v15 (Milestones 17–19) had no New Game+: null = a first run with no NG+ picks.
   15: (record) => ({ ...record, data: { ...record.data, ngplus: null } }),
+  // v16 (Milestone 20) had no Company Setup: null = the default company name and colour.
+  16: (record) => ({ ...record, data: { ...record.data, company: null } }),
 };
+
+// A company identity (§6.3 Company Setup): names trimmed and capped, an accent from the six (default otherwise).
+export function companyOf(c) {
+  const D = COMPANY.defaults;
+  const clean = (v, d) => String(v ?? '').trim().slice(0, COMPANY.maxLength) || d;
+  return { name: clean(c?.name, D.name), manager: clean(c?.manager, D.manager), accent: COMPANY.accents.some((a) => a.id === c?.accent) ? c.accent : D.accent };
+}
 
 // Things research unlock actions name ("part:CH02", "facility:F07"…): for these, the research part of their
 // unlock rule is met only by that action having fired (see data/research.js).
@@ -157,6 +167,7 @@ export class Campaign {
     this.ngPlusSys = new NgPlusSystem({ rules: NG_PLUS });
     this.ngPlusRun = null; // { level, fromRunId, modifier, blueprints, legacy, startingCredits } — null on a first run
     this.ngPlusAccount = { highest: 0, starts: 0, purchases: {} };
+    this.company = companyOf(null); // Milestone 21: name, manager, accent colour (no stat effect)
     this.synergyArchive = new DiscoveryArchive({ bus });
     this.campaignId = null;
     this.seed = CAMPAIGN_SEED;
@@ -1946,8 +1957,10 @@ export class Campaign {
   }
 
   // carry: a New Game+ carry package (startNewGamePlus) — null for a first run.
-  newGame(seed = CAMPAIGN_SEED, { carry = null } = {}) {
+  // company: { name, manager, accent } from Company Setup (Milestone 21); NG+ keeps the old run's.
+  newGame(seed = CAMPAIGN_SEED, { carry = null, company = null } = {}) {
     this.seed = seed;
+    this.company = companyOf(carry?.always?.company ?? company);
     this.campaignId = `run-${Date.now().toString(36)}${(runCounter++).toString(36)}`;
     this.rng.setSeed(seed);
     this.marketRng.setSeed(`${seed}|market`);
@@ -2045,6 +2058,7 @@ export class Campaign {
       guide: this.guideState ?? null,
       flags: { ...this.flags },
       ngplus: this.ngPlusRun ? JSON.parse(JSON.stringify(this.ngPlusRun)) : null, // Milestone 20
+      company: { ...this.company }, // Milestone 21
     };
   }
 
@@ -2090,6 +2104,7 @@ export class Campaign {
     if (data.removeTestSecrets) this._removeTestSecrets();
     this.ending.load(data.ending); // null before Milestone 19 (the M18 debug switch set only the flag)
     this.ngPlusRun = data.ngplus ?? null; // null on a first run and before Milestone 20
+    this.company = companyOf(data.company); // null before Milestone 21: the default name
     this.applyNgPlus();
     this._payStoredPrestige();
     this._backfillAchievementFlags();
@@ -2117,7 +2132,51 @@ export class Campaign {
   }
 
   // Load the save if there is one, else start a new run. Returns true if a save was loaded.
-  async loadOrNew() {
+  // Boot (Milestone 21): read the account record and the run save, but never start a game on its own — the main
+  // menu decides. Returns { loaded, error }: loaded = a run is in memory now; error = the save exists but could not be
+  // read (the menu offers Try again / New Game).
+  async loadSaved() {
+    await this._loadAccount();
+    let data = null;
+    try {
+      data = await this.saveManager?.load();
+    } catch (err) {
+      console.error('[Campaign] could not load the save', err);
+      return { loaded: false, error: err };
+    }
+    if (!data) return { loaded: false, error: null };
+    try {
+      this.loadData(data);
+    } catch (err) {
+      console.error('[Campaign] the save could not be read', err);
+      this.campaignId = null;
+      return { loaded: false, error: err };
+    }
+    return { loaded: true, error: null };
+  }
+
+  // Is there a run in memory (loaded or started)?
+  get hasRun() {
+    return !!this.campaignId;
+  }
+
+  // Settings → Reset save (Milestone 21): the run save and the account record are deleted and nothing is in memory.
+  async resetSave() {
+    await this.saveManager?.clear();
+    await this.accountManager?.clear();
+    this.synergyArchive.account = { found: {} };
+    this.secrets.loadAccount(null);
+    this.achievements.load(null);
+    this.records.load(null);
+    this.archive.load(null);
+    this.ngPlusAccount = { highest: 0, starts: 0, purchases: {} };
+    this.campaignId = null;
+    this.ngPlusRun = null;
+    this.flags = {};
+    this.clock.pause();
+  }
+
+  async _loadAccount() {
     try {
       const account = await this.accountManager?.load();
       this.synergyArchive.loadAccount(account?.synergies);
@@ -2130,16 +2189,12 @@ export class Campaign {
     } catch (err) {
       console.error('[Campaign] could not load the account record', err);
     }
-    let data = null;
-    try {
-      data = await this.saveManager?.load();
-    } catch (err) {
-      console.error('[Campaign] could not load save, starting new game', err);
-    }
-    if (data) {
-      this.loadData(data);
-      return true;
-    }
+  }
+
+  // Load the save if there is one, else start a new run. Returns true if a save was loaded (tests and tools).
+  async loadOrNew() {
+    const res = await this.loadSaved();
+    if (res.loaded) return true;
     this.newGame();
     return false;
   }

@@ -1,5 +1,6 @@
 // Competition setup (bible §21.1–21.2, §26): pick the robot, the pilot, a tuning package and a strategy, see a plain
 // "your chances" hint (average dice, never the seeded result), then Enter. Balanced is recommended, not forced.
+import { DISCARD } from '../../data/menu.js';
 import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
@@ -18,7 +19,14 @@ const FOOTER_H = 330;
 const ROW_H = 140;
 const PILOT_TRAITS = new Set(['calmUnderPressure', 'tuner', 'riskTaker', 'perfectLine', 'beyondRedline']);
 
-export function createCompetitionSetupScreen({ renderer, layout, assets, bus, campaign, router }) {
+export function createCompetitionSetupScreen({ renderer, layout, assets, bus, campaign, router, dialog = null }) {
+  let initial = null; // the picks as the screen opened (§6.2: leaving with others asks first)
+  const dirty = () => initial != null && JSON.stringify(choice) !== initial;
+  function leave() {
+    const go = () => router.go('competitions');
+    if (!dirty() || !dialog) return go();
+    dialog.confirm({ title: DISCARD.title, body: DISCARD.body, art: 'ui_icon_29', yes: DISCARD.yes, no: DISCARD.no, danger: true, onYes: go });
+  }
   const W = renderer.width;
   let ev = null;
   let choice = null;
@@ -109,7 +117,8 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
       return;
     }
     campaign.save().catch(() => {});
-    router.go('compWatch', { resultId: res.result.id });
+    initial = null;
+    router.go('compWatch', { resultId: res.result.id }, { replace: true }); // the race has been run: back never returns here
   }
 
   const screen = {
@@ -131,10 +140,18 @@ export function createCompetitionSetupScreen({ renderer, layout, assets, bus, ca
       picker = null;
       message = null;
       scroll.scrollY = 0;
+      initial = JSON.stringify(choice);
       bus.emit('competition:setup', { eventId: ev.id });
     },
+    get dirty() {
+      return dirty();
+    },
+    onBack() {
+      leave();
+      return true;
+    },
     onTap(p) {
-      if (hit(p, backRect())) return router.go('competitions');
+      if (hit(p, backRect())) return leave();
       if (hit(p, enterRect())) return tryEnter();
       if (!scroll.contains(p)) return;
       const c = scroll.toContent(p);

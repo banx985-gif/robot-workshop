@@ -8,6 +8,7 @@
 import { THEME, font } from '../../../../core/Theme.js';
 import { drawButton, hitRect } from '../../../../core/ui/Button.js';
 import { contained, text } from './widgets.js';
+import { COMPANY } from '../../data/menu.js';
 const COL = THEME.color;
 const S = THEME.size;
 
@@ -163,6 +164,12 @@ export function createTopBar({ layout, campaign, hud, home = false, back = null 
       ctx.strokeStyle = COL.outline;
       ctx.lineWidth = 4;
       ctx.stroke();
+      // The company's accent colour (Company Setup, Milestone 21): a thin stripe along the top — looks only.
+      const accent = COMPANY.accents.find((x) => x.id === campaign.company?.accent)?.color;
+      if (accent) {
+        ctx.fillStyle = accent;
+        ctx.fillRect(r.x + 44, r.y + 4, r.w - 88, 7);
+      }
       const br = backRect();
       const dateX = br ? br.x + br.w + 20 : r.x + 28;
       const dateW = inboxRect().x - 16 - dateX;

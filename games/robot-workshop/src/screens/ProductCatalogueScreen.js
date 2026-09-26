@@ -9,7 +9,7 @@ import { robotArtOf } from '../systems/robotVisual.js';
 import { PRICE_POSITIONS } from '../../data/market.js';
 import { SEGMENTS, TREND_NEWS } from '../../data/segments.js';
 import { createTopBar } from '../ui/TopBar.js';
-import { panel, text, contained, bar, hit, fmt, wrapText } from '../ui/widgets.js';
+import { panel, text, contained, bar, hit, fmt, wrapText, emptyState, stateHeight } from '../ui/widgets.js';
 const COL = THEME.color;
 
 // Milestone 18: every line at the §33.2 sizes (body 34, small 28), so the cards and the market panel are taller.
@@ -57,8 +57,11 @@ export function createProductCatalogueScreen({ renderer, layout, assets, campaig
     const c = cardRect(i);
     return { x: c.x + c.w - 24 - 230, y: c.y + 24, w: 230, h: 110 };
   };
-  const EMPTY_H = 110; // room for the "Nothing launched yet" line, so the next heading never sits on it
-  const unlaunchedTop = () => headY() + HEAD_H + (products().length ? products().length * (CARD_H + GAP) : EMPTY_H) + 30;
+  // Nothing on sale (Milestone 21 empty state): a line and — if no finished robot is waiting below — a way to build one.
+  const emptySpec = () => ({ art: 'ui_icon_13', text: unlaunched().length ? 'Nothing on sale yet — launch one of your finished robots below.' : 'Nothing on sale yet — build a robot, then launch it here.', button: unlaunched().length ? null : { label: 'Projects' } });
+  const EMPTY_H = () => stateHeight(cw(), emptySpec()) + 10;
+  let emptyHit = null;
+  const unlaunchedTop = () => headY() + HEAD_H + (products().length ? products().length * (CARD_H + GAP) : EMPTY_H()) + 30;
   const rowRect = (i) => ({ x: 0, y: unlaunchedTop() + 60 + i * (ROW_H + 12), w: cw(), h: ROW_H });
   const rowButtonRect = (i) => {
     const r = rowRect(i);
@@ -81,6 +84,7 @@ export function createProductCatalogueScreen({ renderer, layout, assets, campaig
       if (topBar.handleTap(p)) return;
       if (!scroll.contains(p)) return;
       const c = scroll.toContent(p);
+      if (emptyHit && hit(c, emptyHit.r)) return emptyHit.go();
       const list = products();
       for (let i = 0; i < list.length; i++) {
         if (list[i].status !== 'active' || !hit(c, retireRect(i))) continue;
@@ -116,7 +120,12 @@ export function createProductCatalogueScreen({ renderer, layout, assets, campaig
       drawMarket(ctx, w, news);
       contained(ctx, assets, 'ui_icon_13', { x: 0, y: headY(), w: 56, h: 56 });
       text(ctx, `Products on sale (${campaign.products.active.length}/${campaign.products.slotCount} slots)`, 70, headY() + 28, { size: THEME.size.heading, bold: true, baseline: 'middle', maxWidth: w - 80 });
-      if (!list.length) wrapText(ctx, 'Nothing launched yet. Finish a robot, then press Launch on its result screen.', 4, headY() + HEAD_H + 6, w, { size: THEME.size.body, lineH: 44, color: COL.textMuted });
+      emptyHit = null;
+      if (!list.length) {
+        const s = emptySpec();
+        const b = emptyState(ctx, assets, { x: 0, y: headY() + HEAD_H, w, h: EMPTY_H() - 10 }, s);
+        if (b) emptyHit = { r: b, go: () => router.go('projects') };
+      }
 
       list.forEach((p, i) => drawProduct(ctx, p, i));
 

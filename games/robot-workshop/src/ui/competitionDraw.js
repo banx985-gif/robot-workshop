@@ -93,23 +93,8 @@ export function drawSpeech(ctx, assets, rival, line, r) {
   wrap(ctx, `“${line}”`, r.x + 146, r.y + 52, r.w - 166, 34, { size: 27 }, 3);
 }
 
-// Measure only: the lines a string wraps into at this size and width (for cards that grow with their text).
-let measureCtx = null;
-export function wrapLines(str, w, size = THEME.size.body, bold = false) {
-  measureCtx ??= document.createElement('canvas').getContext('2d');
-  measureCtx.font = font(size, bold);
-  const lines = [];
-  let cur = '';
-  for (const wd of String(str ?? '').split(' ')) {
-    const t = cur ? `${cur} ${wd}` : wd;
-    if (measureCtx.measureText(t).width > w && cur) {
-      lines.push(cur);
-      cur = wd;
-    } else cur = t;
-  }
-  if (cur) lines.push(cur);
-  return lines;
-}
+// Measure only: the lines a string wraps into at this size and width — the shared kit's (core/ui/Kit.js).
+export { wrapLines } from '../../../../core/ui/Kit.js';
 
 // Word-wrapped text; returns the height used.
 export function wrap(ctx, str, x, y, w, lineH, opts = {}, maxLines = 4) {

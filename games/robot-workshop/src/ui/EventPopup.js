@@ -79,6 +79,12 @@ export function createEventPopup({ layout, assets, width, height, pause = () => 
       if (done.paused) resume();
       done.opts.onChoose?.(done.opts.choices?.length ? i : null);
     },
+    // The back button (Milestone 21): a plain message closes like OK; a question waits for its answer.
+    onBack() {
+      if (!cur || cur.opts.choices?.length) return false;
+      popup.choose(0);
+      return true;
+    },
     // Press a button from code (tests): index of the choice, or 0 for OK.
     choose(i = 0) {
       if (!cur) return;

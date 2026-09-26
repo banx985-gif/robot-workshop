@@ -6,6 +6,7 @@
 // The calendar pauses while this screen is open (bible §4.2: decision menus pause).
 // Combos (Milestone 14): a panel under the parts shows the combos this build should fire and, for combos one
 // condition away, a hint — the exact missing thing once it has been discovered, else its vague clue.
+import { DISCARD } from '../../data/menu.js';
 import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
@@ -28,7 +29,18 @@ const CONTRACT_H = 250;
 const COMBO_ROW = 38;
 const MAX_HINTS = 3;
 
-export function createRobotBuilderScreen({ renderer, layout, assets, campaign, router, debugEnabled = false }) {
+export function createRobotBuilderScreen({ renderer, layout, assets, campaign, router, debugEnabled = false, dialog = null }) {
+  let initial = null; // the picks as the screen opened: leaving with others asks first (§6.2, Milestone 21)
+  const picks = () => JSON.stringify([state.purposeId, state.components, state.focus, state.teamIds]);
+  const dirty = () => initial != null && picks() !== initial;
+  // Back: to the contract list for a contract build, else wherever the builder was opened from.
+  function leave() {
+    const t = router.backTarget;
+    const to = state.contractId ? 'contracts' : t && !['components', 'combos', 'debugbuilder'].includes(t.name) ? t.name : 'workshop';
+    const go = () => router.go(to);
+    if (!dirty() || !dialog) return go();
+    dialog.confirm({ title: DISCARD.title, body: DISCARD.body, art: 'ui_icon_29', yes: DISCARD.yes, no: DISCARD.no, danger: true, onYes: go });
+  }
   const W = renderer.width;
   const onResearch = (id) => campaign.research.busyIds.includes(id); // §19: can't be on a project too
   const state = { purposeId: 'helper', components: { ...STARTER_PARTS }, focus: 'balanced', teamIds: [], inspect: null, contractId: null };
@@ -156,7 +168,8 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       contractId: state.contractId,
     });
     resumeOnExit = true; // starting work: let time run again
-    router.go('project', { jobId: job.id });
+    initial = null;
+    router.go('project', { jobId: job.id }, { replace: true }); // back from the project goes where the builder came from
   }
 
   const screen = {
@@ -188,6 +201,16 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
       state.inspect = null;
       scroll.scrollY = 0;
       comboKey = null; // staff, research and the archive may have changed
+      initial = picks();
+    },
+
+    get dirty() {
+      return dirty();
+    },
+
+    onBack() {
+      leave();
+      return true;
     },
 
     exit() {
@@ -195,10 +218,7 @@ export function createRobotBuilderScreen({ renderer, layout, assets, campaign, r
     },
 
     onTap(p) {
-      if (hit(p, backRect())) {
-        router.go(state.contractId ? 'contracts' : 'workshop');
-        return;
-      }
+      if (hit(p, backRect())) return leave();
       if (hit(p, startRect())) {
         start();
         return;

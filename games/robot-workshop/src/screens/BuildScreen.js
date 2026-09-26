@@ -5,17 +5,19 @@
 //   Tap a built facility to edit it: drag it to move (free), Rotate, or Sell (50% back, with a confirm).
 //   Expansions tab — the four workshop expansions, with cost, rank and a Buy button (with a confirm).
 // The room itself is drawn by the workshop screen (same camera, cached floor layer).
-import { THEME, font } from '../../../../core/Theme.js';
+import { THEME, font, lineH } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton, drawPadlock, hitRect } from '../../../../core/ui/Button.js';
 import { FACILITIES, FACILITY_ORDER, EXPANSIONS, BUILD_ART, LOCKED_LATER } from '../../data/facilities.js';
 import { describeUnlock } from '../systems/unlockRules.js';
 import { createTopBar } from '../ui/TopBar.js';
-import { panel, text, contained, fmt } from '../ui/widgets.js';
+import { panel, text, contained, fmt, wrapLines as kitWrap } from '../ui/widgets.js';
 const COL = THEME.color;
 
-const CARD_H = 250;
 const GAP = 14;
+const COLS = 2; // Milestone 21: two measured columns at the §33.2 sizes (was three fixed 250-px cards with 20-px text)
+const ART_H = 130;
+const Z = THEME.size;
 const ROW_H = 150;
 const TABS = [
   { id: 'facilities', label: 'Facilities' },
@@ -74,8 +76,37 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
     const y = p.y + 18 + 80 + 16;
     return { x: p.x + 16, y, w: p.w - 32, h: p.y + p.h - 16 - y };
   }
-  const cardW = () => (scrollRect().w - 12 - 2 * GAP) / 3;
-  const cardRect = (i) => ({ x: (i % 3) * (cardW() + GAP), y: Math.floor(i / 3) * (CARD_H + GAP), w: cardW(), h: CARD_H });
+  const cardW = () => (scrollRect().w - 12 - (COLS - 1) * GAP) / COLS;
+  // A card's words, wrapped to its width (so rows grow with the text size instead of clipping).
+  function cardWords(id, w) {
+    const d = FACILITIES[id];
+    const unlocked = campaign.facilityUnlocked(id);
+    const block = unlocked ? campaign.buyBlock(id) : null;
+    return {
+      name: kitWrap(d.name, w - 24, Z.body, true).slice(0, 2),
+      body: unlocked ? kitWrap(d.blurb, w - 24, Z.small).slice(0, 3) : kitWrap(describeUnlock(d.unlock), w - 60, Z.small, true).slice(0, 3),
+      block: block && block !== 'Not enough credits' ? kitWrap(block, w - 24, Z.small, true).slice(0, 2) : [],
+    };
+  }
+  const cardHeight = (id, w) => {
+    const c = cardWords(id, w);
+    return 12 + ART_H + 8 + c.name.length * lineH(Z.body, 1.2) + lineH(Z.small, 1.3) + (c.body.length + c.block.length) * lineH(Z.small, 1.2) + 16;
+  };
+  // Rows of COLS cards; each row as tall as its tallest card.
+  function cardLayout() {
+    const ids = shownFacilities();
+    const w = cardW();
+    const rects = [];
+    let y = 0;
+    for (let i = 0; i < ids.length; i += COLS) {
+      const row = ids.slice(i, i + COLS);
+      const h = Math.max(...row.map((id) => cardHeight(id, w)));
+      row.forEach((id, k) => rects.push({ x: k * (w + GAP), y, w, h }));
+      y += h + GAP;
+    }
+    return { rects, h: y };
+  }
+  const cardRect = (i) => cardLayout().rects[i];
   const rowRect = (i) => ({ x: 0, y: i * (ROW_H + GAP), w: scrollRect().w - 12, h: ROW_H });
   const buyRect = (i) => {
     const r = rowRect(i);
@@ -496,9 +527,10 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
       drawButton(ctx, tabRect(i), label, { selected: tab === t.id, font: font(32, true), badge: t.id === 'expansions' && tab !== 'expansions' && shownZones().some((z) => !campaign.expansionBlock(z.id)) ? '!' : null });
     });
     const items = tab === 'facilities' ? shownFacilities() : shownZones();
-    scroll.contentHeight = tab === 'facilities' ? Math.ceil(items.length / 3) * (CARD_H + GAP) : items.length * (ROW_H + GAP);
+    const L = tab === 'facilities' ? cardLayout() : null;
+    scroll.contentHeight = L ? L.h : items.length * (ROW_H + GAP);
     scroll.begin(ctx);
-    if (tab === 'facilities') shownFacilities().forEach((id, i) => drawCard(ctx, id, cardRect(i)));
+    if (L) shownFacilities().forEach((id, i) => drawCard(ctx, id, L.rects[i]));
     else shownZones().forEach((z, i) => drawExpansion(ctx, z, i));
     scroll.end(ctx);
   }
@@ -510,20 +542,27 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
     panel(ctx, r, { fill: unlocked ? COL.panel : COL.panel, stroke: unlocked ? (block ? COL.line : COL.progress) : COL.line, radius: 20 });
     ctx.save();
     if (!unlocked) ctx.globalAlpha = 0.35;
-    contained(ctx, assets, d.art, { x: r.x + 12, y: r.y + 10, w: r.w - 24, h: 118 });
+    contained(ctx, assets, d.art, { x: r.x + 12, y: r.y + 12, w: r.w - 24, h: ART_H });
     ctx.restore();
     const n = F.count(id);
-    if (n) text(ctx, `×${n}`, r.x + r.w - 14, r.y + 12, { size: 26, bold: true, color: GREEN, align: 'right' });
-    text(ctx, d.name, r.x + r.w / 2, r.y + 134, { size: 26, bold: true, align: 'center', color: unlocked ? COL.text : COL.textFaint, maxWidth: r.w - 16 });
-    text(ctx, `${fmt(campaign.facilityCost(id))} · ${d.w}×${d.h}`, r.x + r.w / 2, r.y + 168, { size: 23, align: 'center', color: unlocked && campaign.economy.canAfford('credits', campaign.facilityCost(id)) ? COL.gold : COL.textFaint, maxWidth: r.w - 16 });
-    if (!unlocked) {
-      const rule = describeUnlock(d.unlock);
-      drawPadlock(ctx, r.x + 14, r.y + 216, 24, COL.action);
-      text(ctx, rule, r.x + 46, r.y + 216, { size: 20, bold: true, color: COL.action, baseline: 'middle', maxWidth: r.w - 56 });
-    } else {
-      const lines = wrapLines(ctx, d.blurb, r.w - 20, font(20)).slice(0, 2);
-      lines.forEach((l, j) => text(ctx, l, r.x + r.w / 2, r.y + 198 + j * 24, { size: 20, align: 'center', color: COL.textMuted, maxWidth: r.w - 12 }));
-      if (block && block !== 'Not enough credits') text(ctx, block, r.x + r.w / 2, r.y + 198 + lines.length * 24, { size: 19, align: 'center', color: RED, maxWidth: r.w - 16 });
+    if (n) text(ctx, `×${n}`, r.x + r.w - 14, r.y + 12, { size: Z.small, bold: true, color: GREEN, align: 'right' });
+    const c = cardWords(id, r.w);
+    let y = r.y + 12 + ART_H + 8;
+    for (const l of c.name) {
+      text(ctx, l, r.x + r.w / 2, y, { size: Z.body, bold: true, align: 'center', color: unlocked ? COL.text : COL.textFaint, maxWidth: r.w - 16 });
+      y += lineH(Z.body, 1.2);
+    }
+    text(ctx, `${fmt(campaign.facilityCost(id))} · ${d.w}×${d.h}`, r.x + r.w / 2, y, { size: Z.small, bold: true, align: 'center', color: unlocked && campaign.economy.canAfford('credits', campaign.facilityCost(id)) ? COL.gold : COL.textFaint, maxWidth: r.w - 16 });
+    y += lineH(Z.small, 1.3);
+    if (!unlocked) drawPadlock(ctx, r.x + 12, y + lineH(Z.small, 0.6), 26, COL.action);
+    for (const l of c.body) {
+      if (unlocked) text(ctx, l, r.x + r.w / 2, y, { size: Z.small, align: 'center', color: COL.textMuted, maxWidth: r.w - 16 });
+      else text(ctx, l, r.x + 48, y, { size: Z.small, bold: true, color: COL.action, maxWidth: r.w - 60 });
+      y += lineH(Z.small, 1.2);
+    }
+    for (const l of c.block) {
+      text(ctx, l, r.x + r.w / 2, y, { size: Z.small, bold: true, align: 'center', color: RED, maxWidth: r.w - 16 });
+      y += lineH(Z.small, 1.2);
     }
   }
 
@@ -554,25 +593,4 @@ export function createBuildScreen({ renderer, layout, assets, campaign, router, 
   }
 
   return screen;
-}
-
-// Word-wrap to a pixel width (cached: the catalogue draws the same words every frame).
-const wrapCache = new Map();
-function wrapLines(ctx, str, width, font) {
-  const key = `${width}|${str}`;
-  let out = wrapCache.get(key);
-  if (out) return out;
-  ctx.font = font;
-  out = [];
-  let line = '';
-  for (const word of str.split(' ')) {
-    const test = line ? `${line} ${word}` : word;
-    if (line && ctx.measureText(test).width > width) {
-      out.push(line);
-      line = word;
-    } else line = test;
-  }
-  if (line) out.push(line);
-  wrapCache.set(key, out);
-  return out;
 }

@@ -5,7 +5,7 @@ import { THEME, font } from '../../../../core/Theme.js';
 import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton, hitRect } from '../../../../core/ui/Button.js';
 import { createTopBar } from '../ui/TopBar.js';
-import { panel, text, contained } from '../ui/widgets.js';
+import { panel, text, contained, emptyState, stateHeight } from '../ui/widgets.js';
 const COL = THEME.color;
 
 const ROW_H = 252; // title, up to three lines of body text and the "waiting" tag, all at the §33.2 sizes
@@ -24,6 +24,7 @@ export function createInboxScreen({ renderer, layout, assets, campaign, router, 
       { id: 'workshop', label: 'Workshop', onTap: () => router.go('workshop') },
     ],
   });
+  let emptyHit = null; // the empty state's button (Milestone 21)
   const scroll = new ScrollPanel({ getRect: listRect, contentHeight: 0 });
 
   function headRect() {
@@ -85,6 +86,7 @@ export function createInboxScreen({ renderer, layout, assets, campaign, router, 
     },
     onTap(p) {
       if (topBar.handleTap(p)) return;
+      if (emptyHit && scroll.contains(p) && hitRect(scroll.toContent(p), emptyHit.r)) return emptyHit.go();
       if (hitRect(p, rumoursRect())) return router.go('rumours', { back: 'inbox' });
       if (hitRect(p, readAllRect())) {
         campaign.notes.markAllRead();
@@ -118,7 +120,13 @@ export function createInboxScreen({ renderer, layout, assets, campaign, router, 
       const lr = listRect();
       scroll.contentHeight = Math.max(1, list.length * (ROW_H + GAP));
       scroll.begin(ctx);
-      if (!list.length) text(ctx, 'No messages yet. Events, sponsors and big moments will land here.', 12, 20, { size: THEME.size.body, color: COL.textMuted, maxWidth: lr.w - 24 });
+      emptyHit = null;
+      if (!list.length) {
+        const s = { art: 'ui_icon_14', text: 'No messages yet — events, sponsors and big moments will land here.', button: { label: 'Back to the workshop' } };
+        const h = stateHeight(lr.w - 12, s);
+        scroll.contentHeight = h + 10;
+        emptyHit = { r: emptyState(ctx, assets, { x: 0, y: 0, w: lr.w - 12, h }, s), go: () => router.go('workshop') };
+      }
       // Only the rows on screen are drawn.
       const first = Math.max(0, Math.floor(scroll.scrollY / (ROW_H + GAP)));
       const last = Math.min(list.length, first + Math.ceil(lr.h / (ROW_H + GAP)) + 2);

@@ -2,7 +2,7 @@
 // run by the credits screen ({ fromRun: 'staff' | 'rivals' }).
 export const CREDITS = [
   { image: 'brand_03_title_logo', h: 360 },
-  { line: 'Robot Workshop Story', bold: true },
+  { line: 'BOTWORKS', bold: true },
   { line: 'Game #1 of the Canvas Management Series' },
   { gap: 60 },
   { heading: 'Made by' },

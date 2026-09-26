@@ -1,27 +1,9 @@
-// Small drawing helpers shared by the Robot Workshop project screens (logical units).
+// Small drawing helpers shared by the BOTWORKS screens (logical units).
 import { THEME, font } from '../../../../core/Theme.js';
 const COL = THEME.color;
-export function panel(ctx, r, { fill = COL.panel, stroke = COL.line, lineWidth = 3, radius = 24 } = {}) {
-  ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(r.x, r.y, r.w, r.h, radius);
-  else ctx.rect(r.x, r.y, r.w, r.h);
-  ctx.fillStyle = fill;
-  ctx.fill();
-  if (stroke) {
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = lineWidth;
-    ctx.stroke();
-  }
-}
-
-export function text(ctx, str, x, y, { size = 32, bold = false, color = COL.text, align = 'left', baseline = 'top', maxWidth } = {}) {
-  ctx.font = font(size, !!(bold ? 'bold ' : ''));
-  ctx.fillStyle = color;
-  ctx.textAlign = align;
-  ctx.textBaseline = baseline;
-  if (maxWidth) ctx.fillText(str, x, y, maxWidth);
-  else ctx.fillText(str, x, y);
-}
+// panel and text come from the shared UI kit (core/ui/Kit.js, Milestone 21) so every screen draws the same pieces.
+export { panel, text, card, para, listRow, listRowHeight, emptyState, errorState, stateHeight, wrapLines, iconButton } from '../../../../core/ui/Kit.js';
+import { panel, text } from '../../../../core/ui/Kit.js';
 
 export function bar(ctx, x, y, w, h, frac, color, back = COL.track) {
   ctx.fillStyle = back;

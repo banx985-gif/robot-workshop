@@ -27,7 +27,7 @@ const first = (name) => String(name).split(' ')[0];
 // Which project stage a station works (Engineering Desk → Engineering…).
 const PHASE_OF = Object.fromEntries(Object.entries(STATIONS).flatMap(([phase, ids]) => ids.map((id) => [id, phase])));
 
-export function createStationMenus({ campaign, router, workshop, sheet }) {
+export function createStationMenus({ campaign, router, workshop, sheet, comingSoon = () => {} }) {
   const go = (screen, params) => () => {
     sheet.close();
     router.go(screen, params);
@@ -71,7 +71,8 @@ export function createStationMenus({ campaign, router, workshop, sheet }) {
     const list = j
       ? [{ id: 'project', label: 'Current build', sub: 'Stages, team, budget', icon: robotArtOf({ purpose: j.data.purpose }), onTap: go('project') }]
       : [{ id: 'newRobot', label: 'New robot', sub: can.ok ? 'Parts, team and budget' : 'Not right now', icon: 'ui_icon_11', disabled: !can.ok, onTap: go('builder') }];
-    list.push({ id: 'components', label: 'All parts', icon: SYNERGY_ART.icon, accent: C.progress, onTap: go('components') });
+    list.push({ id: 'projects', label: 'All projects', sub: 'Bays, on sale, recent', icon: 'ui_icon_06_robot', accent: C.progress, onTap: go('projects') }); // Project List (Milestone 21)
+    list.push({ id: 'components', label: 'Parts & looks', icon: SYNERGY_ART.icon, accent: C.progress, onTap: go('components', { back: 'workshop' }) });
     list.push({ id: 'combos', label: 'Combo Archive', icon: SYNERGY_ART.icon, accent: C.progress, onTap: go('combos', { back: 'workshop' }) });
     return list;
   }
@@ -140,8 +141,9 @@ export function createStationMenus({ campaign, router, workshop, sheet }) {
       { id: 'products', label: 'Products', sub: `${campaign.products.active.length}/${campaign.products.slotCount} on sale${waiting ? ` · ${waiting} to launch` : ''}`, icon: 'ui_icon_13', badge: waiting && campaign.products.freeSlots ? '!' : null, onTap: go('products') },
       { id: 'contracts', label: 'Contracts', sub: `${k.active.length}/${k.maxActive} taken`, icon: 'ui_icon_14', badge: k.offers.length && k.canAccept ? k.offers.length : null, onTap: go('contracts', { tab: 'offered' }) },
       { id: 'save', label: workshop.topBar.savedNote ?? 'Save now', sub: 'It also saves every month', icon: 'ui_icon_28', accent: C.progress, onTap: () => workshop.topBar.save() },
-      // After the Year 16 ending (playing on): New Game+ can start from here too (Milestone 20, §30.1).
-      ...(campaign.ngPlusBlock() ? [] : [{ id: 'ngplus', label: 'New Game+', sub: `Start NG+${campaign.nextNgPlusLevel}`, icon: NG_PLUS_ART.icon, accent: C.purple, onTap: go('ngplus', { back: 'workshop' }) }]),
+      // Store and VIP: menu entries only until Milestone 23. New Game+ moved to the main menu (Milestone 21).
+      { id: 'store', label: 'Store', sub: 'Coming soon', icon: 'ui_icon_21', accent: C.purple, onTap: () => comingSoon('store') },
+      { id: 'vip', label: 'VIP', sub: 'Coming soon', icon: 'ui_icon_22', accent: C.purple, onTap: () => comingSoon('vip') },
     ];
   }
 

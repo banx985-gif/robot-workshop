@@ -43,6 +43,7 @@ const RUN_FIELDS = {
   guide: 'guide',
   flags: 'flags',
   ngplus: 'ngplus',
+  company: 'company', // always carried (Milestone 21)
 };
 const CARRIED_CURRENCIES = ['techChips', 'prestigeTokens'];
 

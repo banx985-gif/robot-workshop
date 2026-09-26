@@ -9,7 +9,7 @@ import { COMPONENTS, SLOTS } from '../../data/components.js';
 import { predictBuild } from '../systems/Capability.js';
 import { checkRecord, requirementLines, segmentOf } from '../systems/ContractRules.js';
 import { createTopBar } from '../ui/TopBar.js';
-import { panel, text, contained, hit, fmt } from '../ui/widgets.js';
+import { panel, text, contained, hit, fmt, emptyState, stateHeight } from '../ui/widgets.js';
 const COL = THEME.color;
 
 const TABS = [
@@ -36,6 +36,7 @@ export function createContractsScreen({ renderer, layout, assets, campaign, rout
   });
   let tab = 'offered';
   let message = null; // { text, color }
+  let emptyHit = null; // the empty state's button (Milestone 21)
   const scroll = new ScrollPanel({ getRect: bodyRect, contentHeight: 0 });
   const K = () => campaign.contracts;
 
@@ -110,6 +111,7 @@ export function createContractsScreen({ renderer, layout, assets, campaign, rout
     },
     onTap(p) {
       if (topBar.handleTap(p)) return;
+      if (emptyHit && scroll.contains(p) && hit(scroll.toContent(p), emptyHit.r)) return emptyHit.go();
       TABS.forEach((t, i) => {
         if (hit(p, tabRect(i))) {
           tab = t.id;
@@ -164,9 +166,18 @@ export function createContractsScreen({ renderer, layout, assets, campaign, rout
       heights = items.map((c, i) => drawCard(measure, c, i, false));
       scroll.contentHeight = Math.max(1, cardTop(items.length));
       scroll.begin(ctx);
+      // Empty lists (Milestone 21): a friendly line and a button to go do the thing.
+      emptyHit = null;
       if (!items.length) {
-        const none = { offered: 'No offers right now — check again next month.', active: 'No active contracts. Accept one from Offered.', done: 'Nothing finished yet.' }[tab];
-        text(ctx, none, 4, 20, { size: THEME.size.body, color: COL.textMuted, maxWidth: cw() });
+        const E = {
+          offered: { text: 'No contracts yet — Reception gets new offers at the start of next month.', label: 'Back to the workshop', go: () => router.go('workshop') },
+          active: { text: 'No active contracts. Take one from the offers.', label: 'See the offers', go: () => (tab = 'offered') },
+          done: { text: 'Nothing finished yet — deliver a robot to a contract you have taken.', label: 'See the offers', go: () => (tab = 'offered') },
+        }[tab];
+        const s = { art: 'ui_icon_14', text: E.text, button: { label: E.label } };
+        const h = stateHeight(cw(), s);
+        scroll.contentHeight = h + 10;
+        emptyHit = { r: emptyState(ctx, assets, { x: 0, y: 0, w: cw(), h }, s), go: E.go };
       }
       items.forEach((c, i) => drawCard(ctx, c, i));
       scroll.end(ctx);

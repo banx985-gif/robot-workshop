@@ -111,7 +111,7 @@ export function createCompetitionWatchScreen({ renderer, layout, assets, campaig
     } else vfx.sprite('screen', COMPETITION_ART.lossPuff, s.x + s.w / 2, s.y + s.h * 0.65, { size: 320, life: 1.3, from: 0.4, to: 1, hold: 0.4 });
   }
 
-  const goResult = () => router.go('compResult', { resultId: result.id, resumeOnExit });
+  const goResult = () => router.go('compResult', { resultId: result.id, resumeOnExit }, { replace: true });
 
   function reaction(state) {
     if (clock < INTRO_SEC) return 'Ready… deep breath.';
@@ -140,6 +140,11 @@ export function createCompetitionWatchScreen({ renderer, layout, assets, campaig
       return result;
     },
     mainRect,
+    // Back (Milestone 21): the result is already decided, so back goes straight to it.
+    onBack() {
+      goResult();
+      return true;
+    },
     enter(params = {}) {
       result = campaign.competitions.result(params.resultId) ?? campaign.competitions.latest;
       ev = COMPETITIONS_BY_ID[result.eventId];

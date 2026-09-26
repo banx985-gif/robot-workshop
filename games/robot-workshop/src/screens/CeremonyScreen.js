@@ -112,6 +112,7 @@ export function createCeremonyScreen({ renderer, layout, assets, campaign, route
       }
       confetti = confetti.filter((p) => p.y < renderer.height + 60);
     },
+    onBack: () => true, // the ceremony plays through; its choice is the way out (§6.2)
     onTap(p) {
       if (stage === 'choice') {
         if (hitRect(p, choiceRect(0))) return continuePostgame();

@@ -20,6 +20,7 @@ export const NG_PLUS = {
       { id: 'accountFlags', label: 'Black Circuit access and invitations' },
       { id: 'pastCampaigns', label: 'Past campaign summaries' },
       { id: 'highestLevel', label: 'Highest NG+ level' },
+      { id: 'company', label: 'Company name, manager and colour' }, // Milestone 21 Company Setup
     ],
     // §30.4 player-selected carryover (+ §30.8 the optional challenge)
     chosen: [

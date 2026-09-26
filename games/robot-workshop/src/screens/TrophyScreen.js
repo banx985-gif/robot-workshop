@@ -5,7 +5,7 @@ import { ScrollPanel } from '../../../../core/ui/ScrollPanel.js';
 import { drawButton } from '../../../../core/ui/Button.js';
 import { COMPETITIONS, COMPETITIONS_BY_ID, TROPHIES, COMPETITION_ART } from '../../data/competitions.js';
 import { TUNINGS, STRATEGIES } from '../../data/tuning.js';
-import { panel, text, hit } from '../ui/widgets.js';
+import { panel, text, hit, emptyState, stateHeight } from '../ui/widgets.js';
 import { placeText, row, wrapLines } from '../ui/competitionDraw.js';
 const COL = THEME.color;
 
@@ -17,6 +17,7 @@ const NAME = (list, id) => list.find((x) => x.id === id)?.name ?? id;
 
 export function createTrophyScreen({ renderer, layout, assets, campaign, router }) {
   const W = renderer.width;
+  let emptyHit = null; // the empty state's button (Milestone 21)
   const scroll = new ScrollPanel({ getRect: bodyRect, contentHeight: 0 });
 
   function headRect() {
@@ -59,6 +60,7 @@ export function createTrophyScreen({ renderer, layout, assets, campaign, router 
     onTap(p) {
       if (hit(p, backRect())) return router.go('competitions');
       if (hit(p, rankingsRect())) return router.go('rankings');
+      if (emptyHit && scroll.contains(p) && hit(scroll.toContent(p), emptyHit.r)) return emptyHit.go();
       if (hit(p, spareRect())) return router.go('records', { back: 'trophies' }); // Milestone 18
     },
     onDragStart: (p) => scroll.beginDrag(p),
@@ -80,9 +82,12 @@ export function createTrophyScreen({ renderer, layout, assets, campaign, router 
       text(ctx, 'Competition records', 4, y, { size: S.heading, bold: true });
       y += 66;
       const entered = COMPETITIONS.filter((e) => campaign.competitions.records[e.id]?.entries);
+      emptyHit = null;
       if (!entered.length) {
-        text(ctx, 'No events entered yet.', 4, y, { size: S.body, color: COL.textMuted });
-        y += 60;
+        const s = { art: 'ui_icon_08_competition', text: 'No events entered yet — every trophy starts with one race.', button: { label: 'Competitions' } };
+        const h = stateHeight(cw(), s);
+        emptyHit = { r: emptyState(ctx, assets, { x: 0, y, w: cw(), h }, s), go: () => router.go('competitions') };
+        y += h + 20;
       }
       for (const e of entered) {
         const rh = recHeight(e);
