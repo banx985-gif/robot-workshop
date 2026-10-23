@@ -2683,20 +2683,20 @@
  },
  "studio_logo_banx_gamex_dark": {
   "folder": "studio",
-  "recipe": "06a9d17523a3a2dc630a9474bfabf0c7de5da422|1080x720|q0.85",
+  "recipe": "c20ddad32ff475f2935bce44f441f3389f3e5e77|1080x720|q0.85",
   "w": 1080,
   "h": 720,
-  "webp": 171776,
-  "png": 890749,
-  "original": 1934498
+  "webp": 187814,
+  "png": 813080,
+  "original": 1255244
  },
  "studio_logo_banx_gamex": {
   "folder": "studio",
-  "recipe": "b2086cdc358292e276685392d2960a339522ff24|720x705|q0.85",
+  "recipe": "467561f38092f72ee808cb36edabb0aa76ec6ddc|720x705|q0.85",
   "w": 720,
   "h": 705,
-  "webp": 204042,
-  "png": 754255,
-  "original": 1616986
+  "webp": 175048,
+  "png": 741866,
+  "original": 1180295
  }
 }
