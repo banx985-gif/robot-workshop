@@ -2701,47 +2701,47 @@
  },
  "staff_god_bolt": {
   "folder": "staff",
-  "recipe": "92b7385ceea7a8fc0446cd081c3c9d6843d431bd|454x640|q0.85",
-  "w": 454,
+  "recipe": "8c27ec9636a5cd4786d599c71eb80b797e9c5991|380x640|q0.85",
+  "w": 380,
   "h": 640,
-  "webp": 115494,
-  "png": 572045,
-  "original": 2303731
+  "webp": 95656,
+  "png": 469029,
+  "original": 1957129
  },
  "staff_god_jinx": {
   "folder": "staff",
-  "recipe": "7c46435240a38544103a163e4b42e44ad8ac8c67|426x640|q0.85",
-  "w": 426,
+  "recipe": "7ff1e33a94bc6664080396bd1c14d177035818bd|374x640|q0.85",
+  "w": 374,
   "h": 640,
-  "webp": 116336,
-  "png": 519157,
-  "original": 2523845
+  "webp": 97322,
+  "png": 458164,
+  "original": 2102384
  },
  "staff_god_zip": {
   "folder": "staff",
-  "recipe": "630168f44b173dad90fbbbddf979b089453ab3ee|412x640|q0.85",
-  "w": 412,
+  "recipe": "cb3347455c1696a98dfd91db4bf6a633a2ac8f69|367x640|q0.85",
+  "w": 367,
   "h": 640,
-  "webp": 108188,
-  "png": 474127,
-  "original": 2226698
+  "webp": 92102,
+  "png": 414745,
+  "original": 1911010
  },
  "staff_god_kaching": {
   "folder": "staff",
-  "recipe": "2c3db195e9641b91c9506dea0d310f993cff637d|520x640|q0.85",
-  "w": 520,
+  "recipe": "6e5a740c7e0d036b66ba6b3921a465b38d4addc1|462x640|q0.85",
+  "w": 462,
   "h": 640,
-  "webp": 123170,
-  "png": 646586,
-  "original": 2166462
+  "webp": 98362,
+  "png": 591024,
+  "original": 1813726
  },
  "staff_god_havoc": {
   "folder": "staff",
-  "recipe": "54896c59d064675c3ee2c902fdf314eeac779bcd|410x640|q0.85",
-  "w": 410,
+  "recipe": "f3e7cd55582b68c652a1dd8b759a435393ac722c|360x640|q0.85",
+  "w": 360,
   "h": 640,
-  "webp": 109944,
-  "png": 458258,
-  "original": 2387724
+  "webp": 89238,
+  "png": 384184,
+  "original": 1905777
  }
 }
