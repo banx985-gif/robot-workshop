@@ -2743,5 +2743,32 @@
   "webp": 89238,
   "png": 384184,
   "original": 1905777
+ },
+ "cast_07_walt_portrait": {
+  "folder": "cast",
+  "recipe": "fcc10c7e2f11674b4484ad772c369313ad0b1ee1|400x400|q0.85",
+  "w": 400,
+  "h": 400,
+  "webp": 35812,
+  "png": 235011,
+  "original": 775488
+ },
+ "cast_03_flash_portrait": {
+  "folder": "cast",
+  "recipe": "dd9b64aeca2703864976b8f5d5c0b069ce7493b2|400x400|q0.85",
+  "w": 400,
+  "h": 400,
+  "webp": 39660,
+  "png": 238541,
+  "original": 860716
+ },
+ "cast_04_iris_portrait": {
+  "folder": "cast",
+  "recipe": "725d8daa396f32322fc4290f886a64622d4333df|400x400|q0.85",
+  "w": 400,
+  "h": 400,
+  "webp": 36972,
+  "png": 235364,
+  "original": 883423
  }
 }
