@@ -2770,5 +2770,257 @@
   "webp": 36972,
   "png": 235364,
   "original": 883423
+ },
+ "chibi_07_moustache_polo_sheet": {
+  "folder": "cast",
+  "recipe": "04c8339ad0c3ca2a1b455dc64e6f77a57f079ffd|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 205366,
+  "png": 1092845,
+  "original": 1338317
+ },
+ "chibi_03_showman_tux_sheet": {
+  "folder": "cast",
+  "recipe": "5498640d8b3d57a34d8754fd89d719658a630a12|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 195128,
+  "png": 1007341,
+  "original": 1231328
+ },
+ "chibi_04_silver_green_suit_sheet": {
+  "folder": "cast",
+  "recipe": "0daaab62a09233fe583c8cb16e0d91365522fb19|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 168370,
+  "png": 902250,
+  "original": 1007277
+ },
+ "chibi_16_curly_coral_tee_sheet": {
+  "folder": "cast",
+  "recipe": "4765aeb13407d4468aafd38a420630450de28ecf|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 215326,
+  "png": 1071734,
+  "original": 1286465
+ },
+ "chibi_14_glasses_vest_sheet": {
+  "folder": "cast",
+  "recipe": "87dad06e302d2f88337c4e3243e356939bb1d0ae|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 160578,
+  "png": 945883,
+  "original": 1103947
+ },
+ "chibi_13_beard_workwear_sheet": {
+  "folder": "cast",
+  "recipe": "07b129b3c4953c0f362eae06109fb13b97b91bd0|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 171074,
+  "png": 984474,
+  "original": 1192602
+ },
+ "chibi_29_navy_suit_sheet": {
+  "folder": "cast",
+  "recipe": "e3aa6038cbdf99b880a38dc2ab2cb9ef77b3af50|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 180844,
+  "png": 989544,
+  "original": 1201899
+ },
+ "chibi_28_plum_suit_sheet": {
+  "folder": "cast",
+  "recipe": "d45f49587856cfff2b66103907d89619ec09b45e|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 180552,
+  "png": 1006137,
+  "original": 1197362
+ },
+ "chibi_26_grandad_cardigan_sheet": {
+  "folder": "cast",
+  "recipe": "1f16b9090c5cc1735534730eb8ae6e023a015eb3|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 169394,
+  "png": 971327,
+  "original": 1158088
+ },
+ "chibi_01_curly_yellow_jumper_sheet": {
+  "folder": "cast",
+  "recipe": "1f6524bb6b68ee607506a65f70873ae18307e309|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 199628,
+  "png": 1042738,
+  "original": 1287378
+ },
+ "chibi_02_teal_hoodie_sheet": {
+  "folder": "cast",
+  "recipe": "653e7a6d77c2ff671152d3a292b1487f921203bf|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 186552,
+  "png": 957621,
+  "original": 1168717
+ },
+ "chibi_05_blue_top_sheet": {
+  "folder": "cast",
+  "recipe": "58b8e01d7c1e6a0028788b1964abac254128d360|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 153792,
+  "png": 916643,
+  "original": 1097306
+ },
+ "chibi_06_red_shirt_sheet": {
+  "folder": "cast",
+  "recipe": "7454246ac33e2a42da392f36b5cbbc159eea3945|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 180504,
+  "png": 964519,
+  "original": 1154556
+ },
+ "chibi_09_pink_shorts_sheet": {
+  "folder": "cast",
+  "recipe": "1957c25d4473aba37dc90a12ced5f08b5f2f17a8|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 176664,
+  "png": 963459,
+  "original": 1173875
+ },
+ "chibi_10_topknot_shorts_sheet": {
+  "folder": "cast",
+  "recipe": "42173c3e58a989d88346cbdd23e6f61d36299459|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 174354,
+  "png": 856548,
+  "original": 1023570
+ },
+ "chibi_11_moustache_shorts_sheet": {
+  "folder": "cast",
+  "recipe": "705a36a32d5197421438e83df0dd2ef379309250|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 169598,
+  "png": 916007,
+  "original": 1056476
+ },
+ "chibi_12_beach_shirt_sheet": {
+  "folder": "cast",
+  "recipe": "7710ee27aef2e405264ea57b3d76e9c6075591ec|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 219274,
+  "png": 1026059,
+  "original": 1280256
+ },
+ "chibi_15_denim_jacket_sheet": {
+  "folder": "cast",
+  "recipe": "670986f3d268e99cb3a26237347473a9d12f3ada|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 185030,
+  "png": 985832,
+  "original": 1210475
+ },
+ "chibi_17_green_hoodie_sheet": {
+  "folder": "cast",
+  "recipe": "9fed0a6ce7951439a6038255a8767c5e28b43226|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 211072,
+  "png": 1038187,
+  "original": 1275728
+ },
+ "chibi_18_yellow_tee_sheet": {
+  "folder": "cast",
+  "recipe": "f7de63a1c6f056b8de1b3cd1c0e9442db682c6a6|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 188558,
+  "png": 980265,
+  "original": 1177748
+ },
+ "chibi_22_teal_sports_tee_sheet": {
+  "folder": "cast",
+  "recipe": "137851a19716c1ed5a1b0077aa336f0975db2d1a|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 192492,
+  "png": 919930,
+  "original": 1115273
+ },
+ "chibi_27_bob_green_shirt_sheet": {
+  "folder": "cast",
+  "recipe": "3ab30c582aa836e8f72dd3dd34fb3bd0dce8b6f5|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 182550,
+  "png": 1026394,
+  "original": 1281016
+ },
+ "chibi_30_teal_jumper_sheet": {
+  "folder": "cast",
+  "recipe": "04a3a3ee8ef6779936eb8ae26e5c908fb9133dd4|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 199780,
+  "png": 1055807,
+  "original": 1314228
+ },
+ "chibi_19_sporty_red_sheet": {
+  "folder": "cast",
+  "recipe": "b16b05f274ce64d9d3280c04447c343771dceb32|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 203138,
+  "png": 981722,
+  "original": 1224670
+ },
+ "chibi_20_athlete_blue_sheet": {
+  "folder": "cast",
+  "recipe": "79e090c18999b9cab9944150e902c49754a8994b|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 218964,
+  "png": 1030415,
+  "original": 1276955
+ },
+ "chibi_21_platinum_sporty_sheet": {
+  "folder": "cast",
+  "recipe": "d6260c0d722128abda51c7ec2a26b8c3701776b5|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 206620,
+  "png": 939618,
+  "original": 1146558
+ },
+ "chibi_23_ponytail_purple_sports_sheet": {
+  "folder": "cast",
+  "recipe": "5bf7d20a5577aaabd4b7a67d6bc4d99020c5dd42|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 206082,
+  "png": 1022668,
+  "original": 1253676
+ },
+ "chibi_24_orange_tracksuit_sheet": {
+  "folder": "cast",
+  "recipe": "1820def305616b3c901eb9cbce6ae2fcd67b98a6|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 216498,
+  "png": 984607,
+  "original": 1234760
  }
 }
