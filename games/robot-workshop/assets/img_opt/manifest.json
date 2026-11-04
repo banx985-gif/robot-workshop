@@ -3022,5 +3022,23 @@
   "webp": 216498,
   "png": 984607,
   "original": 1234760
+ },
+ "chibi_71_aaron_banx_games_founder_sheet": {
+  "folder": "cast",
+  "recipe": "0d530243dc31da277bf6e087fd6c20c6afcc384b|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 231280,
+  "png": 1006315,
+  "original": 1333209
+ },
+ "staff_legend_aaron": {
+  "folder": "staff",
+  "recipe": "53c39345d3d2499167c594c36c9aabb73c3c3d6b|348x640|q0.85",
+  "w": 348,
+  "h": 640,
+  "webp": 36106,
+  "png": 329058,
+  "original": 494891
  }
 }
