@@ -3040,5 +3040,500 @@
   "webp": 36106,
   "png": 329058,
   "original": 494891
+ },
+ "god_bolt_sheet": {
+  "folder": "cast",
+  "recipe": "8a8ffdf3845821a79340ed9f2efdae54fc5674ed|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 212116,
+  "png": 1027694,
+  "original": 1313517
+ },
+ "god_jinx_sheet": {
+  "folder": "cast",
+  "recipe": "b15bd9f519c7f735667342af38db2e0bafb5d779|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 276514,
+  "png": 1332425,
+  "original": 1704908
+ },
+ "god_zip_sheet": {
+  "folder": "cast",
+  "recipe": "346fbd73a4ecd7cc348fa47e8aba5adefec22051|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 267364,
+  "png": 1130127,
+  "original": 1444883
+ },
+ "god_kaching_sheet": {
+  "folder": "cast",
+  "recipe": "5030beaa09ff66a321b39efa4c864a0a9a30bd8d|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 235370,
+  "png": 1137548,
+  "original": 1428859
+ },
+ "god_havoc_sheet": {
+  "folder": "cast",
+  "recipe": "0e8769682c163e3b9bd0f42e34ff1c1d35c313db|1536x1536|q0.85",
+  "w": 1536,
+  "h": 1536,
+  "webp": 320864,
+  "png": 1331137,
+  "original": 1732505
+ },
+ "staff_engineer_01_sheet": {
+  "folder": "walkers",
+  "recipe": "517b820932281e571605fa5badd6cb352f250446|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 123772,
+  "png": 469709,
+  "original": 1210630
+ },
+ "staff_engineer_02_sheet": {
+  "folder": "walkers",
+  "recipe": "badb5539e486182b11ed1f8b2439888a4380e539|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 118610,
+  "png": 455449,
+  "original": 1258386
+ },
+ "staff_engineer_03_sheet": {
+  "folder": "walkers",
+  "recipe": "81afbcc6f602881a3f120271ba4a391a7d5b98d1|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 124186,
+  "png": 459097,
+  "original": 1272736
+ },
+ "staff_engineer_04_sheet": {
+  "folder": "walkers",
+  "recipe": "53f2775b69682d0508dbf70c109ce713ae80ab81|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 140452,
+  "png": 489690,
+  "original": 1300637
+ },
+ "staff_engineer_05_sheet": {
+  "folder": "walkers",
+  "recipe": "517b820932281e571605fa5badd6cb352f250446|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 123772,
+  "png": 469709,
+  "original": 1210630
+ },
+ "staff_engineer_06_sheet": {
+  "folder": "walkers",
+  "recipe": "51e2b89dc8e2cd5f5357bc0c00cbace8038199e5|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 110070,
+  "png": 463380,
+  "original": 1152762
+ },
+ "staff_engineer_07_sheet": {
+  "folder": "walkers",
+  "recipe": "7c19da4e3dbb8476cf9c243685cec8e473fafbf5|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 104638,
+  "png": 451897,
+  "original": 1131329
+ },
+ "staff_engineer_08_sheet": {
+  "folder": "walkers",
+  "recipe": "badb5539e486182b11ed1f8b2439888a4380e539|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 118610,
+  "png": 455449,
+  "original": 1258386
+ },
+ "staff_engineer_09_sheet": {
+  "folder": "walkers",
+  "recipe": "dabbe30eab1588c5e51221cc607542799400d39f|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 125410,
+  "png": 440905,
+  "original": 1178846
+ },
+ "staff_engineer_10_sheet": {
+  "folder": "walkers",
+  "recipe": "53f2775b69682d0508dbf70c109ce713ae80ab81|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 140452,
+  "png": 489690,
+  "original": 1300637
+ },
+ "staff_designer_01_sheet": {
+  "folder": "walkers",
+  "recipe": "81afbcc6f602881a3f120271ba4a391a7d5b98d1|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 124186,
+  "png": 459097,
+  "original": 1272736
+ },
+ "staff_designer_02_sheet": {
+  "folder": "walkers",
+  "recipe": "badb5539e486182b11ed1f8b2439888a4380e539|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 118610,
+  "png": 455449,
+  "original": 1258386
+ },
+ "staff_designer_03_sheet": {
+  "folder": "walkers",
+  "recipe": "ddcbfd6e0f68af90709cc596e308e66f22adcd05|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 138102,
+  "png": 490768,
+  "original": 1302484
+ },
+ "staff_designer_04_sheet": {
+  "folder": "walkers",
+  "recipe": "badb5539e486182b11ed1f8b2439888a4380e539|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 118610,
+  "png": 455449,
+  "original": 1258386
+ },
+ "staff_designer_05_sheet": {
+  "folder": "walkers",
+  "recipe": "badb5539e486182b11ed1f8b2439888a4380e539|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 118610,
+  "png": 455449,
+  "original": 1258386
+ },
+ "staff_designer_06_sheet": {
+  "folder": "walkers",
+  "recipe": "ddcbfd6e0f68af90709cc596e308e66f22adcd05|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 138102,
+  "png": 490768,
+  "original": 1302484
+ },
+ "staff_designer_07_sheet": {
+  "folder": "walkers",
+  "recipe": "badb5539e486182b11ed1f8b2439888a4380e539|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 118610,
+  "png": 455449,
+  "original": 1258386
+ },
+ "staff_designer_08_sheet": {
+  "folder": "walkers",
+  "recipe": "fbbe3e7c913e0b6112415945bcf5935148f82e11|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 128118,
+  "png": 482214,
+  "original": 1269063
+ },
+ "staff_designer_09_sheet": {
+  "folder": "walkers",
+  "recipe": "ddcbfd6e0f68af90709cc596e308e66f22adcd05|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 138102,
+  "png": 490768,
+  "original": 1302484
+ },
+ "staff_designer_10_sheet": {
+  "folder": "walkers",
+  "recipe": "517b820932281e571605fa5badd6cb352f250446|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 123772,
+  "png": 469709,
+  "original": 1210630
+ },
+ "staff_programmer_01_sheet": {
+  "folder": "walkers",
+  "recipe": "454ea6c4e1c2acbb01443f0994bc64ac5461a54d|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 112260,
+  "png": 459349,
+  "original": 1166018
+ },
+ "staff_programmer_02_sheet": {
+  "folder": "walkers",
+  "recipe": "0e941f7a6a6605adde940bf9ae642a520e94aebe|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 108922,
+  "png": 470465,
+  "original": 1157931
+ },
+ "staff_programmer_03_sheet": {
+  "folder": "walkers",
+  "recipe": "517b820932281e571605fa5badd6cb352f250446|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 123772,
+  "png": 469709,
+  "original": 1210630
+ },
+ "staff_programmer_04_sheet": {
+  "folder": "walkers",
+  "recipe": "454ea6c4e1c2acbb01443f0994bc64ac5461a54d|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 112260,
+  "png": 459349,
+  "original": 1166018
+ },
+ "staff_programmer_05_sheet": {
+  "folder": "walkers",
+  "recipe": "517b820932281e571605fa5badd6cb352f250446|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 123772,
+  "png": 469709,
+  "original": 1210630
+ },
+ "staff_programmer_06_sheet": {
+  "folder": "walkers",
+  "recipe": "badb5539e486182b11ed1f8b2439888a4380e539|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 118610,
+  "png": 455449,
+  "original": 1258386
+ },
+ "staff_programmer_07_sheet": {
+  "folder": "walkers",
+  "recipe": "81afbcc6f602881a3f120271ba4a391a7d5b98d1|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 124186,
+  "png": 459097,
+  "original": 1272736
+ },
+ "staff_programmer_08_sheet": {
+  "folder": "walkers",
+  "recipe": "517b820932281e571605fa5badd6cb352f250446|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 123772,
+  "png": 469709,
+  "original": 1210630
+ },
+ "staff_programmer_09_sheet": {
+  "folder": "walkers",
+  "recipe": "517b820932281e571605fa5badd6cb352f250446|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 123772,
+  "png": 469709,
+  "original": 1210630
+ },
+ "staff_programmer_10_sheet": {
+  "folder": "walkers",
+  "recipe": "47ddedc84b3850da5faf7bffce771d1628f07af8|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 119634,
+  "png": 458103,
+  "original": 1265479
+ },
+ "staff_mechanic_01_sheet": {
+  "folder": "walkers",
+  "recipe": "369561b2fe85edaf35aa26030ef6c4de72c351f1|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 112204,
+  "png": 457588,
+  "original": 1161590
+ },
+ "staff_mechanic_02_sheet": {
+  "folder": "walkers",
+  "recipe": "03386414e06dd53d982d0311738d458c96a3414d|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 103582,
+  "png": 456495,
+  "original": 1131639
+ },
+ "staff_mechanic_03_sheet": {
+  "folder": "walkers",
+  "recipe": "fbbe3e7c913e0b6112415945bcf5935148f82e11|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 128118,
+  "png": 482214,
+  "original": 1269063
+ },
+ "staff_mechanic_04_sheet": {
+  "folder": "walkers",
+  "recipe": "ddcbfd6e0f68af90709cc596e308e66f22adcd05|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 138102,
+  "png": 490768,
+  "original": 1302484
+ },
+ "staff_mechanic_05_sheet": {
+  "folder": "walkers",
+  "recipe": "369561b2fe85edaf35aa26030ef6c4de72c351f1|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 112204,
+  "png": 457588,
+  "original": 1161590
+ },
+ "staff_mechanic_06_sheet": {
+  "folder": "walkers",
+  "recipe": "03386414e06dd53d982d0311738d458c96a3414d|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 103582,
+  "png": 456495,
+  "original": 1131639
+ },
+ "staff_mechanic_07_sheet": {
+  "folder": "walkers",
+  "recipe": "fbbe3e7c913e0b6112415945bcf5935148f82e11|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 128118,
+  "png": 482214,
+  "original": 1269063
+ },
+ "staff_mechanic_08_sheet": {
+  "folder": "walkers",
+  "recipe": "03386414e06dd53d982d0311738d458c96a3414d|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 103582,
+  "png": 456495,
+  "original": 1131639
+ },
+ "staff_mechanic_09_sheet": {
+  "folder": "walkers",
+  "recipe": "517b820932281e571605fa5badd6cb352f250446|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 123772,
+  "png": 469709,
+  "original": 1210630
+ },
+ "staff_mechanic_10_sheet": {
+  "folder": "walkers",
+  "recipe": "ddcbfd6e0f68af90709cc596e308e66f22adcd05|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 138102,
+  "png": 490768,
+  "original": 1302484
+ },
+ "staff_pilot_01_sheet": {
+  "folder": "walkers",
+  "recipe": "369561b2fe85edaf35aa26030ef6c4de72c351f1|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 112204,
+  "png": 457588,
+  "original": 1161590
+ },
+ "staff_pilot_02_sheet": {
+  "folder": "walkers",
+  "recipe": "03386414e06dd53d982d0311738d458c96a3414d|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 103582,
+  "png": 456495,
+  "original": 1131639
+ },
+ "staff_pilot_03_sheet": {
+  "folder": "walkers",
+  "recipe": "53f2775b69682d0508dbf70c109ce713ae80ab81|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 140452,
+  "png": 489690,
+  "original": 1300637
+ },
+ "staff_pilot_04_sheet": {
+  "folder": "walkers",
+  "recipe": "fbbe3e7c913e0b6112415945bcf5935148f82e11|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 128118,
+  "png": 482214,
+  "original": 1269063
+ },
+ "staff_pilot_05_sheet": {
+  "folder": "walkers",
+  "recipe": "369561b2fe85edaf35aa26030ef6c4de72c351f1|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 112204,
+  "png": 457588,
+  "original": 1161590
+ },
+ "staff_pilot_06_sheet": {
+  "folder": "walkers",
+  "recipe": "badb5539e486182b11ed1f8b2439888a4380e539|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 118610,
+  "png": 455449,
+  "original": 1258386
+ },
+ "staff_pilot_07_sheet": {
+  "folder": "walkers",
+  "recipe": "517b820932281e571605fa5badd6cb352f250446|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 123772,
+  "png": 469709,
+  "original": 1210630
+ },
+ "staff_pilot_08_sheet": {
+  "folder": "walkers",
+  "recipe": "ddcbfd6e0f68af90709cc596e308e66f22adcd05|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 138102,
+  "png": 490768,
+  "original": 1302484
+ },
+ "staff_pilot_09_sheet": {
+  "folder": "walkers",
+  "recipe": "2ae143119a45764967e06a214d66896c10f392b0|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 108358,
+  "png": 469080,
+  "original": 1178733
+ },
+ "staff_pilot_10_sheet": {
+  "folder": "walkers",
+  "recipe": "ddcbfd6e0f68af90709cc596e308e66f22adcd05|1024x1024|q0.85",
+  "w": 1024,
+  "h": 1024,
+  "webp": 138102,
+  "png": 490768,
+  "original": 1302484
  }
 }
