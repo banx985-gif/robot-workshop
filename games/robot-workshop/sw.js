@@ -10,7 +10,7 @@
 // This game imports the shared series engine from ../../core/, which sits
 // outside this folder. Requests from the game page still pass through this
 // worker, so the engine files are cached too.
-const VERSION = '20261113-092647';
+const VERSION = '20261113-134544';
 const CACHE = 'robot-workshop-' + VERSION;
 
 // The page itself + manifest + icons, so the app opens offline straight away.
@@ -54,5 +54,23 @@ self.addEventListener('fetch', (event) => {
       })
       .catch(() => caches.match(req, { ignoreSearch: true })
         .then((hit) => hit || (req.mode === 'navigate' ? caches.match('./index.html') : Response.error())))
+  );
+});
+
+// Milestone 38: a tapped notification (phone browsers show them through this worker) brings the game to the front
+// and tells it which screen to open (core/LocalNotify; the app uses the phone's own notifications instead).
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = event.notification.data || {};
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((all) => {
+      const page = all[0];
+      if (page) {
+        page.postMessage({ type: 'notify:open', data });
+        return page.focus();
+      }
+      const open = data.open && data.open.screen ? '?open=' + encodeURIComponent(data.open.screen) + '&slot=' + (data.open.slot | 0) : '';
+      return self.clients.openWindow('./index.html' + open);
+    })
   );
 });
